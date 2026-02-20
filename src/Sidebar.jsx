@@ -1,4 +1,5 @@
 import { useTheme } from "./ThemeContext.jsx";
+import WorkspaceSelector from "./WorkspaceSelector.jsx";
 
 const NAV_ITEMS = [
   { id: "pipeline", icon: "📊", label: "Pipeline" },
@@ -10,13 +11,13 @@ const BOTTOM_ITEMS = [
   { id: "settings", icon: "⚙", label: "Settings" },
 ];
 
-export default function Sidebar({ page, setPage, role, userName, onSignOut, stats }) {
+export default function Sidebar({ page, setPage, role, userName, onSignOut, stats, workspaces, activeWorkspaceId, onSelectWorkspace, onCreateWorkspace }) {
   const { isDark, toggle } = useTheme();
 
   return (
     <div className="sidebar">
       {/* Brand */}
-      <div style={{ padding: "4px 10px 18px", display: "flex", alignItems: "center", gap: 9 }}>
+      <div style={{ padding: "4px 10px 14px", display: "flex", alignItems: "center", gap: 9 }}>
         <div style={{
           width: 30, height: 30, borderRadius: 8,
           background: "linear-gradient(135deg, var(--accent), #8b5cf6)",
@@ -32,6 +33,17 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
           <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Pipeline</div>
         </div>
       </div>
+
+      {/* Workspace selector */}
+      {workspaces && workspaces.length > 0 && (
+        <WorkspaceSelector
+          workspaces={workspaces}
+          activeId={activeWorkspaceId}
+          onSelect={onSelectWorkspace}
+          onCreate={onCreateWorkspace}
+          role={role}
+        />
+      )}
 
       {/* Quick stats */}
       {stats && (

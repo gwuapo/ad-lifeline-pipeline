@@ -1,13 +1,14 @@
 import { useState, useRef } from "react";
-import { saveEditorProfile } from "./editorProfiles.js";
+import { upsertEditorProfile } from "./supabaseData.js";
 
-export default function EditorOnboarding({ email, displayName, onComplete }) {
+export default function EditorOnboarding({ email, displayName, userId, onComplete }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(displayName || "");
   const [photoPreview, setPhotoPreview] = useState(null);
   const [portfolioUrl, setPortfolioUrl] = useState("");
   const [compensationRate, setCompensationRate] = useState("");
   const [weeklyMinutes, setWeeklyMinutes] = useState("");
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef(null);
 
   const handlePhoto = (e) => {
@@ -19,16 +20,22 @@ export default function EditorOnboarding({ email, displayName, onComplete }) {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = () => {
-    saveEditorProfile(email, {
-      displayName: name.trim(),
-      photoUrl: photoPreview || null,
-      portfolioUrl: portfolioUrl.trim(),
-      compensationRate: compensationRate.trim(),
-      weeklyMinutes: parseInt(weeklyMinutes) || 0,
-      onboardedAt: new Date().toISOString(),
-    });
-    onComplete(name.trim());
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      await upsertEditorProfile(userId, {
+        display_name: name.trim(),
+        photo_url: photoPreview || null,
+        portfolio_url: portfolioUrl.trim(),
+        compensation_rate: compensationRate.trim(),
+        weekly_minutes: parseInt(weeklyMinutes) || 0,
+        onboarded_at: new Date().toISOString(),
+      });
+      onComplete();
+    } catch (e) {
+      alert("Error saving profile: " + e.message);
+      setSaving(false);
+    }
   };
 
   const canSubmit = name.trim() && portfolioUrl.trim() && compensationRate.trim() && weeklyMinutes;
@@ -102,7 +109,6 @@ export default function EditorOnboarding({ email, displayName, onComplete }) {
         borderRadius: "var(--radius-xl)", padding: "36px 32px 28px",
         backdropFilter: "var(--glass)", boxShadow: "var(--shadow-lg)",
       }}>
-        {/* Progress */}
         <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
           {steps.map((_, i) => (
             <div key={i} style={{
@@ -125,7 +131,7 @@ export default function EditorOnboarding({ email, displayName, onComplete }) {
             ? <button onClick={() => setStep(step - 1)} className="btn btn-ghost btn-sm">Back</button>
             : <div />}
           {isLast
-            ? <button onClick={handleSubmit} disabled={!canSubmit} className="btn btn-primary btn-sm">Complete Setup</button>
+            ? <button onClick={handleSubmit} disabled={!canSubmit || saving} className="btn btn-primary btn-sm">{saving ? "Saving..." : "Complete Setup"}</button>
             : <button onClick={() => setStep(step + 1)} className="btn btn-primary btn-sm">Continue</button>}
         </div>
       </div>

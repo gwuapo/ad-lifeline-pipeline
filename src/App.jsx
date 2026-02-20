@@ -6,7 +6,7 @@ import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
-import { getAllEditorProfiles, saveEditorProfile } from "./editorProfiles.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, upsertEditorProfile } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -21,11 +21,7 @@ const STAGES = [
 ];
 const SO = ["pre", "in", "post", "live"];
 const AD_TYPES = ["VSL", "Video Ad", "UGC", "Image Ad", "Advertorial", "Listicle"];
-const DEFAULT_EDITORS = ["Noor", "Faisal", "Omar"];
-function getEditorsList() {
-  try { const s = localStorage.getItem("al_editors"); return s ? JSON.parse(s) : DEFAULT_EDITORS; } catch { return DEFAULT_EDITORS; }
-}
-function saveEditorsList(list) { localStorage.setItem("al_editors", JSON.stringify(list)); }
+const DEFAULT_EDITORS = [];
 
 const LT = ["hook_pattern", "proof_structure", "angle_theme", "pacing", "visual_style", "objection_handling"];
 const VT = [
@@ -93,119 +89,7 @@ const bestChannel = (ad, th) => {
 };
 const now = () => new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-// ════════════════════════════════════════════════
-// SEED DATA
-// ════════════════════════════════════════════════
-
-const SEED = [
-  { id: 1, name: "Hair Growth VSL v1", type: "VSL", stage: "live", editor: "Noor", deadline: "",
-    brief: "Documentary-style VSL, 2:30. Shocking stat opener. Investigative tone. Slow 15s → rapid cuts. 3-step CTA.",
-    notes: "Top performer — 15M TikTok views.", iterations: 0, maxIter: 3, iterHistory: [],
-    briefApproved: true, draftSubmitted: true, finalApproved: true,
-    drafts: [{ id: 1, name: "vsl_v1_final.mp4", version: 3, ts: "Feb 5", status: "approved" }],
-    revisionRequests: [],
-    metrics: [
-      { date: "2026-02-05", cpa: 14.1, spend: 600, conv: 43, ctr: 2.4, cpm: 7.8 },
-      { date: "2026-02-06", cpa: 13.2, spend: 820, conv: 62, ctr: 2.6, cpm: 8.0 },
-      { date: "2026-02-07", cpa: 12.8, spend: 950, conv: 74, ctr: 2.7, cpm: 8.1 },
-      { date: "2026-02-08", cpa: 12.4, spend: 1100, conv: 89, ctr: 2.8, cpm: 8.2 },
-      { date: "2026-02-09", cpa: 12.4, spend: 730, conv: 59, ctr: 2.9, cpm: 8.0 },
-    ],
-    comments: [
-      { id: 1, text: "This actually works, baby hairs after 3 weeks", sentiment: "positive", hidden: false },
-      { id: 2, text: "Where can I buy? Link?", sentiment: "positive", hidden: false },
-      { id: 3, text: "My friend tried it, hair coming back", sentiment: "positive", hidden: false },
-      { id: 4, text: "Scam product don't waste money", sentiment: "negative", hidden: true },
-      { id: 5, text: "Available in Riyadh?", sentiment: "neutral", hidden: false },
-      { id: 6, text: "How is this different from minoxidil?", sentiment: "neutral", hidden: false },
-      { id: 7, text: "Paid actors lol", sentiment: "negative", hidden: true },
-      { id: 8, text: "Ordered 3 bottles", sentiment: "positive", hidden: false },
-    ],
-    analyses: [{ id: 1, ts: "Feb 9", summary: "Strong performer. Investigative hook resonates. Before/after in first 10s reduces drop-off. Hidden negatives show 'scam' objection.", findings: [{ type: "positive", text: "Documentary tone builds credibility" }, { type: "positive", text: "Before/after first 10s = strong retention" }, { type: "warning", text: "Hidden 'scam' comments → needs clinical proof" }, { type: "action", text: "3 hook variations + listicle pre-lander" }], nextIterationPlan: null, suggestedLearnings: [] }],
-    learnings: [
-      { id: 1, type: "hook_pattern", text: "Investigative documentary hooks outperform testimonial 3x on TikTok Saudi" },
-      { id: 2, type: "proof_structure", text: "Before/after in first 10s reduces drop-off 40%" },
-      { id: 3, type: "pacing", text: "Slow build 15s → rapid cuts holds 2:30+ attention" },
-    ],
-    thread: [
-      { from: "Adolf", text: "Best performer. 3 hook variations ASAP.", ts: "Feb 7, 10:30 AM" },
-      { from: "Noor", text: "On it. Briefs by tomorrow.", ts: "Feb 7, 11:15 AM" },
-    ],
-    parentId: null, childIds: [5], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
-  },
-  { id: 2, name: "Investigative Doc Hook", type: "Video Ad", stage: "in", editor: "Faisal", deadline: "2026-02-15",
-    brief: "3-min investigative piece. Hidden camera aesthetic. Expose pharma pricing. Arabic VO.",
-    notes: "Pharma villain angle. Based on VSL v1.", iterations: 0, maxIter: 3, iterHistory: [],
-    briefApproved: true, draftSubmitted: false, finalApproved: false,
-    drafts: [{ id: 1, name: "doc_hook_draft1.mp4", version: 1, ts: "Feb 12", status: "in-review" }],
-    revisionRequests: [],
-    metrics: [], comments: [], analyses: [], learnings: [],
-    thread: [
-      { from: "Adolf", text: "Reference VSL v1 style but harder on pharma angle.", ts: "Feb 9, 2:00 PM" },
-      { from: "Faisal", text: "First draft ETA Feb 14.", ts: "Feb 9, 3:20 PM" },
-    ],
-    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
-  },
-  { id: 3, name: "UGC Testimonial #4", type: "UGC", stage: "pre", editor: "", deadline: "",
-    brief: "Ahmad from Jeddah, 28. 90-day journey. Phone-shot. Unboxing + routine.",
-    notes: "Script approved. Needs editor.", iterations: 0, maxIter: 3, iterHistory: [],
-    briefApproved: false, draftSubmitted: false, finalApproved: false,
-    drafts: [], revisionRequests: [],
-    metrics: [], comments: [], analyses: [], learnings: [], thread: [],
-    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
-  },
-  { id: 4, name: "Listicle Pre-Lander", type: "Advertorial", stage: "post", editor: "Noor", deadline: "2026-02-13",
-    brief: "'5 Reasons Your Hair Is Thinning' — editorial mobile-first. Each reason = objection. CTA → VSL v1.",
-    notes: "Rev 2 — tighten proof.", iterations: 0, maxIter: 3, iterHistory: [],
-    briefApproved: true, draftSubmitted: true, finalApproved: false,
-    drafts: [
-      { id: 1, name: "listicle_v1.html", version: 1, ts: "Feb 9", status: "revision-requested" },
-      { id: 2, name: "listicle_v2.html", version: 2, ts: "Feb 11", status: "in-review" },
-    ],
-    revisionRequests: [
-      { id: 1, from: "Adolf", text: "Reason #2 headline weak — more tension. Add before/after between 3 and 4.", ts: "Feb 11, 10:30 AM", resolved: false },
-    ],
-    metrics: [], comments: [], analyses: [], learnings: [],
-    thread: [
-      { from: "Noor", text: "Draft 2 uploaded.", ts: "Feb 11, 9:00 AM" },
-      { from: "Adolf", text: "Headline #2 weak. Add before/after photo.", ts: "Feb 11, 10:30 AM" },
-    ],
-    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
-  },
-  { id: 5, name: "Hook Variation A (Urgency)", type: "VSL", stage: "pre", editor: "", deadline: "",
-    brief: "Same body as VSL v1. NEW HOOK: 'You have 6 months before it's irreversible.'",
-    notes: "Variation of VSL v1 — urgency hook", iterations: 0, maxIter: 3, iterHistory: [],
-    briefApproved: true, draftSubmitted: false, finalApproved: false,
-    drafts: [], revisionRequests: [],
-    metrics: [], comments: [], analyses: [], learnings: [], thread: [],
-    parentId: 1, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
-  },
-  { id: 6, name: "Ingredient Breakdown", type: "Video Ad", stage: "live", editor: "Faisal", deadline: "",
-    brief: "Educational ingredient breakdown. Clean modern. Text overlay + benefit. 60s fast.",
-    notes: "CPA too high — confusion in comments.", iterations: 1, maxIter: 3,
-    iterHistory: [{ iter: 1, reason: "CPA $34 → added clinical study + testimonial", date: "Feb 8" }],
-    briefApproved: true, draftSubmitted: true, finalApproved: true,
-    drafts: [{ id: 1, name: "ingredient_v2.mp4", version: 2, ts: "Feb 8", status: "approved" }],
-    revisionRequests: [],
-    metrics: [
-      { date: "2026-02-07", cpa: 34, spend: 340, conv: 10, ctr: 1.5, cpm: 10.2 },
-      { date: "2026-02-08", cpa: 31.2, spend: 410, conv: 13, ctr: 1.7, cpm: 10.8 },
-      { date: "2026-02-09", cpa: 28.5, spend: 380, conv: 13, ctr: 1.9, cpm: 11 },
-      { date: "2026-02-10", cpa: 28.5, spend: 290, conv: 10, ctr: 1.8, cpm: 11.4 },
-    ],
-    comments: [
-      { id: 1, text: "What are the actual ingredients?", sentiment: "neutral", hidden: false },
-      { id: 2, text: "Looks like snake oil", sentiment: "negative", hidden: true },
-      { id: 3, text: "How different from minoxidil?", sentiment: "neutral", hidden: false },
-      { id: 4, text: "Price?", sentiment: "neutral", hidden: false },
-      { id: 5, text: "Another fake product", sentiment: "negative", hidden: true },
-    ],
-    analyses: [{ id: 1, ts: "Feb 10", summary: "CPA $34→$28.50 after iter 1 still red. Educational format lacks emotional hook.", findings: [{ type: "negative", text: "Trust deficit — 'snake oil' + 'fake'" }, { type: "warning", text: "'vs minoxidil' repeated" }, { type: "action", text: "Personal story hook + clinical proof first 10s" }, { type: "action", text: "Listicle pre-lander for trust" }], nextIterationPlan: "Rebuild hook with personal story + clinical proof first 10s. Listicle pre-lander for scam/minoxidil objections.", suggestedLearnings: [] }],
-    learnings: [],
-    thread: [{ from: "Adolf", text: "CPA 34→28 still red. One more iteration.", ts: "Feb 10, 4:00 PM" }],
-    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
-  },
-];
+// No seed data — ads are loaded from Supabase per workspace
 
 // ════════════════════════════════════════════════
 // MODAL
@@ -1079,7 +963,13 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
   const [newName, setNewName] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedEditor, setSelectedEditor] = useState(null);
-  const allProfiles = getAllEditorProfiles();
+  const [allProfiles, setAllProfiles] = useState({});
+
+  // Load profiles once (kept simple — profiles keyed by display_name)
+  useEffect(() => {
+    // Profiles will be loaded from workspace context; for now use empty map
+    // The EditorDetailModal handles saving via Supabase
+  }, []);
 
   const handleAdd = () => {
     if (newName.trim()) { addEditor(newName); setNewName(""); setShowAdd(false); }
@@ -1126,8 +1016,8 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
             <div key={name} className="card" onClick={() => setSelectedEditor({ name, profile, stats: { winRate, onTime, qualScore, bonus, all: all.length, overdueN, health } })} style={{ cursor: "pointer", transition: "all var(--transition)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {profile?.photoUrl
-                    ? <img src={profile.photoUrl} style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", border: "2px solid " + hc, objectFit: "cover" }} />
+                  {(profile?.photo_url || profile?.photoUrl)
+                    ? <img src={profile.photo_url || profile.photoUrl} style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", border: "2px solid " + hc, objectFit: "cover" }} />
                     : <div style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", background: "var(--accent-bg)", border: "2px solid " + hc, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: hc }}>{name[0]}</div>}
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{name}</div>
@@ -1139,7 +1029,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
                   <div style={{ fontSize: 9, color: "var(--text-tertiary)", textTransform: "uppercase" }}>Bonus</div>
                 </div>
               </div>
-              {profile?.weeklyMinutes && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Capacity: {profile.weeklyMinutes} min/week</div>}
+              {(profile?.weekly_minutes || profile?.weeklyMinutes) && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Capacity: {profile.weekly_minutes || profile.weeklyMinutes} min/week</div>}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
                 {[[winRate + "%", "Win Rate", winRate >= 25 ? "var(--green)" : "var(--yellow)"], [onTime + "%", "On-Time", onTime >= 85 ? "var(--green)" : "var(--yellow)"], [qualScore, "Quality", qualScore >= 75 ? "var(--green)" : "var(--yellow)"], [all.length, "Assigned", "var(--accent-light)"]].map(([v, l, c]) => (
                   <div key={l} className="stat-box">
@@ -1165,10 +1055,10 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
 function EditorDetailModal({ editor, onClose }) {
   const { name, profile, stats } = editor;
   const [pName, setPName] = useState(profile?.displayName || name);
-  const [pPhoto, setPPhoto] = useState(profile?.photoUrl || null);
-  const [pPortfolio, setPPortfolio] = useState(profile?.portfolioUrl || "");
-  const [pRate, setPRate] = useState(profile?.compensationRate || "");
-  const [pMinutes, setPMinutes] = useState(profile?.weeklyMinutes || "");
+  const [pPhoto, setPPhoto] = useState(profile?.photo_url || profile?.photoUrl || null);
+  const [pPortfolio, setPPortfolio] = useState(profile?.portfolio_url || profile?.portfolioUrl || "");
+  const [pRate, setPRate] = useState(profile?.compensation_rate || profile?.compensationRate || "");
+  const [pMinutes, setPMinutes] = useState(profile?.weekly_minutes || profile?.weeklyMinutes || "");
   const [saved, setSaved] = useState(false);
   const fileRef = useRef(null);
 
@@ -1180,15 +1070,18 @@ function EditorDetailModal({ editor, onClose }) {
     reader.readAsDataURL(file);
   };
 
-  const handleSave = () => {
-    const email = profile?.email || name.toLowerCase().replace(/\s+/g, ".") + "@team";
-    saveEditorProfile(email, {
-      displayName: pName.trim(),
-      photoUrl: pPhoto,
-      portfolioUrl: pPortfolio.trim(),
-      compensationRate: pRate.trim(),
-      weeklyMinutes: parseInt(pMinutes) || 0,
-    });
+  const handleSave = async () => {
+    if (profile?.user_id) {
+      try {
+        await upsertEditorProfile(profile.user_id, {
+          display_name: pName.trim(),
+          photo_url: pPhoto,
+          portfolio_url: pPortfolio.trim(),
+          compensation_rate: pRate.trim(),
+          weekly_minutes: parseInt(pMinutes) || 0,
+        });
+      } catch (e) { console.error("Save profile error:", e); }
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -1210,7 +1103,7 @@ function EditorDetailModal({ editor, onClose }) {
           <div>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>{name}</h3>
             <span className={`badge ${stats.health === "green" ? "badge-green" : stats.health === "yellow" ? "badge-yellow" : "badge-red"}`}>{stats.health}</span>
-            {profile?.onboardedAt && <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>Joined {new Date(profile.onboardedAt).toLocaleDateString()}</span>}
+            {(profile?.onboarded_at || profile?.onboardedAt) && <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>Joined {new Date(profile.onboarded_at || profile.onboardedAt).toLocaleDateString()}</span>}
           </div>
         </div>
 
@@ -1287,23 +1180,66 @@ function LearningsPage({ ads }) {
 // MAIN APP
 // ════════════════════════════════════════════════
 
-export default function App({ session, userRole, userName }) {
-  const [ads, setAds] = useState(SEED);
+export default function App({ session, userRole, userName, workspaces, activeWorkspaceId, onSelectWorkspace, onCreateWorkspace, onWorkspacesChange }) {
+  const [ads, setAds] = useState([]);
+  const [adsLoading, setAdsLoading] = useState(true);
   const [openAd, setOpenAd] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
   const [page, setPage] = useState("pipeline");
   const [th, setTh] = useState(DT);
   const [role, setRole] = useState(userRole || "founder");
-  const [editors, setEditors] = useState(getEditorsList);
-  const addEditor = (name) => { const n = name.trim(); if (!n || editors.includes(n)) return; const u = [...editors, n]; setEditors(u); saveEditorsList(u); };
-  const removeEditor = (name) => { const u = editors.filter(e => e !== name); setEditors(u); saveEditorsList(u); };
-  const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "Noor") : "Noor");
+  const [editors, setEditors] = useState(DEFAULT_EDITORS);
+  const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "") : "");
   const handleSignOut = () => supabase.auth.signOut();
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
   const did = useRef(null);
+
+  // Load ads + settings + editors from Supabase when workspace changes
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    let cancelled = false;
+    setAdsLoading(true);
+
+    const load = async () => {
+      try {
+        const [adsData, settings, members] = await Promise.all([
+          fetchAds(activeWorkspaceId),
+          getWorkspaceSettings(activeWorkspaceId),
+          getWorkspaceMembers(activeWorkspaceId),
+        ]);
+        if (cancelled) return;
+        setAds(adsData);
+        setTh(settings);
+        // Derive editor names from workspace members with editor role
+        const editorNames = members.filter(m => m.role === "editor").map(m => m.editor_name || "Editor");
+        // Also include unique editor names referenced in ads that may not be members yet
+        const adEditors = [...new Set(adsData.map(a => a.editor).filter(Boolean))];
+        const allEditors = [...new Set([...editorNames, ...adEditors])];
+        setEditors(allEditors.length > 0 ? allEditors : DEFAULT_EDITORS);
+      } catch (e) {
+        console.error("Failed to load workspace data:", e);
+      }
+      if (!cancelled) setAdsLoading(false);
+    };
+    load();
+
+    // Subscribe to realtime changes
+    const unsub = subscribeToAds(activeWorkspaceId, async () => {
+      // On any change, refetch all ads
+      try {
+        const fresh = await fetchAds(activeWorkspaceId);
+        if (!cancelled) setAds(fresh);
+      } catch (e) { console.error("Realtime refresh error:", e); }
+    });
+
+    return () => { cancelled = true; unsub(); };
+  }, [activeWorkspaceId]);
+
+  const addEditor = (name) => { const n = name.trim(); if (!n || editors.includes(n)) return; setEditors(prev => [...prev, n]); };
+  const removeEditor = (name) => { setEditors(prev => prev.filter(e => e !== name)); };
 
   const syncTripleWhale = async () => {
     if (!isTripleWhaleConfigured()) { setSyncMsg({ ok: false, text: "Configure Triple Whale in Settings first" }); setTimeout(() => setSyncMsg(null), 3000); return; }
@@ -1329,32 +1265,66 @@ export default function App({ session, userRole, userName }) {
     setTimeout(() => setSyncMsg(null), 4000);
   };
 
+  // Sync a single ad to Supabase by reading current state
+  const syncAdToDb = useCallback((adId, updatedAds) => {
+    if (!activeWorkspaceId) return;
+    const ad = updatedAds.find(x => x.id === adId);
+    if (!ad) return;
+    dbUpdateAd(adId, ad, activeWorkspaceId).catch(e => console.error("Sync error:", e));
+  }, [activeWorkspaceId]);
+
   const dispatch = useCallback((a) => {
     setAds(p => {
+      let next;
       switch (a.type) {
-        case "MOVE": return p.map(x => x.id === a.id ? { ...x, stage: a.stage } : x);
-        case "UPDATE": return p.map(x => x.id === a.id ? { ...x, ...a.data } : x);
-        case "ADD_METRIC": return p.map(x => x.id === a.id ? { ...x, metrics: [...x.metrics, a.metric] } : x);
-        case "SET_CH_METRICS": return p.map(x => x.id === a.id ? { ...x, channelMetrics: { ...(x.channelMetrics || emptyChMetrics()), [a.channel]: a.metrics } } : x);
-        case "ADD_COMMENT": return p.map(x => x.id === a.id ? { ...x, comments: [...x.comments, a.comment] } : x);
-        case "RM_COMMENT": return p.map(x => x.id === a.aid ? { ...x, comments: x.comments.filter(c => c.id !== a.cid) } : x);
-        case "ADD_ANALYSIS": return p.map(x => x.id === a.id ? { ...x, analyses: [...x.analyses, a.analysis] } : x);
-        case "ADD_LEARNING": return p.map(x => x.id === a.id ? { ...x, learnings: [...x.learnings, a.learning] } : x);
-        case "RM_LEARNING": return p.map(x => x.id === a.aid ? { ...x, learnings: x.learnings.filter(l => l.id !== a.lid) } : x);
-        case "ADD_MSG": return p.map(x => x.id === a.id ? { ...x, thread: [...x.thread, a.msg] } : x);
-        case "ADD_NOTIF": return p.map(x => x.id === a.id ? { ...x, notifications: [...(x.notifications || []), a.notif] } : x);
-        case "SUBMIT_DRAFT": return p.map(x => x.id === a.id ? { ...x, drafts: [...x.drafts, a.draft], draftSubmitted: true } : x);
-        case "ADD_REVISION": return p.map(x => x.id === a.id ? { ...x, revisionRequests: [...x.revisionRequests, a.rev] } : x);
-        case "RESOLVE_REVISION": return p.map(x => x.id === a.id ? { ...x, revisionRequests: x.revisionRequests.map(r => r.id === a.rid ? { ...r, resolved: true } : r) } : x);
-        case "APPROVE_DRAFT": return p.map(x => x.id === a.id ? { ...x, drafts: x.drafts.map(d => d.id === a.did ? { ...d, status: "approved" } : d), finalApproved: true } : x);
-        case "ITERATE": return p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; });
-        case "KILL": return p.map(x => x.id === a.id ? { ...x, stage: "killed" } : x);
-        case "ADD_AD": { const id = uid(); return [...p, { id, name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics() }]; }
-        case "CREATE_VAR": { const vid = uid(); return [...p.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), vid] } : x), { id: vid, name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics() }]; }
+        case "MOVE": next = p.map(x => x.id === a.id ? { ...x, stage: a.stage } : x); break;
+        case "UPDATE": next = p.map(x => x.id === a.id ? { ...x, ...a.data } : x); break;
+        case "ADD_METRIC": next = p.map(x => x.id === a.id ? { ...x, metrics: [...x.metrics, a.metric] } : x); break;
+        case "SET_CH_METRICS": next = p.map(x => x.id === a.id ? { ...x, channelMetrics: { ...(x.channelMetrics || emptyChMetrics()), [a.channel]: a.metrics } } : x); break;
+        case "ADD_COMMENT": next = p.map(x => x.id === a.id ? { ...x, comments: [...x.comments, a.comment] } : x); break;
+        case "RM_COMMENT": next = p.map(x => x.id === a.aid ? { ...x, comments: x.comments.filter(c => c.id !== a.cid) } : x); break;
+        case "ADD_ANALYSIS": next = p.map(x => x.id === a.id ? { ...x, analyses: [...x.analyses, a.analysis] } : x); break;
+        case "ADD_LEARNING": next = p.map(x => x.id === a.id ? { ...x, learnings: [...x.learnings, a.learning] } : x); break;
+        case "RM_LEARNING": next = p.map(x => x.id === a.aid ? { ...x, learnings: x.learnings.filter(l => l.id !== a.lid) } : x); break;
+        case "ADD_MSG": next = p.map(x => x.id === a.id ? { ...x, thread: [...x.thread, a.msg] } : x); break;
+        case "ADD_NOTIF": next = p.map(x => x.id === a.id ? { ...x, notifications: [...(x.notifications || []), a.notif] } : x); break;
+        case "SUBMIT_DRAFT": next = p.map(x => x.id === a.id ? { ...x, drafts: [...x.drafts, a.draft], draftSubmitted: true } : x); break;
+        case "ADD_REVISION": next = p.map(x => x.id === a.id ? { ...x, revisionRequests: [...x.revisionRequests, a.rev] } : x); break;
+        case "RESOLVE_REVISION": next = p.map(x => x.id === a.id ? { ...x, revisionRequests: x.revisionRequests.map(r => r.id === a.rid ? { ...r, resolved: true } : r) } : x); break;
+        case "APPROVE_DRAFT": next = p.map(x => x.id === a.id ? { ...x, drafts: x.drafts.map(d => d.id === a.did ? { ...d, status: "approved" } : d), finalApproved: true } : x); break;
+        case "ITERATE": next = p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; }); break;
+        case "KILL": next = p.map(x => x.id === a.id ? { ...x, stage: "killed" } : x); break;
+        case "ADD_AD": {
+          // Create in Supabase and add to local state
+          const newAd = { name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics() };
+          if (activeWorkspaceId) {
+            dbCreateAd(newAd, activeWorkspaceId).then(saved => {
+              setAds(curr => [...curr, saved]);
+            }).catch(e => console.error("Create ad error:", e));
+          }
+          return p; // don't add locally yet — wait for Supabase response
+        }
+        case "CREATE_VAR": {
+          const varAd = { name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics() };
+          if (activeWorkspaceId) {
+            dbCreateAd(varAd, activeWorkspaceId).then(saved => {
+              setAds(curr => [...curr.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), saved.id] } : x), saved]);
+              syncAdToDb(a.pid, [...p.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), saved.id] } : x), saved]);
+            }).catch(e => console.error("Create var error:", e));
+          }
+          return p;
+        }
         default: return p;
       }
+
+      // Persist the changed ad to Supabase
+      const changedId = a.id || a.aid;
+      if (changedId && activeWorkspaceId) {
+        syncAdToDb(changedId, next);
+      }
+      return next;
     });
-  }, []);
+  }, [activeWorkspaceId, syncAdToDb]);
 
   const tryMove = (id, stage) => {
     const ad = ads.find(a => a.id === id);
@@ -1389,6 +1359,10 @@ export default function App({ session, userRole, userName }) {
         userName={userName}
         onSignOut={handleSignOut}
         stats={{ live: live.length, win, lose, learns }}
+        workspaces={workspaces || []}
+        activeWorkspaceId={activeWorkspaceId}
+        onSelectWorkspace={onSelectWorkspace}
+        onCreateWorkspace={onCreateWorkspace}
       />
 
       <div className="main-content">
@@ -1399,6 +1373,8 @@ export default function App({ session, userRole, userName }) {
         {/* ── PIPELINE PAGE ── */}
         {page === "pipeline" && (
           <div className="animate-fade">
+            {adsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}><div className="loading-dot" style={{ margin: "0 auto 12px" }} />Loading pipeline...</div>}
+            {!adsLoading && <>
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
               <div>
@@ -1478,6 +1454,7 @@ export default function App({ session, userRole, userName }) {
               <span><span style={{ color: "var(--yellow)" }}>●</span> {"<="} ${th.yellow} Monitor</span>
               <span><span style={{ color: "var(--red)" }}>●</span> {">"} ${th.yellow} Iterate/Kill</span>
             </div>
+            </>}
           </div>
         )}
 
@@ -1488,7 +1465,7 @@ export default function App({ session, userRole, userName }) {
         {page === "learnings" && <LearningsPage ads={ads} />}
 
         {/* ── SETTINGS PAGE ── */}
-        {page === "settings" && <SettingsPage thresholds={th} setThresholds={setTh} />}
+        {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} />}
 
         {/* Modals */}
         {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} />}
