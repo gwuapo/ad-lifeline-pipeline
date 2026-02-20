@@ -1,4 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { supabase } from "./supabase.js";
+import { isTripleWhaleConfigured, setTripleWhaleConfig, getTripleWhaleConfig, validateApiKey, fetchAdSetMetrics, matchMetricsToAds } from "./tripleWhale.js";
+import { getApiKey, isConfigured, getAnalysisPrompt, getSelectedModel, isProxyConfigured } from "./apiKeys.js";
+import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
+import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
+import Sidebar from "./Sidebar.jsx";
+import SettingsPage from "./SettingsPage.jsx";
+import { getAllEditorProfiles, saveEditorProfile } from "./editorProfiles.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -13,7 +21,12 @@ const STAGES = [
 ];
 const SO = ["pre", "in", "post", "live"];
 const AD_TYPES = ["VSL", "Video Ad", "UGC", "Image Ad", "Advertorial", "Listicle"];
-const EDITORS_LIST = ["Noor", "Faisal", "Omar"];
+const DEFAULT_EDITORS = ["Noor", "Faisal", "Omar"];
+function getEditorsList() {
+  try { const s = localStorage.getItem("al_editors"); return s ? JSON.parse(s) : DEFAULT_EDITORS; } catch { return DEFAULT_EDITORS; }
+}
+function saveEditorsList(list) { localStorage.setItem("al_editors", JSON.stringify(list)); }
+
 const LT = ["hook_pattern", "proof_structure", "angle_theme", "pacing", "visual_style", "objection_handling"];
 const VT = [
   { id: "hook", label: "Hook Test", desc: "Same body, different opening" },
@@ -27,14 +40,23 @@ const VT = [
 const DT = { green: 15, yellow: 25 };
 const CL = (v, t) => v == null ? "none" : v <= t.green ? "green" : v <= t.yellow ? "yellow" : "red";
 const CS = {
-  green: { l: "Winner", c: "#10b981", bg: "rgba(16,185,129,0.1)" },
-  yellow: { l: "Medium", c: "#d97706", bg: "rgba(217,119,6,0.1)" },
-  red: { l: "Losing", c: "#ef4444", bg: "rgba(239,68,68,0.1)" },
-  none: { l: "—", c: "#475569", bg: "transparent" },
+  green: { l: "Winner", c: "var(--green)", bg: "var(--green-bg)" },
+  yellow: { l: "Medium", c: "var(--yellow)", bg: "var(--yellow-bg)" },
+  red: { l: "Losing", c: "var(--red)", bg: "var(--red-bg)" },
+  none: { l: "—", c: "var(--text-tertiary)", bg: "transparent" },
 };
 
-const ff = "'Outfit', system-ui, sans-serif";
-const fm = "'IBM Plex Mono', monospace";
+const CUR = "SAR";
+
+const CHANNELS = [
+  { id: "meta", label: "Meta", color: "#3b82f6", twId: "facebook-ads" },
+  { id: "tiktok", label: "TikTok", color: "#e2e8f0", twId: "tiktok-ads" },
+  { id: "snapchat", label: "Snapchat", color: "#facc15", twId: "snapchat-ads" },
+  { id: "applovin", label: "AppLovin", color: "#f97316", twId: "applovin" },
+];
+const emptyChIds = () => ({ meta: "", tiktok: "", snapchat: "", applovin: "" });
+const emptyChMetrics = () => ({ meta: [], tiktok: [], snapchat: [], applovin: [] });
+const hasAnyChId = (ch) => ch && Object.values(ch).some(v => v && v.trim());
 
 let _id = 50;
 const uid = () => ++_id;
@@ -48,6 +70,26 @@ const tm = (a) => {
     ac: +(m.reduce((s, x) => s + x.cpa, 0) / m.length).toFixed(2), lc: m[m.length - 1].cpa,
     at: +(m.reduce((s, x) => s + x.ctr, 0) / m.length).toFixed(1), am: +(m.reduce((s, x) => s + x.cpm, 0) / m.length).toFixed(2),
     roas: m.reduce((s, x) => s + x.conv, 0) > 0 ? +((m.reduce((s, x) => s + x.conv, 0) * 45) / m.reduce((s, x) => s + x.spend, 0)).toFixed(1) : 0 };
+};
+const tmCh = (metrics) => {
+  if (!metrics?.length) return null;
+  const m = metrics;
+  return { spend: m.reduce((s, x) => s + x.spend, 0), conv: m.reduce((s, x) => s + x.conv, 0),
+    ac: +(m.reduce((s, x) => s + x.cpa, 0) / m.length).toFixed(2), lc: m[m.length - 1].cpa,
+    at: +(m.reduce((s, x) => s + x.ctr, 0) / m.length).toFixed(1), am: +(m.reduce((s, x) => s + x.cpm, 0) / m.length).toFixed(2),
+    roas: m[m.length - 1].roas || 0, lr: m[m.length - 1].revenue || 0 };
+};
+const bestChannel = (ad, th) => {
+  const cm = ad.channelMetrics || {};
+  let best = null;
+  for (const ch of CHANNELS) {
+    const m = cm[ch.id];
+    if (!m?.length) continue;
+    const last = m[m.length - 1];
+    if (!last || !last.cpa) continue;
+    if (!best || last.cpa < best.cpa) best = { ch: ch.id, label: ch.label, color: ch.color, cpa: last.cpa, roas: last.roas || 0, metric: last };
+  }
+  return best;
 };
 const now = () => new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -89,7 +131,7 @@ const SEED = [
       { from: "Adolf", text: "Best performer. 3 hook variations ASAP.", ts: "Feb 7, 10:30 AM" },
       { from: "Noor", text: "On it. Briefs by tomorrow.", ts: "Feb 7, 11:15 AM" },
     ],
-    parentId: null, childIds: [5], notifications: [],
+    parentId: null, childIds: [5], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
   },
   { id: 2, name: "Investigative Doc Hook", type: "Video Ad", stage: "in", editor: "Faisal", deadline: "2026-02-15",
     brief: "3-min investigative piece. Hidden camera aesthetic. Expose pharma pricing. Arabic VO.",
@@ -102,7 +144,7 @@ const SEED = [
       { from: "Adolf", text: "Reference VSL v1 style but harder on pharma angle.", ts: "Feb 9, 2:00 PM" },
       { from: "Faisal", text: "First draft ETA Feb 14.", ts: "Feb 9, 3:20 PM" },
     ],
-    parentId: null, childIds: [], notifications: [],
+    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
   },
   { id: 3, name: "UGC Testimonial #4", type: "UGC", stage: "pre", editor: "", deadline: "",
     brief: "Ahmad from Jeddah, 28. 90-day journey. Phone-shot. Unboxing + routine.",
@@ -110,7 +152,7 @@ const SEED = [
     briefApproved: false, draftSubmitted: false, finalApproved: false,
     drafts: [], revisionRequests: [],
     metrics: [], comments: [], analyses: [], learnings: [], thread: [],
-    parentId: null, childIds: [], notifications: [],
+    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
   },
   { id: 4, name: "Listicle Pre-Lander", type: "Advertorial", stage: "post", editor: "Noor", deadline: "2026-02-13",
     brief: "'5 Reasons Your Hair Is Thinning' — editorial mobile-first. Each reason = objection. CTA → VSL v1.",
@@ -128,7 +170,7 @@ const SEED = [
       { from: "Noor", text: "Draft 2 uploaded.", ts: "Feb 11, 9:00 AM" },
       { from: "Adolf", text: "Headline #2 weak. Add before/after photo.", ts: "Feb 11, 10:30 AM" },
     ],
-    parentId: null, childIds: [], notifications: [],
+    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
   },
   { id: 5, name: "Hook Variation A (Urgency)", type: "VSL", stage: "pre", editor: "", deadline: "",
     brief: "Same body as VSL v1. NEW HOOK: 'You have 6 months before it's irreversible.'",
@@ -136,7 +178,7 @@ const SEED = [
     briefApproved: true, draftSubmitted: false, finalApproved: false,
     drafts: [], revisionRequests: [],
     metrics: [], comments: [], analyses: [], learnings: [], thread: [],
-    parentId: 1, childIds: [], notifications: [],
+    parentId: 1, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
   },
   { id: 6, name: "Ingredient Breakdown", type: "Video Ad", stage: "live", editor: "Faisal", deadline: "",
     brief: "Educational ingredient breakdown. Clean modern. Text overlay + benefit. 60s fast.",
@@ -161,33 +203,24 @@ const SEED = [
     analyses: [{ id: 1, ts: "Feb 10", summary: "CPA $34→$28.50 after iter 1 still red. Educational format lacks emotional hook.", findings: [{ type: "negative", text: "Trust deficit — 'snake oil' + 'fake'" }, { type: "warning", text: "'vs minoxidil' repeated" }, { type: "action", text: "Personal story hook + clinical proof first 10s" }, { type: "action", text: "Listicle pre-lander for trust" }], nextIterationPlan: "Rebuild hook with personal story + clinical proof first 10s. Listicle pre-lander for scam/minoxidil objections.", suggestedLearnings: [] }],
     learnings: [],
     thread: [{ from: "Adolf", text: "CPA 34→28 still red. One more iteration.", ts: "Feb 10, 4:00 PM" }],
-    parentId: null, childIds: [], notifications: [],
+    parentId: null, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(),
   },
 ];
 
 // ════════════════════════════════════════════════
-// STYLES
-// ════════════════════════════════════════════════
-
-const si = (w) => ({ width: w || "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)", color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: ff });
-const sBtn = (bg, c, bd) => ({ padding: "8px 16px", borderRadius: 8, border: bd || "none", background: bg || "#6366f1", color: c || "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: ff, transition: "all 0.12s" });
-const sCard = { background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.055)", borderRadius: 12, padding: 14 };
-const sBadge = (c, bg) => ({ display: "inline-block", fontSize: 10, padding: "2px 8px", borderRadius: 14, background: bg || c + "18", color: c, fontWeight: 600, fontFamily: fm });
-const sLabel = { display: "block", fontSize: 10.5, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, marginTop: 12 };
-const sSec = { fontSize: 10, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 };
-
-// ════════════════════════════════════════════════
-// MODAL (shared)
+// MODAL
 // ════════════════════════════════════════════════
 
 function Modal({ title, onClose, children, w }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#0c0f16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "22px 26px", width: w || 580, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#f1f5f9" }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16 }}>✕</button>
-        </div>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ width: w || 580 }}>
+        {title && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)" }}>{title}</div>
+            <button onClick={onClose} className="btn btn-ghost btn-xs" style={{ fontSize: 14 }}>✕</button>
+          </div>
+        )}
         {children}
       </div>
     </div>
@@ -198,92 +231,67 @@ function Modal({ title, onClose, children, w }) {
 // AI ANALYSIS
 // ════════════════════════════════════════════════
 
-async function runAI(ad, t) {
+async function runAI(ad, t, onStatus, videoFile) {
+  const geminiReady = isGeminiConfigured();
+  const claudeReady = isConfigured("claude");
+  const geminiModel = getSelectedModel("gemini");
+  const claudeModel = getSelectedModel("claude");
+
+  try {
+    if (geminiReady && videoFile) {
+      const videoData = await prepareVideoFile(videoFile, onStatus);
+      if (onStatus) onStatus("Gemini is watching your ad...");
+      const result = await analyzeAdWithVideo(ad, t, videoData);
+      return { ...result, _engine: geminiModel, _mode: "video" };
+    } else if (geminiReady) {
+      if (onStatus) onStatus("Running Gemini text analysis...");
+      const result = await analyzeAdTextOnly(ad, t);
+      return { ...result, _engine: geminiModel, _mode: "text" };
+    } else if (claudeReady) {
+      if (onStatus) onStatus("Running Claude analysis...");
+      const result = await runClaude(ad, t);
+      return { ...result, _engine: claudeModel, _mode: "text" };
+    } else {
+      return { summary: "No AI configured. Add a Gemini or Claude API key in Settings.", findings: [], nextIterationPlan: null, suggestedLearnings: [], _engine: null, _mode: null };
+    }
+  } catch (e) {
+    return { summary: "Error: " + e.message, findings: [], nextIterationPlan: null, suggestedLearnings: [], _engine: null, _mode: null, _error: true };
+  }
+}
+
+
+async function runClaude(ad, t) {
+  const key = getApiKey("claude").trim();
   const la = lm(ad), tot = tm(ad), sn = { positive: 0, negative: 0, neutral: 0 };
   ad.comments.forEach(c => sn[c.sentiment]++);
-  const prompt = `You are an expert direct response advertising analyst for TikTok ads targeting the Saudi Arabian market. Analyze this ad's performance data + audience comments (including hidden negatives TikTok auto-hid which contain critical market intelligence).
 
-AD: "${ad.name}" (${ad.type})
+  const adData = `AD: "${ad.name}" (${ad.type})
 BRIEF: ${ad.brief}
 METRICS (latest day): CPA $${la?.cpa || "N/A"} | Spend $${la?.spend || 0} | Conv ${la?.conv || 0} | CTR ${la?.ctr || 0}% | CPM $${la?.cpm || 0}
-Thresholds: Green ≤$${t.green}, Yellow ≤$${t.yellow}, Red >$${t.yellow}
+Thresholds: Green <=$${t.green}, Yellow <=$${t.yellow}, Red >$${t.yellow}
 CPA TREND: ${ad.metrics.map(m => "$" + m.cpa).join(" → ")}
 TOTALS: $${tot?.spend || 0} spent, ${tot?.conv || 0} conversions, avg CPA $${tot?.ac || "N/A"}
 
 COMMENTS (${ad.comments.length} total — ${sn.positive} positive, ${sn.negative} negative, ${sn.neutral} neutral):
 ${ad.comments.map(c => `"${c.text}" [${c.sentiment}]${c.hidden ? " [HIDDEN BY TIKTOK]" : ""}`).join("\n")}
 
-ITERATION HISTORY: ${ad.iterations > 0 ? ad.iterHistory.map(h => "Iter " + h.iter + ": " + h.reason).join("; ") : "None"}
+ITERATION HISTORY: ${ad.iterations > 0 ? ad.iterHistory.map(h => "Iter " + h.iter + ": " + h.reason).join("; ") : "None"}`;
 
-Respond ONLY in JSON, no markdown fences or backticks:
-{"summary":"2-3 sentence assessment","findings":[{"type":"positive|negative|warning|action","text":"specific finding"}],"nextIterationPlan":"specific plan if losing, or null if winning","suggestedLearnings":[{"type":"hook_pattern|proof_structure|angle_theme|pacing|visual_style|objection_handling","text":"learning to capture"}]}`;
+  const prompt = getAnalysisPrompt().replace("{AD_DATA}", adData);
 
-  try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-5-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
-    const d = await r.json();
-    const tx = d.content?.map(b => b.text || "").join("") || "";
-    return JSON.parse(tx.replace(/```json|```/g, "").trim());
-  } catch (e) {
-    return { summary: "Error: " + e.message, findings: [], nextIterationPlan: null, suggestedLearnings: [] };
-  }
-}
-
-// ════════════════════════════════════════════════
-// NEW AD FORM (proper component)
-// ════════════════════════════════════════════════
-
-function NewAdForm({ onClose, dispatch }) {
-  const [f, setF] = useState({ name: "", type: "VSL", editor: "", deadline: "", brief: "", notes: "" });
-  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
-
-  return (
-    <Modal title="New Ad → Pre-Production" onClose={onClose} w={480}>
-      <span style={sLabel}>Ad Name</span>
-      <input value={f.name} onChange={e => set("name", e.target.value)} style={si()} placeholder="e.g. Hair Growth VSL v2" />
-      <span style={sLabel}>Type</span>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        {AD_TYPES.map(t => <button key={t} onClick={() => set("type", t)} style={{ fontSize: 11, padding: "4px 12px", borderRadius: 12, cursor: "pointer", fontFamily: ff, background: f.type === t ? "rgba(99,102,241,0.1)" : "transparent", border: f.type === t ? "1px solid rgba(99,102,241,0.2)" : "1px solid rgba(255,255,255,0.06)", color: f.type === t ? "#a5b4fc" : "#64748b" }}>{t}</button>)}
-      </div>
-      <span style={sLabel}>Editor</span>
-      <select value={f.editor} onChange={e => set("editor", e.target.value)} style={si()}>
-        <option value="">Unassigned</option>
-        {EDITORS_LIST.map(e => <option key={e} value={e}>{e}</option>)}
-      </select>
-      <span style={sLabel}>Deadline</span>
-      <input type="date" value={f.deadline} onChange={e => set("deadline", e.target.value)} style={si()} />
-      <span style={sLabel}>Brief</span>
-      <textarea value={f.brief} onChange={e => set("brief", e.target.value)} rows={3} style={{ ...si(), resize: "vertical" }} placeholder="Look/feel, hooks, pacing, references..." />
-      <span style={sLabel}>Notes</span>
-      <input value={f.notes} onChange={e => set("notes", e.target.value)} style={si()} placeholder="Quick notes..." />
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 16 }}>
-        <button onClick={onClose} style={sBtn("transparent", "#64748b", "1px solid rgba(255,255,255,0.08)")}>Cancel</button>
-        <button onClick={() => { if (f.name.trim()) { dispatch({ type: "ADD_AD", ad: f }); onClose(); } }} style={{ ...sBtn("#6366f1"), opacity: f.name.trim() ? 1 : 0.4 }}>Add to Pipeline</button>
-      </div>
-    </Modal>
-  );
-}
-
-// ════════════════════════════════════════════════
-// SETTINGS (proper component)
-// ════════════════════════════════════════════════
-
-function SettingsModal({ onClose, thresholds, setThresholds }) {
-  const [g, setG] = useState(thresholds.green);
-  const [y, setY] = useState(thresholds.yellow);
-  return (
-    <Modal title="CPA Thresholds" onClose={onClose} w={380}>
-      <div style={{ fontSize: 12, color: "#475569", marginBottom: 12 }}>Ads auto-classify based on latest CPA against these thresholds. All live ads reclassify instantly when you change them.</div>
-      <span style={sLabel}>🟢 Green (Winner) — CPA ≤</span>
-      <input type="number" step="0.01" value={g} onChange={e => setG(+e.target.value)} style={si()} />
-      <span style={sLabel}>🟡 Yellow (Medium) — CPA ≤</span>
-      <input type="number" step="0.01" value={y} onChange={e => setY(+e.target.value)} style={si()} />
-      <div style={{ fontSize: 12, color: "#475569", marginTop: 6 }}>🔴 Red (Losing) = anything above yellow</div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 16 }}>
-        <button onClick={onClose} style={sBtn("transparent", "#64748b", "1px solid rgba(255,255,255,0.08)")}>Cancel</button>
-        <button onClick={() => { setThresholds({ green: g, yellow: y }); onClose(); }} style={sBtn("#6366f1")}>Save</button>
-      </div>
-    </Modal>
-  );
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({ model: getSelectedModel("claude"), max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+  });
+  const d = await r.json();
+  const tx = d.content?.map(b => b.text || "").join("") || "";
+  return JSON.parse(tx.replace(/```json|```/g, "").trim());
 }
 
 // ════════════════════════════════════════════════
@@ -294,20 +302,14 @@ function checkGate(ad, fromStage, toStage) {
   const idx = SO.indexOf(toStage);
   const fromIdx = SO.indexOf(fromStage);
   if (idx < 0 || fromIdx < 0) return null;
-
-  // Moving backward is always allowed
   if (idx < fromIdx) return null;
-
-  // Pre → In: brief approved + editor assigned
   if (fromStage === "pre" && toStage === "in") {
     if (!ad.briefApproved) return "Brief must be approved before moving to In-Production";
     if (!ad.editor) return "Editor must be assigned before moving to In-Production";
   }
-  // In → Post: draft submitted
   if (fromStage === "in" && toStage === "post") {
     if (!ad.draftSubmitted && ad.drafts.length === 0) return "Editor must submit a draft before moving to Post-Production";
   }
-  // Post → Live: final approved
   if (fromStage === "post" && toStage === "live") {
     if (!ad.finalApproved) return "Final version must be approved before going Live";
     if (ad.revisionRequests.some(r => !r.resolved)) return "Unresolved revision requests — resolve before going Live";
@@ -316,14 +318,82 @@ function checkGate(ad, fromStage, toStage) {
 }
 
 // ════════════════════════════════════════════════
+// NEW AD FORM
+// ════════════════════════════════════════════════
+
+function NewAdForm({ onClose, dispatch, editors }) {
+  const [f, setF] = useState({ name: "", type: "VSL", editor: "", deadline: "", brief: "", notes: "", channelIds: emptyChIds() });
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const setChId = (ch, v) => setF(p => ({ ...p, channelIds: { ...p.channelIds, [ch]: v } }));
+
+  return (
+    <Modal title="New Ad" onClose={onClose} w={500}>
+      <label className="label" style={{ marginTop: 0 }}>Ad Name</label>
+      <input value={f.name} onChange={e => set("name", e.target.value)} className="input" placeholder="e.g. Hair Growth VSL v2" />
+
+      <label className="label">Type</label>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {AD_TYPES.map(t => (
+          <button key={t} onClick={() => set("type", t)} className={`btn btn-xs ${f.type === t ? "" : "btn-ghost"}`}
+            style={f.type === t ? { background: "var(--accent-bg)", color: "var(--accent-light)", border: "1px solid var(--accent-border)" } : {}}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label className="label">Editor</label>
+          <select value={f.editor} onChange={e => set("editor", e.target.value)} className="input">
+            <option value="">Unassigned</option>
+            {editors.map(e => <option key={e} value={e}>{e}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Deadline</label>
+          <input type="date" value={f.deadline} onChange={e => set("deadline", e.target.value)} className="input" />
+        </div>
+      </div>
+
+      <label className="label">Ad Set IDs <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-tertiary)" }}>(Triple Whale -- per channel)</span></label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {CHANNELS.map(ch => (
+          <div key={ch.id}>
+            <div style={{ fontSize: 10, color: ch.color, fontWeight: 600, marginBottom: 2 }}>{ch.label}</div>
+            <input value={f.channelIds[ch.id]} onChange={e => setChId(ch.id, e.target.value)} className="input" placeholder="Ad Set ID" />
+          </div>
+        ))}
+      </div>
+
+      <label className="label">Brief</label>
+      <textarea value={f.brief} onChange={e => set("brief", e.target.value)} rows={3} className="input" placeholder="Look/feel, hooks, pacing, references..." />
+
+      <label className="label">Notes</label>
+      <input value={f.notes} onChange={e => set("notes", e.target.value)} className="input" placeholder="Quick notes..." />
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+        <button onClick={onClose} className="btn btn-ghost">Cancel</button>
+        <button onClick={() => { if (f.name.trim()) { dispatch({ type: "ADD_AD", ad: f }); onClose(); } }}
+          className="btn btn-primary" style={{ opacity: f.name.trim() ? 1 : 0.4 }}>Add to Pipeline</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ════════════════════════════════════════════════
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role }) {
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors }) {
   const [tab, setTab] = useState("overview");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [scraping, setScraping] = useState(false);
+  const [scrapeErr, setScrapeErr] = useState(null);
+  const [aiStatus, setAiStatus] = useState(null);
+  const [videoFile, setVideoFile] = useState(null);
+  const videoInputRef = useRef(null);
+  const [tiktokUrl, setTiktokUrl] = useState(ad.tiktokUrl || "");
   const [nc, setNc] = useState({ text: "", sentiment: "neutral", hidden: false });
   const [nm, setNm] = useState({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" });
   const [nl, setNl] = useState({ type: "hook_pattern", text: "" });
@@ -333,9 +403,21 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role }) {
   const [en, setEn] = useState(ad.notes);
   const [ee, setEe] = useState(ad.editor || "");
   const [eDl, setEDl] = useState(ad.deadline || "");
+  const [eChIds, setEChIds] = useState(ad.channelIds || emptyChIds());
   const [revText, setRevText] = useState("");
   const [draftName, setDraftName] = useState("");
+  const [draftUrl, setDraftUrl] = useState("");
   const [gateErr, setGateErr] = useState(null);
+  const [mDateFrom, setMDateFrom] = useState("");
+  const [mDateTo, setMDateTo] = useState("");
+  const filterByDate = (metrics) => {
+    if (!metrics?.length) return metrics || [];
+    return metrics.filter(m => {
+      if (mDateFrom && m.date < mDateFrom) return false;
+      if (mDateTo && m.date > mDateTo) return false;
+      return true;
+    });
+  };
 
   const la = lm(ad), tot = tm(ad);
   const cl = ad.stage === "live" ? CL(la?.cpa, th) : "none";
@@ -347,23 +429,51 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role }) {
   const kids = allAds.filter(a => a.parentId === ad.id);
   const isEditor = role === "editor";
 
-  const analyze = async () => { setBusy(true); const r = await runAI(ad, th); dispatch({ type: "ADD_ANALYSIS", id: ad.id, analysis: { id: uid(), ts: now(), ...r } }); if (r.suggestedLearnings?.length) r.suggestedLearnings.forEach(l => dispatch({ type: "ADD_LEARNING", id: ad.id, learning: { id: uid(), type: l.type, text: l.text } })); setBusy(false); setTab("analysis"); };
+  const analyze = async () => {
+    setBusy(true); setAiStatus(null);
+    const r = await runAI(ad, th, setAiStatus, videoFile);
+    const engine = r._engine; const mode = r._mode; const hasError = r._error;
+    delete r._engine; delete r._mode; delete r._error;
+    dispatch({ type: "ADD_ANALYSIS", id: ad.id, analysis: { id: uid(), ts: now(), engine, mode, ...r } });
+    if (r.suggestedLearnings?.length) r.suggestedLearnings.forEach(l => dispatch({ type: "ADD_LEARNING", id: ad.id, learning: { id: uid(), type: l.type, text: l.text } }));
+    setBusy(false);
+    if (engine && !hasError) {
+      const modeLabel = mode === "video" ? "video + text" : "text only";
+      setAiStatus(`Analysis complete -- ${engine} (${modeLabel})`);
+      setTimeout(() => setAiStatus(null), 5000);
+    } else {
+      setAiStatus(null);
+    }
+    setTab("analysis");
+  };
 
-  const scrapeComments = () => { setScraping(true); setTimeout(() => { const fakeComments = [
-    { id: uid(), text: "Does this actually work for receding hairline?", sentiment: "neutral", hidden: false },
-    { id: uid(), text: "I've been using it for 2 months, definitely seeing results", sentiment: "positive", hidden: false },
-    { id: uid(), text: "Overpriced trash", sentiment: "negative", hidden: true },
-  ]; fakeComments.forEach(c => dispatch({ type: "ADD_COMMENT", id: ad.id, comment: c })); dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Scraped ${fakeComments.length} new comments (${fakeComments.filter(c=>c.hidden).length} hidden)` } }); setScraping(false); }, 1500); };
+  const scrapeComments = async () => {
+    const url = tiktokUrl.trim() || ad.tiktokUrl;
+    if (!url) { setScrapeErr("Add a TikTok URL first"); setTimeout(() => setScrapeErr(null), 3000); return; }
+    if (!isApifyConfigured()) { setScrapeErr("Configure Apify API key in Settings"); setTimeout(() => setScrapeErr(null), 3000); return; }
+    setScraping(true); setScrapeErr(null);
+    try {
+      // Save the TikTok URL to the ad
+      if (tiktokUrl.trim()) dispatch({ type: "UPDATE", id: ad.id, data: { tiktokUrl: tiktokUrl.trim() } });
+      const comments = await scrapeTikTokComments(url, 100);
+      comments.forEach(c => dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), text: c.text, sentiment: c.sentiment, hidden: c.hidden } }));
+      dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Scraped ${comments.length} comments from TikTok` } });
+    } catch (e) {
+      setScrapeErr(e.message);
+      setTimeout(() => setScrapeErr(null), 5000);
+    }
+    setScraping(false);
+  };
 
   const addMetric = () => { const m = { date: nm.date, cpa: +nm.cpa, spend: +nm.spend, conv: +nm.conv, ctr: +nm.ctr, cpm: +nm.cpm }; if (!m.cpa || !m.spend) return; dispatch({ type: "ADD_METRIC", id: ad.id, metric: m }); setNm({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" }); };
   const addComment = () => { if (!nc.text.trim()) return; dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), ...nc, text: nc.text.trim() } }); setNc({ text: "", sentiment: "neutral", hidden: false }); };
-  const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { brief: eb, notes: en, editor: ee, deadline: eDl } });
+  const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } });
   const sendMsg = () => { if (!msg.trim()) return; dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: isEditor ? ad.editor || "Editor" : "You", text: msg.trim(), ts: now() } }); setMsg(""); };
   const addLearning = () => { if (!nl.text.trim()) return; dispatch({ type: "ADD_LEARNING", id: ad.id, learning: { id: uid(), ...nl, text: nl.text.trim() } }); setNl({ type: "hook_pattern", text: "" }); };
   const createVar = () => { if (!vf.name.trim()) return; dispatch({ type: "CREATE_VAR", pid: ad.id, name: vf.name.trim(), brief: vf.brief.trim(), type: ad.type, vt: vm.id }); setVm(null); setVf({ name: "", brief: "" }); };
   const doIter = () => { const last = ad.analyses[ad.analyses.length - 1]; dispatch({ type: "ITERATE", id: ad.id, reason: last?.nextIterationPlan || last?.summary || "Based on metrics" }); };
   const doKill = () => dispatch({ type: "KILL", id: ad.id });
-  const submitDraft = () => { if (!draftName.trim()) return; dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft: { id: uid(), name: draftName.trim(), version: ad.drafts.length + 1, ts: now(), status: "in-review" } }); setDraftName(""); };
+  const submitDraft = () => { if (!draftName.trim()) return; dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft: { id: uid(), name: draftName.trim(), url: draftUrl.trim() || null, version: ad.drafts.length + 1, ts: now(), status: "in-review" } }); setDraftName(""); setDraftUrl(""); };
   const requestRevision = () => { if (!revText.trim()) return; dispatch({ type: "ADD_REVISION", id: ad.id, rev: { id: uid(), from: "Adolf", text: revText.trim(), ts: now(), resolved: false } }); setRevText(""); };
   const resolveRevision = (rid) => dispatch({ type: "RESOLVE_REVISION", id: ad.id, rid });
   const approveDraft = (did) => dispatch({ type: "APPROVE_DRAFT", id: ad.id, did });
@@ -374,196 +484,261 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role }) {
     dispatch({ type: "MOVE", id: ad.id, stage });
   };
 
+  const [commentFilter, setCommentFilter] = useState("all");
+
   const tabs = [
     { id: "overview", l: "Overview" },
     { id: "drafts", l: `Drafts (${ad.drafts.length})` },
     { id: "metrics", l: `Metrics (${ad.metrics.length})` },
     { id: "comments", l: `Comments (${ad.comments.length})` },
-    { id: "analysis", l: `Analysis (${ad.analyses.length})` },
     { id: "thread", l: `Thread (${ad.thread.length})` },
+    { id: "analysis", l: `Analysis (${ad.analyses.length})` },
     { id: "learnings", l: `Learnings (${ad.learnings.length})` },
   ];
+
+  const filteredComments = commentFilter === "all" ? ad.comments : ad.comments.filter(c => c.sentiment === commentFilter);
+
+  const findingStyle = (type) => {
+    const map = {
+      positive: { c: "var(--green-light)", bg: "var(--green-bg)", bc: "var(--green-border)", ic: "✓" },
+      negative: { c: "var(--red-light)", bg: "var(--red-bg)", bc: "var(--red-border)", ic: "✕" },
+      warning: { c: "var(--yellow-light)", bg: "var(--yellow-bg)", bc: "var(--yellow-border)", ic: "⚠" },
+      action: { c: "var(--accent-light)", bg: "var(--accent-bg)", bc: "var(--accent-border)", ic: "→" },
+    };
+    return map[type] || map.action;
+  };
 
   return (
     <Modal title="" onClose={onClose} w={720}>
       {/* Header */}
-      <div style={{ marginTop: -8, marginBottom: 12 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 5 }}>{ad.name}</div>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={sBadge(stg.color)}>{stg.label}</span>
-          <span style={sBadge("#94a3b8", "rgba(255,255,255,0.04)")}>{ad.type}</span>
-          {ad.editor && <span style={sBadge("#94a3b8", "rgba(255,255,255,0.04)")}>⚙ {ad.editor}</span>}
-          {ad.stage === "live" && la && <span style={{ ...sBadge(cs.c, cs.bg), fontWeight: 700 }}>{cs.l} ${la.cpa}</span>}
-          {ad.iterations > 0 && <span style={sBadge("#d97706")}>Iter {ad.iterations}/{ad.maxIter}</span>}
-          {over && <span style={sBadge("#ef4444", "rgba(239,68,68,0.1)")}>⚠ OVERDUE</span>}
-          {ad.deadline && !over && <span style={sBadge("#64748b", "rgba(255,255,255,0.04)")}>Due {fd(ad.deadline)}</span>}
-          {winner && <span style={sBadge("#10b981", "rgba(16,185,129,0.12)")}>🏆 WINNER ({gdays}d)</span>}
-          {ad.parentId && <span style={sBadge("#6ee7b7", "rgba(16,185,129,0.08)")}>variation</span>}
-          {ad.briefApproved && <span style={sBadge("#10b981", "rgba(16,185,129,0.06)")}>✓ Brief</span>}
-          {ad.draftSubmitted && <span style={sBadge("#3b82f6", "rgba(59,130,246,0.06)")}>✓ Draft</span>}
-          {ad.finalApproved && <span style={sBadge("#10b981", "rgba(16,185,129,0.06)")}>✓ Final</span>}
+      <div style={{ marginTop: -4, marginBottom: 14 }}>
+        <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>{ad.name}</div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="badge" style={{ background: stg.color + "18", color: stg.color }}>{stg.label}</span>
+          <span className="badge">{ad.type}</span>
+          {ad.editor && <span className="badge">⚙ {ad.editor}</span>}
+          {ad.stage === "live" && la && <span className="badge" style={{ background: cs.bg, color: cs.c, fontWeight: 700 }}>{cs.l} {CUR} {la.cpa}</span>}
+          {ad.iterations > 0 && <span className="badge badge-yellow">Iter {ad.iterations}/{ad.maxIter}</span>}
+          {over && <span className="badge badge-red">OVERDUE</span>}
+          {ad.deadline && !over && <span className="badge">Due {fd(ad.deadline)}</span>}
+          {winner && <span className="badge badge-green">WINNER ({gdays}d)</span>}
+          {ad.parentId && <span className="badge badge-green">variation</span>}
+          {ad.briefApproved && <span className="badge badge-green">Brief</span>}
+          {ad.draftSubmitted && <span className="badge badge-accent">Draft</span>}
+          {ad.finalApproved && <span className="badge badge-green">Final</span>}
         </div>
       </div>
 
-      {/* Stage gate error */}
-      {gateErr && <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", marginBottom: 10, fontSize: 12, color: "#fca5a5" }}>🚫 {gateErr}</div>}
+      {/* Gate error */}
+      {gateErr && <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>🚫 {gateErr}</div>}
 
       {/* Stage movement */}
       {ad.stage !== "killed" && !isEditor && (
-        <div style={{ display: "flex", gap: 4, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, color: "#334155", marginRight: 4 }}>Move:</span>
+        <div style={{ display: "flex", gap: 4, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginRight: 4 }}>Move to:</span>
           {SO.filter(s => s !== ad.stage).map(s => {
             const st = STAGES.find(x => x.id === s);
-            return <button key={s} onClick={() => tryMove(s)} style={{ fontSize: 10.5, padding: "4px 10px", borderRadius: 7, cursor: "pointer", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", color: st.color, fontFamily: ff, fontWeight: 500 }}>{st.icon} {st.label}</button>;
+            return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color }}>{st.icon} {st.label}</button>;
           })}
           {ad.iterations >= ad.maxIter && ad.stage === "live" && CL(la?.cpa, th) === "red" && (
-            <button onClick={doKill} style={{ fontSize: 10.5, padding: "4px 10px", borderRadius: 7, cursor: "pointer", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", color: "#ef4444", fontFamily: ff, fontWeight: 600 }}>☠ Kill Ad</button>
+            <button onClick={doKill} className="btn btn-danger btn-xs">Kill Ad</button>
           )}
         </div>
       )}
 
       {/* Alerts */}
       {ad.stage === "live" && cl === "green" && (
-        <div style={{ padding: "9px 13px", borderRadius: 9, background: "rgba(16,185,129,0.05)", border: "1px solid rgba(16,185,129,0.12)", marginBottom: 10, fontSize: 12, color: "#6ee7b7" }}>
-          🚀 <b>Winner.</b> {winner ? "Confirmed (5+ days). Scale aggressively via variations." : `${gdays}/5 green days to confirm.`}
+        <div className="card-flat" style={{ background: "var(--green-bg)", border: "1px solid var(--green-border)", marginBottom: 10, fontSize: 12.5, color: "var(--green-light)" }}>
+          {winner ? "Confirmed winner (5+ days). Scale aggressively via variations." : `${gdays}/5 green days to confirm winner.`}
         </div>
       )}
       {ad.stage === "live" && cl === "red" && !isEditor && (
-        <div style={{ padding: "9px 13px", borderRadius: 9, background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.1)", marginBottom: 10, fontSize: 12, color: "#fca5a5" }}>
-          🔻 <b>Above red threshold.</b> Iter {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached — kill or pivot." : "Run analysis → iterate."}
+        <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>
+          <div>Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached — kill or pivot." : "Run analysis then iterate."}</div>
           {ad.iterations < ad.maxIter && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <button onClick={analyze} disabled={busy} style={sBtn("rgba(99,102,241,0.12)", "#a5b4fc", "1px solid rgba(99,102,241,0.2)")}>{busy ? "Analyzing..." : "🔬 Run AI Analysis"}</button>
-            <button onClick={doIter} style={sBtn("rgba(239,68,68,0.1)", "#fca5a5", "1px solid rgba(239,68,68,0.2)")}>↻ Iterate → Pre</button>
+            <button onClick={analyze} disabled={busy} className="btn btn-ghost btn-sm">{busy ? "Analyzing..." : "Run AI Analysis"}</button>
+            <button onClick={doIter} className="btn btn-danger btn-sm">Iterate</button>
           </div>}
         </div>
       )}
       {ad.stage === "killed" && (
-        <div style={{ padding: "9px 13px", borderRadius: 9, background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.08)", marginBottom: 10, fontSize: 12, color: "#fca5a5" }}>
-          ☠ <b>Killed</b> — ad archived after {ad.iterations} iterations. Learnings preserved.
+        <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>
+          Killed — ad archived after {ad.iterations} iterations. Learnings preserved.
         </div>
       )}
-
-      {/* Unresolved revisions alert */}
       {ad.revisionRequests.filter(r => !r.resolved).length > 0 && (
-        <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.12)", marginBottom: 10, fontSize: 12, color: "#fbbf24" }}>
-          📝 {ad.revisionRequests.filter(r => !r.resolved).length} unresolved revision request(s)
+        <div className="card-flat" style={{ background: "var(--yellow-bg)", border: "1px solid var(--yellow-border)", marginBottom: 10, fontSize: 12.5, color: "var(--yellow-light)" }}>
+          {ad.revisionRequests.filter(r => !r.resolved).length} unresolved revision request(s)
         </div>
       )}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 3, marginBottom: 14, flexWrap: "wrap" }}>
-        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "5px 12px", borderRadius: 7, fontSize: 11, fontWeight: 500, cursor: "pointer", fontFamily: ff, background: tab === t.id ? "rgba(99,102,241,0.1)" : "transparent", border: tab === t.id ? "1px solid rgba(99,102,241,0.2)" : "1px solid rgba(255,255,255,0.04)", color: tab === t.id ? "#a5b4fc" : "#64748b" }}>{t.l}</button>)}
+      <div className="tabs" style={{ flexWrap: "wrap" }}>
+        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`tab-btn ${tab === t.id ? "active" : ""}`}>{t.l}</button>)}
       </div>
 
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-            <div><span style={sLabel}>Editor</span><select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} style={si()}><option value="">Unassigned</option>{EDITORS_LIST.map(e => <option key={e} value={e}>{e}</option>)}</select></div>
-            <div><span style={sLabel}>Deadline</span><input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} style={si()} /></div>
+        <div className="animate-fade">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <div>
+              <label className="label" style={{ marginTop: 0 }}>Editor</label>
+              <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
+                <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label" style={{ marginTop: 0 }}>Deadline</label>
+              <input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} className="input" />
+            </div>
           </div>
-          <span style={sLabel}>Brief</span>
-          <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} style={{ ...si(), resize: "vertical", minHeight: 55 }} />
-          <span style={sLabel}>Notes</span>
-          <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} style={{ ...si(), resize: "vertical", minHeight: 35 }} />
 
-          {/* Gate toggles */}
+          {!isEditor && <div style={{ marginBottom: 14 }}>
+            <label className="label">Ad Set IDs <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-tertiary)" }}>(Triple Whale -- per channel)</span></label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {CHANNELS.map(ch => {
+                const hasId = eChIds[ch.id]?.trim();
+                const chm = (ad.channelMetrics || {})[ch.id] || [];
+                const status = hasId ? (chm.length > 0 ? "synced" : "linked") : null;
+                return (
+                  <div key={ch.id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                      <span style={{ fontSize: 10.5, color: ch.color, fontWeight: 600 }}>{ch.label}</span>
+                      {status === "synced" && <span style={{ fontSize: 9, color: "var(--green)" }}>● synced</span>}
+                      {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>● no data yet</span>}
+                    </div>
+                    <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Ad Set ID" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>}
+
+          <label className="label">Brief</label>
+          <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" />
+          <label className="label">Notes</label>
+          <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" />
+
+          {!isEditor && <>
+            <label className="label">TikTok Video URL <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-muted)" }}>(for comment scraping)</span></label>
+            <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
+          </>}
+
           {!isEditor && (
-            <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-              {[["briefApproved", "Approve Brief", "#8b5cf6"], ["draftSubmitted", "Mark Draft Submitted", "#d97706"], ["finalApproved", "Approve Final", "#10b981"]].map(([k, label, col]) => (
-                <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })} style={{
-                  fontSize: 11, padding: "5px 12px", borderRadius: 8, cursor: "pointer", fontFamily: ff, fontWeight: 600,
-                  background: ad[k] ? col + "15" : "rgba(255,255,255,0.02)",
-                  border: `1px solid ${ad[k] ? col + "40" : "rgba(255,255,255,0.06)"}`,
-                  color: ad[k] ? col : "#475569",
-                }}>{ad[k] ? "✓ " : ""}{label}</button>
+            <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap" }}>
+              {[["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
+                <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
+                  className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
+                  style={ad[k] ? { background: col + "15", borderColor: col + "40", color: col } : {}}>
+                  {ad[k] ? "✓ " : ""}{label}
+                </button>
               ))}
             </div>
           )}
 
-          <button onClick={save} style={{ ...sBtn("#6366f1"), marginTop: 12 }}>Save Changes</button>
+          <button onClick={save} className="btn btn-primary btn-sm" style={{ marginTop: 14 }}>Save Changes</button>
 
-          {/* Iteration history */}
-          {ad.iterHistory.length > 0 && <div style={{ marginTop: 16 }}><div style={sSec}>Iteration History</div>
-            {ad.iterHistory.map((h, i) => <div key={i} style={{ ...sCard, padding: "8px 12px", marginBottom: 5 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}><span style={sBadge("#d97706")}>Iter {h.iter}</span><span style={{ fontSize: 10, color: "#475569", fontFamily: fm }}>{h.date}</span></div>
-              <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.4 }}>{h.reason}</div>
+          {ad.iterHistory.length > 0 && <div style={{ marginTop: 18 }}>
+            <div className="section-title">Iteration History</div>
+            {ad.iterHistory.map((h, i) => <div key={i} className="card-flat" style={{ marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                <span className="badge badge-yellow">Iter {h.iter}</span>
+                <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{h.date}</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>{h.reason}</div>
             </div>)}
           </div>}
 
-          {/* Variations for winners */}
-          {ad.stage === "live" && cl === "green" && !isEditor && <div style={{ marginTop: 16 }}>
-            <div style={sSec}>Create Variations</div>
+          {ad.stage === "live" && cl === "green" && !isEditor && <div style={{ marginTop: 18 }}>
+            <div className="section-title">Create Variations</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-              {VT.map(v => <div key={v.id} onClick={() => { setVm(v); setVf({ name: ad.name + " — " + v.label, brief: "" }); }} style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.015)", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(16,185,129,0.2)"} onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)"}>
-                <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 2 }}>{v.label}</div><div style={{ fontSize: 10, color: "#475569" }}>{v.desc}</div>
+              {VT.map(v => <div key={v.id} onClick={() => { setVm(v); setVf({ name: ad.name + " — " + v.label, brief: "" }); }}
+                className="card-flat" style={{ cursor: "pointer", transition: "all var(--transition)" }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "var(--green-border)"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border-light)"}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2, color: "var(--text-primary)" }}>{v.label}</div>
+                <div style={{ fontSize: 10.5, color: "var(--text-tertiary)" }}>{v.desc}</div>
               </div>)}
             </div>
-            {kids.length > 0 && <div style={{ marginTop: 8, fontSize: 11, color: "#475569" }}>Variations: {kids.map(c => <span key={c.id} style={{ ...sBadge("#a5b4fc", "rgba(99,102,241,0.08)"), marginRight: 3 }}>{c.name}</span>)}</div>}
-            {vm && <div style={{ ...sCard, marginTop: 10, borderColor: "rgba(16,185,129,0.15)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>New: {vm.label}</div>
-              <span style={sLabel}>Name</span><input value={vf.name} onChange={e => setVf(p => ({ ...p, name: e.target.value }))} style={si()} />
-              <span style={sLabel}>Brief</span><textarea value={vf.brief} onChange={e => setVf(p => ({ ...p, brief: e.target.value }))} style={{ ...si(), minHeight: 40, resize: "vertical" }} placeholder={vm.desc} />
-              <div style={{ display: "flex", gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
-                <button onClick={() => setVm(null)} style={sBtn("transparent", "#64748b", "1px solid rgba(255,255,255,0.08)")}>Cancel</button>
-                <button onClick={createVar} style={sBtn("#10b981")}>Create</button>
+            {kids.length > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--text-tertiary)" }}>Variations: {kids.map(c => <span key={c.id} className="badge badge-accent" style={{ marginRight: 3 }}>{c.name}</span>)}</div>}
+            {vm && <div className="card" style={{ marginTop: 10, borderColor: "var(--green-border)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>New: {vm.label}</div>
+              <label className="label" style={{ marginTop: 0 }}>Name</label>
+              <input value={vf.name} onChange={e => setVf(p => ({ ...p, name: e.target.value }))} className="input" />
+              <label className="label">Brief</label>
+              <textarea value={vf.brief} onChange={e => setVf(p => ({ ...p, brief: e.target.value }))} className="input" placeholder={vm.desc} />
+              <div style={{ display: "flex", gap: 6, marginTop: 10, justifyContent: "flex-end" }}>
+                <button onClick={() => setVm(null)} className="btn btn-ghost btn-sm">Cancel</button>
+                <button onClick={createVar} className="btn btn-success btn-sm">Create</button>
               </div>
             </div>}
           </div>}
         </div>
       )}
 
-      {/* ── DRAFTS & REVISIONS ── */}
+      {/* ── DRAFTS ── */}
       {tab === "drafts" && (
-        <div>
-          <div style={sSec}>Draft Versions</div>
-          {ad.drafts.length === 0 && <div style={{ padding: 16, textAlign: "center", color: "#334155", fontSize: 12 }}>No drafts submitted yet</div>}
+        <div className="animate-fade">
+          <div className="section-title">Draft Versions</div>
+          {ad.drafts.length === 0 && <div className="empty-state">No drafts submitted yet</div>}
           {ad.drafts.map(d => (
-            <div key={d.id} style={{ ...sCard, padding: "9px 13px", marginBottom: 6 }}>
+            <div key={d.id} className="card-flat" style={{ marginBottom: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 13 }}>📄</span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{d.name}</span>
-                  <span style={sBadge("#94a3b8", "rgba(255,255,255,0.04)")}>v{d.version}</span>
-                  <span style={sBadge(d.status === "approved" ? "#10b981" : d.status === "revision-requested" ? "#d97706" : "#3b82f6", d.status === "approved" ? "rgba(16,185,129,0.1)" : d.status === "revision-requested" ? "rgba(217,119,6,0.1)" : "rgba(59,130,246,0.1)")}>{d.status}</span>
+                  <span style={{ fontSize: 14 }}>📄</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.name}</span>
+                  <span className="badge">v{d.version}</span>
+                  <span className={`badge ${d.status === "approved" ? "badge-green" : d.status === "revision-requested" ? "badge-yellow" : "badge-accent"}`}>{d.status}</span>
                 </div>
-                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, color: "#475569", fontFamily: fm }}>{d.ts}</span>
-                  {d.status === "in-review" && !isEditor && <button onClick={() => approveDraft(d.id)} style={sBtn("rgba(16,185,129,0.1)", "#6ee7b7", "1px solid rgba(16,185,129,0.2)")}>✓ Approve</button>}
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
+                  {d.status === "in-review" && !isEditor && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
                 </div>
               </div>
+              {d.url && <div style={{ marginTop: 5 }}>
+                <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent-light)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"}
+                  onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}>
+                  🔗 {d.url.length > 60 ? d.url.slice(0, 60) + "..." : d.url}
+                </a>
+              </div>}
             </div>
           ))}
-
-          {/* Submit draft (editor action) */}
-          <div style={{ ...sCard, marginTop: 12, borderColor: "rgba(255,255,255,0.07)" }}>
-            <div style={sSec}>Submit Draft</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input value={draftName} onChange={e => setDraftName(e.target.value)} style={{ ...si(), flex: 1 }} placeholder="File name (e.g. ad_draft_v2.mp4)" />
-              <button onClick={submitDraft} style={{ ...sBtn("#3b82f6"), opacity: draftName.trim() ? 1 : 0.4 }}>Upload Draft</button>
+          <div className="card-flat" style={{ marginTop: 14 }}>
+            <div className="section-title">Submit Draft</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div>
+                <label className="label" style={{ marginTop: 0 }}>File Name</label>
+                <input value={draftName} onChange={e => setDraftName(e.target.value)} className="input" placeholder="e.g. ad_draft_v2.mp4" />
+              </div>
+              <div>
+                <label className="label" style={{ marginTop: 0 }}>File URL <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-muted)" }}>(Google Drive, Dropbox, etc.)</span></label>
+                <input value={draftUrl} onChange={e => setDraftUrl(e.target.value)} className="input" placeholder="https://drive.google.com/file/d/..." />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={submitDraft} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4 }}>Submit Draft</button>
+              </div>
             </div>
           </div>
-
-          {/* Revision requests */}
-          <div style={{ marginTop: 16 }}><div style={sSec}>Revision Requests</div>
-            {ad.revisionRequests.length === 0 && <div style={{ padding: 12, textAlign: "center", color: "#334155", fontSize: 12 }}>No revision requests</div>}
+          <div style={{ marginTop: 18 }}>
+            <div className="section-title">Revision Requests</div>
+            {ad.revisionRequests.length === 0 && <div className="empty-state">No revision requests</div>}
             {ad.revisionRequests.map(r => (
-              <div key={r.id} style={{ ...sCard, padding: "9px 13px", marginBottom: 6, borderColor: r.resolved ? "rgba(16,185,129,0.1)" : "rgba(245,158,11,0.12)", background: r.resolved ? "rgba(16,185,129,0.02)" : "rgba(245,158,11,0.03)" }}>
+              <div key={r.id} className="card-flat" style={{ marginBottom: 6, borderColor: r.resolved ? "var(--green-border)" : "var(--yellow-border)", background: r.resolved ? "var(--green-bg)" : "var(--yellow-bg)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>{r.from}</span>
-                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: "#475569", fontFamily: fm }}>{r.ts}</span>
-                    {r.resolved ? <span style={sBadge("#10b981", "rgba(16,185,129,0.1)")}>Resolved</span> : <span style={sBadge("#d97706", "rgba(217,119,6,0.1)")}>Open</span>}
-                    {!r.resolved && <button onClick={() => resolveRevision(r.id)} style={sBtn("rgba(16,185,129,0.1)", "#6ee7b7", "1px solid rgba(16,185,129,0.2)")}>✓</button>}
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-primary)" }}>{r.from}</span>
+                  <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                    <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{r.ts}</span>
+                    <span className={`badge ${r.resolved ? "badge-green" : "badge-yellow"}`}>{r.resolved ? "Resolved" : "Open"}</span>
+                    {!r.resolved && <button onClick={() => resolveRevision(r.id)} className="btn btn-success btn-xs">✓</button>}
                   </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "#94a3b8", lineHeight: 1.4 }}>{r.text}</div>
+                <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>{r.text}</div>
               </div>
             ))}
-
-            {!isEditor && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <input value={revText} onChange={e => setRevText(e.target.value)} style={{ ...si(), flex: 1 }} placeholder="Describe revision needed..." />
-              <button onClick={requestRevision} style={{ ...sBtn("#d97706"), opacity: revText.trim() ? 1 : 0.4 }}>Request Revision</button>
+            {!isEditor && <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              <input value={revText} onChange={e => setRevText(e.target.value)} className="input" style={{ flex: 1 }} placeholder="Describe revision needed..." />
+              <button onClick={requestRevision} className="btn btn-ghost btn-sm" style={{ opacity: revText.trim() ? 1 : 0.4, color: "var(--yellow)" }}>Request</button>
             </div>}
           </div>
         </div>
@@ -571,124 +746,264 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role }) {
 
       {/* ── METRICS ── */}
       {tab === "metrics" && (
-        <div>
-          {tot && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7, marginBottom: 14 }}>
-            {[["Latest CPA", "$" + tot.lc, cs.c], ["Spend", "$" + tot.spend.toLocaleString(), "#e2e8f0"], ["Conv", tot.conv, "#6ee7b7"], ["Avg CTR", tot.at + "%", "#a5b4fc"], ["Avg CPM", "$" + tot.am, "#e2e8f0"], ["ROAS", tot.roas + "x", tot.roas >= 2 ? "#10b981" : "#d97706"]].map(([l, v, c]) => (
-              <div key={l} style={{ textAlign: "center", padding: "9px 5px", background: "rgba(255,255,255,0.02)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.04)" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: c, fontFamily: fm }}>{v}</div>
-                <div style={{ fontSize: 9, color: "#475569", textTransform: "uppercase" }}>{l}</div>
-              </div>
-            ))}</div>}
+        <div className="animate-fade">
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Date Range:</span>
+            <input type="date" value={mDateFrom} onChange={e => setMDateFrom(e.target.value)} className="input" style={{ width: "auto", padding: "5px 9px", fontSize: 11.5 }} />
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>to</span>
+            <input type="date" value={mDateTo} onChange={e => setMDateTo(e.target.value)} className="input" style={{ width: "auto", padding: "5px 9px", fontSize: 11.5 }} />
+            {(mDateFrom || mDateTo) && <button onClick={() => { setMDateFrom(""); setMDateTo(""); }} className="btn btn-ghost btn-xs">Clear</button>}
+          </div>
 
-          {ad.metrics.length > 0 && <div style={{ marginBottom: 14 }}>
-            <div style={sSec}>CPA Trend</div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 80 }}>
-              {ad.metrics.map((m, i) => { const mx = Math.max(...ad.metrics.map(x => x.cpa)); const h = Math.max(10, (m.cpa / mx) * 65); const lv = CL(m.cpa, th); const col = CS[lv].c;
-                return <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                  <span style={{ fontSize: 9, color: col, fontFamily: fm, fontWeight: 600 }}>${m.cpa}</span>
-                  <div style={{ width: "100%", height: h, background: col + "22", borderRadius: "3px 3px 0 0", border: "1px solid " + col + "30" }} />
-                  <span style={{ fontSize: 8, color: "#334155" }}>{fd(m.date)}</span>
-                </div>; })}
-            </div></div>}
+          {CHANNELS.map(ch => {
+            const chmRaw = (ad.channelMetrics || {})[ch.id] || [];
+            const chm = filterByDate(chmRaw);
+            const chId = (ad.channelIds || {})[ch.id];
+            const chTot = tmCh(chm);
+            const chLast = chm.length ? chm[chm.length - 1] : null;
+            const chCl = chLast ? CL(chLast.cpa, th) : "none";
+            const chCs = CS[chCl];
+            if (!chId && !chmRaw.length) return null;
+            return (
+              <div key={ch.id} className="card" style={{ marginBottom: 10, borderColor: chm.length ? ch.color + "30" : "var(--border-light)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: ch.color }} />
+                    <span style={{ fontSize: 14, fontWeight: 700, color: ch.color }}>{ch.label}</span>
+                    {chLast && <span className="badge" style={{ background: chCs.bg, color: chCs.c }}>{chCs.l}</span>}
+                  </div>
+                  {chId && !chmRaw.length && <span className="badge badge-yellow">No data synced</span>}
+                </div>
+                {chTot && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 10 }}>
+                  {[["CPA", CUR + " " + chTot.lc, chCs.c], ["Spend", CUR + " " + chTot.spend.toLocaleString(), "var(--text-primary)"], ["Conv", chTot.conv, "var(--green-light)"], ["CTR", chTot.at + "%", "var(--accent-light)"], ["CPM", CUR + " " + chTot.am, "var(--text-primary)"], ["ROAS", (chLast?.roas || 0) + "x", (chLast?.roas || 0) >= 2 ? "var(--green)" : "var(--yellow)"]].map(([l, v, c]) => (
+                    <div key={l} className="stat-box">
+                      <div className="stat-value" style={{ color: c }}>{v}</div>
+                      <div className="stat-label">{l}</div>
+                    </div>
+                  ))}</div>}
+                {chm.length > 0 && <div>
+                  <div style={{ fontSize: 9.5, color: "var(--text-tertiary)", fontWeight: 600, textTransform: "uppercase", marginBottom: 5 }}>CPA Trend</div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 55 }}>
+                    {chm.map((m, i) => { const mx = Math.max(...chm.map(x => x.cpa)); const h = mx > 0 ? Math.max(8, (m.cpa / mx) * 45) : 8; const lv = CL(m.cpa, th); const col = CS[lv].c;
+                      return <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                        <span style={{ fontSize: 8.5, color: col, fontFamily: "var(--fm)", fontWeight: 600 }}>{CUR} {m.cpa}</span>
+                        <div style={{ width: "100%", height: h, background: col, opacity: 0.2, borderRadius: "3px 3px 0 0" }} />
+                        <span style={{ fontSize: 7.5, color: "var(--text-muted)" }}>{fd(m.date)}</span>
+                      </div>; })}
+                  </div></div>}
+                {chm.length > 0 && <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 9.5, color: "var(--text-tertiary)", fontWeight: 600, textTransform: "uppercase", marginBottom: 5 }}>Daily Breakdown</div>
+                  <div style={{ fontSize: 10.5, fontFamily: "var(--fm)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr 1fr", gap: 3, padding: "5px 0", borderBottom: "1px solid var(--border)", color: "var(--text-tertiary)", fontWeight: 600 }}>
+                      <span>Date</span><span>CPA</span><span>Spend</span><span>Conv</span><span>CTR</span><span>CPM</span><span>ROAS</span>
+                    </div>
+                    {[...chm].reverse().map((m, i) => { const lv = CL(m.cpa, th); const col = CS[lv].c; return (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr 1fr", gap: 3, padding: "4px 0", borderBottom: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                        <span style={{ color: "var(--text-tertiary)" }}>{fd(m.date)}</span>
+                        <span style={{ color: col, fontWeight: 600 }}>{CUR} {m.cpa}</span>
+                        <span>{CUR} {m.spend}</span><span>{m.conv}</span><span>{m.ctr}%</span><span>{CUR} {m.cpm}</span>
+                        <span style={{ color: m.roas >= 2 ? "var(--green)" : "var(--yellow)" }}>{m.roas}x</span>
+                      </div>
+                    ); })}
+                  </div>
+                </div>}
+              </div>
+            );
+          })}
+
+          {tot && <div style={{ marginTop: 8 }}>
+            <div className="section-title">Combined / Manual Metrics</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 16 }}>
+              {[["Latest CPA", CUR + " " + tot.lc, cs.c], ["Spend", CUR + " " + tot.spend.toLocaleString(), "var(--text-primary)"], ["Conv", tot.conv, "var(--green-light)"], ["Avg CTR", tot.at + "%", "var(--accent-light)"], ["Avg CPM", CUR + " " + tot.am, "var(--text-primary)"], ["ROAS", tot.roas + "x", tot.roas >= 2 ? "var(--green)" : "var(--yellow)"]].map(([l, v, c]) => (
+                <div key={l} className="stat-box">
+                  <div className="stat-value" style={{ color: c }}>{v}</div>
+                  <div className="stat-label">{l}</div>
+                </div>
+              ))}</div></div>}
 
           {!isEditor && <div>
-            <div style={sSec}>Log Metrics</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 5 }}>
+            <div className="section-title">Log Metrics Manually</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
               {[["date", "Date", "date"], ["cpa", "CPA ($)", "number"], ["spend", "Spend ($)", "number"], ["conv", "Conv", "number"], ["ctr", "CTR (%)", "number"], ["cpm", "CPM ($)", "number"]].map(([k, l, t]) => (
-                <div key={k}><span style={{ ...sLabel, marginTop: 0 }}>{l}</span><input type={t} step="any" value={nm[k]} onChange={e => setNm(p => ({ ...p, [k]: e.target.value }))} style={si()} /></div>
+                <div key={k}><label className="label" style={{ marginTop: 0 }}>{l}</label><input type={t} step="any" value={nm[k]} onChange={e => setNm(p => ({ ...p, [k]: e.target.value }))} className="input" /></div>
               ))}
             </div>
-            <button onClick={addMetric} style={{ ...sBtn("#6366f1"), marginTop: 8, opacity: nm.cpa && nm.spend ? 1 : 0.4 }}>+ Log</button>
+            <button onClick={addMetric} className="btn btn-primary btn-sm" style={{ marginTop: 10, opacity: nm.cpa && nm.spend ? 1 : 0.4 }}>+ Log</button>
           </div>}
         </div>
       )}
 
-      {/* ── COMMENTS ── */}
+      {/* ── COMMENTS (scraped ad comments) ── */}
       {tab === "comments" && (
-        <div>
-          {ad.stage === "live" && !isEditor && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-            <button onClick={scrapeComments} disabled={scraping} style={sBtn("rgba(99,102,241,0.1)", "#a5b4fc", "1px solid rgba(99,102,241,0.2)")}>{scraping ? "⏳ Scraping..." : "🔍 Scrape Comments"}</button>
+        <div className="animate-fade">
+          {/* Scrape controls */}
+          {!isEditor && <div className="card-flat" style={{ marginBottom: 12 }}>
+            <div className="section-title" style={{ margin: "0 0 8px" }}>Scrape from TikTok</div>
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." style={{ fontSize: 12 }} />
+              </div>
+              <button onClick={scrapeComments} disabled={scraping || !tiktokUrl.trim()} className="btn btn-primary btn-sm" style={{ whiteSpace: "nowrap" }}>
+                {scraping ? "Scraping..." : "Scrape Comments"}
+              </button>
+            </div>
+            {scrapeErr && <div style={{ marginTop: 6, fontSize: 12, color: "var(--red-light)" }}>{scrapeErr}</div>}
+            {!isApifyConfigured() && <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>Requires Apify API key -- configure in Settings</div>}
           </div>}
 
-          {ad.comments.filter(c => c.hidden).length > 0 && <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.1)", marginBottom: 10, fontSize: 12, color: "#fca5a5" }}>
-            ⚠ <b>{ad.comments.filter(c => c.hidden).length} hidden negatives</b> — critical market intel.</div>}
+          {/* Sentiment filters */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {[
+              { id: "all", label: `All (${ad.comments.length})`, color: "var(--text-secondary)" },
+              { id: "positive", label: `Positive (${ad.comments.filter(c => c.sentiment === "positive").length})`, color: "var(--green)" },
+              { id: "neutral", label: `Neutral (${ad.comments.filter(c => c.sentiment === "neutral").length})`, color: "var(--text-tertiary)" },
+              { id: "negative", label: `Negative (${ad.comments.filter(c => c.sentiment === "negative").length})`, color: "var(--red)" },
+            ].map(f => (
+              <button key={f.id} onClick={() => setCommentFilter(f.id)}
+                className={`btn btn-xs ${commentFilter === f.id ? "" : "btn-ghost"}`}
+                style={commentFilter === f.id ? { background: f.color + "15", borderColor: f.color + "40", color: f.color } : {}}>
+                <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: f.color, marginRight: 4 }} />
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-          {ad.comments.map(c => <div key={c.id} style={{ ...sCard, padding: "8px 12px", marginBottom: 5, borderColor: c.hidden ? "rgba(239,68,68,0.08)" : "rgba(255,255,255,0.04)", background: c.hidden ? "rgba(239,68,68,0.02)" : "rgba(255,255,255,0.01)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.sentiment === "positive" ? "#10b981" : c.sentiment === "negative" ? "#ef4444" : "#64748b" }} />
-              <span style={{ fontSize: 10, color: "#475569", fontFamily: fm }}>{c.sentiment}</span>
-              {c.hidden && <span style={sBadge("#ef4444", "rgba(239,68,68,0.1)")}>Hidden</span>}
-              {!isEditor && <button onClick={() => dispatch({ type: "RM_COMMENT", aid: ad.id, cid: c.id })} style={{ marginLeft: "auto", background: "none", border: "none", color: "#1e293b", cursor: "pointer", fontSize: 10 }}>✕</button>}
-            </div>
-            <div style={{ fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.4 }}>"{c.text}"</div>
-          </div>)}
-
-          {!isEditor && <div style={{ ...sCard, marginTop: 10, borderColor: "rgba(255,255,255,0.07)" }}>
-            <div style={sSec}>Add Comment</div>
-            <textarea value={nc.text} onChange={e => setNc(p => ({ ...p, text: e.target.value }))} placeholder="Paste or type..." rows={2} style={{ ...si(), resize: "vertical", marginBottom: 6 }} />
-            <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
-              {["positive", "neutral", "negative"].map(s => <button key={s} onClick={() => setNc(p => ({ ...p, sentiment: s }))} style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, cursor: "pointer", fontFamily: ff, background: nc.sentiment === s ? (s === "positive" ? "rgba(16,185,129,0.1)" : s === "negative" ? "rgba(239,68,68,0.1)" : "rgba(255,255,255,0.04)") : "transparent", border: nc.sentiment === s ? "1px solid " + (s === "positive" ? "#10b981" : s === "negative" ? "#ef4444" : "#64748b") + "40" : "1px solid rgba(255,255,255,0.06)", color: nc.sentiment === s ? (s === "positive" ? "#6ee7b7" : s === "negative" ? "#fca5a5" : "#94a3b8") : "#475569" }}>{s}</button>)}
-              <label style={{ fontSize: 11, color: "#64748b", display: "flex", alignItems: "center", gap: 3, cursor: "pointer" }}><input type="checkbox" checked={nc.hidden} onChange={e => setNc(p => ({ ...p, hidden: e.target.checked }))} /> Hidden</label>
-              <button onClick={addComment} style={{ ...sBtn("#6366f1"), marginLeft: "auto", opacity: nc.text.trim() ? 1 : 0.4 }}>+ Add</button>
-            </div>
+          {ad.comments.filter(c => c.hidden).length > 0 && <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 12, fontSize: 12.5, color: "var(--red-light)" }}>
+            {ad.comments.filter(c => c.hidden).length} hidden negatives — critical market intel.
           </div>}
+
+          <div style={{ maxHeight: 400, overflow: "auto", marginBottom: 12 }}>
+            {filteredComments.length === 0 && <div className="empty-state">{ad.comments.length === 0 ? "No comments scraped yet" : "No comments match this filter"}</div>}
+            <div className="stagger">
+              {filteredComments.map(c => <div key={c.id} className="card-flat" style={{ marginBottom: 6, borderColor: c.hidden ? "var(--red-border)" : "var(--border-light)", background: c.hidden ? "var(--red-bg)" : "var(--bg-card)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: c.sentiment === "positive" ? "var(--green)" : c.sentiment === "negative" ? "var(--red)" : "var(--text-muted)" }} />
+                  <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{c.sentiment}</span>
+                  {c.hidden && <span className="badge badge-red">Hidden</span>}
+                  {!isEditor && <button onClick={() => dispatch({ type: "RM_COMMENT", aid: ad.id, cid: c.id })} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>✕</button>}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>"{c.text}"</div>
+              </div>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── THREAD (team discussion) ── */}
+      {tab === "thread" && (
+        <div className="animate-fade">
+          <div style={{ maxHeight: 360, overflow: "auto", marginBottom: 12 }}>
+            {ad.thread.length === 0 && <div className="empty-state">No messages yet. Start a discussion about this ad.</div>}
+            <div className="stagger">
+              {ad.thread.map((m, i) => <div key={i} className="card-flat" style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: m.from === "You" || m.from === "Adolf" ? "var(--accent-light)" : "var(--text-primary)" }}>{m.from}</span>
+                  <span style={{ fontSize: 10.5, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{m.ts}</span>
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{m.text}</div>
+              </div>)}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} placeholder="Write a message..." className="input" style={{ flex: 1 }} />
+            <button onClick={sendMsg} className="btn btn-primary btn-sm">Send</button>
+          </div>
         </div>
       )}
 
       {/* ── ANALYSIS ── */}
       {tab === "analysis" && (
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={sSec}>AI Analysis</div>
-            {ad.stage === "live" && ad.metrics.length > 0 && !isEditor && <button onClick={analyze} disabled={busy} style={sBtn("rgba(99,102,241,0.12)", "#a5b4fc", "1px solid rgba(99,102,241,0.2)")}>{busy ? "⏳ Running..." : "🔬 Run Analysis"}</button>}
+        <div className="animate-fade">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div className="section-title" style={{ margin: 0 }}>AI Analysis</div>
+            {ad.stage === "live" && ad.metrics.length > 0 && !isEditor && <button onClick={analyze} disabled={busy} className="btn btn-primary btn-sm">{busy ? "Running..." : "Run Analysis"}</button>}
           </div>
-          {ad.analyses.length === 0 && !busy && <div style={{ padding: 24, textAlign: "center", color: "#334155", fontSize: 13 }}>{ad.stage === "live" && ad.metrics.length > 0 ? "Click 'Run Analysis'." : "Needs live metrics + comments."}</div>}
-          {busy && <div style={{ padding: 24, textAlign: "center" }}><div style={{ fontSize: 13, color: "#a5b4fc" }}>⏳ Analyzing {ad.comments.length} comments + {ad.metrics.length} days...</div></div>}
-          {[...ad.analyses].reverse().map(a => <div key={a.id} style={{ ...sCard, marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={sBadge("#a5b4fc", "rgba(99,102,241,0.08)")}>Analysis</span><span style={{ fontSize: 10, color: "#475569", fontFamily: fm }}>{a.ts}</span></div>
-            <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 10 }}>{a.summary}</div>
-            {a.findings?.map((f, i) => { const st = { positive: { c: "#6ee7b7", bg: "rgba(16,185,129,0.04)", bc: "rgba(16,185,129,0.08)", ic: "✓" }, negative: { c: "#fca5a5", bg: "rgba(239,68,68,0.04)", bc: "rgba(239,68,68,0.08)", ic: "✕" }, warning: { c: "#fbbf24", bg: "rgba(245,158,11,0.04)", bc: "rgba(245,158,11,0.08)", ic: "⚠" }, action: { c: "#93c5fd", bg: "rgba(59,130,246,0.04)", bc: "rgba(59,130,246,0.08)", ic: "→" } }[f.type] || { c: "#93c5fd", bg: "rgba(59,130,246,0.04)", bc: "rgba(59,130,246,0.08)", ic: "→" };
-              return <div key={i} style={{ padding: "7px 11px", borderRadius: 7, background: st.bg, border: "1px solid " + st.bc, marginBottom: 4 }}><span style={{ color: st.c, fontWeight: 700, fontSize: 11, marginRight: 6 }}>{st.ic}</span><span style={{ fontSize: 12, color: "#cbd5e1" }}>{f.text}</span></div>; })}
-            {a.nextIterationPlan && a.nextIterationPlan !== "null" && a.nextIterationPlan !== null && <div style={{ padding: "8px 11px", borderRadius: 7, background: "rgba(239,68,68,0.03)", border: "1px solid rgba(239,68,68,0.08)", marginTop: 6 }}>
-              <div style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Next Iteration Plan</div>
-              <div style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.4 }}>{a.nextIterationPlan}</div></div>}
-            {a.suggestedLearnings?.length > 0 && <div style={{ marginTop: 6 }}><div style={{ fontSize: 10, color: "#475569", fontWeight: 600, marginBottom: 3 }}>Auto-extracted learnings:</div>
-              {a.suggestedLearnings.map((l, j) => <div key={j} style={{ fontSize: 11, color: "#94a3b8", padding: "2px 0" }}><span style={sBadge("#c4b5fd", "rgba(99,102,241,0.06)")}>{l.type.replace(/_/g, " ")}</span> {l.text}</div>)}</div>}
-          </div>)}
-        </div>
-      )}
-
-      {/* ── THREAD ── */}
-      {tab === "thread" && (
-        <div>
-          <div style={{ maxHeight: 300, overflow: "auto", marginBottom: 10 }}>
-            {ad.thread.length === 0 && <div style={{ padding: 16, textAlign: "center", color: "#334155", fontSize: 12 }}>No messages</div>}
-            {ad.thread.map((m, i) => <div key={i} style={{ ...sCard, padding: "8px 12px", marginBottom: 5 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}><span style={{ fontSize: 12, fontWeight: 600, color: m.from === "You" || m.from === "Adolf" ? "#a5b4fc" : "#e2e8f0" }}>{m.from}</span><span style={{ fontSize: 10, color: "#334155", fontFamily: fm }}>{m.ts}</span></div>
-              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.4 }}>{m.text}</div>
+          {/* Video upload + engine info */}
+          {!isEditor && isGeminiConfigured() && !busy && <div className="card-flat" style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 3 }}>Ad Creative Video</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {videoFile
+                    ? <span style={{ color: videoFile.size > 100 * 1024 * 1024 ? "var(--red-light)" : videoFile.size > 20 * 1024 * 1024 && !isProxyConfigured() ? "var(--yellow-light)" : "var(--green-light)" }}>
+                        {videoFile.name} ({(videoFile.size / 1024 / 1024).toFixed(1)} MB)
+                        {videoFile.size > 100 * 1024 * 1024 ? " -- too large, compress to under 100MB first" : videoFile.size > 20 * 1024 * 1024 && !isProxyConfigured() ? " -- over 20MB, add upload proxy in Settings" : ""}
+                      </span>
+                    : "Upload your ad video for Gemini to watch and analyze (under 20MB direct, up to 100MB with proxy)"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) setVideoFile(e.target.files[0]); }} />
+                <button onClick={() => videoInputRef.current?.click()} className="btn btn-ghost btn-sm">{videoFile ? "Change" : "Upload Video"}</button>
+                {videoFile && <button onClick={() => { setVideoFile(null); if (videoInputRef.current) videoInputRef.current.value = ""; }} className="btn btn-ghost btn-sm" style={{ color: "var(--red-light)" }}>Remove</button>}
+              </div>
+            </div>
+          </div>}
+          {!busy && !isGeminiConfigured() && <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 10 }}>
+            {isConfigured("claude") ? "Claude text analysis (add Gemini key for video analysis)" : "No AI configured -- add a Gemini or Claude key in Settings"}
+          </div>}
+          {/* Success banner */}
+          {!busy && aiStatus && <div className="card-flat" style={{ background: "var(--green-bg)", border: "1px solid var(--green-border)", marginBottom: 12, fontSize: 12.5, color: "var(--green-light)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontWeight: 700 }}>&#10003;</span> {aiStatus}
+          </div>}
+          {ad.analyses.length === 0 && !busy && <div className="empty-state">{ad.stage === "live" && ad.metrics.length > 0 ? "Click 'Run Analysis' to get AI insights." : "Needs live metrics + comments first."}</div>}
+          {busy && <div className="empty-state"><div style={{ color: "var(--accent-light)" }}>{aiStatus || `Analyzing ${ad.comments.length} comments + ${ad.metrics.length} days of data...`}</div></div>}
+          <div className="stagger">
+            {[...ad.analyses].reverse().map(a => <div key={a.id} className="card" style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span className="badge badge-accent">Analysis</span>
+                  {a.engine && <span className="badge" style={{ background: a.mode === "video" ? "var(--green-bg)" : "var(--bg-elevated)", border: "1px solid " + (a.mode === "video" ? "var(--green-border)" : "var(--border)"), color: a.mode === "video" ? "var(--green-light)" : "var(--text-tertiary)", fontSize: 10 }}>
+                    {a.mode === "video" ? "Video" : "Text"} -- {a.engine}
+                  </span>}
+                </div>
+                <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{a.ts}</span>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>{a.summary}</div>
+              {a.findings?.map((f, i) => { const st = findingStyle(f.type);
+                return <div key={i} style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: st.bg, border: "1px solid " + st.bc, marginBottom: 5 }}>
+                  <span style={{ color: st.c, fontWeight: 700, fontSize: 12, marginRight: 7 }}>{st.ic}</span>
+                  <span style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>{f.text}</span>
+                </div>; })}
+              {a.nextIterationPlan && a.nextIterationPlan !== "null" && <div style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", border: "1px solid var(--red-border)", marginTop: 8 }}>
+                <div style={{ fontSize: 10.5, color: "var(--red)", fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Next Iteration Plan</div>
+                <div style={{ fontSize: 12.5, color: "var(--red-light)", lineHeight: 1.5 }}>{a.nextIterationPlan}</div>
+              </div>}
+              {a.suggestedLearnings?.length > 0 && <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontWeight: 600, marginBottom: 4 }}>Auto-extracted learnings:</div>
+                {a.suggestedLearnings.map((l, j) => <div key={j} style={{ fontSize: 11.5, color: "var(--text-secondary)", padding: "2px 0" }}>
+                  <span className="badge badge-accent" style={{ marginRight: 5 }}>{l.type.replace(/_/g, " ")}</span>{l.text}
+                </div>)}
+              </div>}
             </div>)}
           </div>
-          <div style={{ display: "flex", gap: 6 }}><input value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} placeholder="Message..." style={{ ...si(), flex: 1 }} /><button onClick={sendMsg} style={sBtn("#6366f1")}>Send</button></div>
         </div>
       )}
 
       {/* ── LEARNINGS ── */}
       {tab === "learnings" && (
-        <div>
-          <div style={{ fontSize: 11, color: "#334155", marginBottom: 10 }}>🔄 Learnings feed back into product workspace, VSL generator, angle generator.</div>
-          {ad.learnings.map(l => <div key={l.id} style={{ ...sCard, padding: "8px 12px", marginBottom: 5 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={sBadge("#a5b4fc", "rgba(99,102,241,0.08)")}>{l.type.replace(/_/g, " ")}</span>
-              {!isEditor && <button onClick={() => dispatch({ type: "RM_LEARNING", aid: ad.id, lid: l.id })} style={{ background: "none", border: "none", color: "#1e293b", cursor: "pointer", fontSize: 10 }}>✕</button>}</div>
-            <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.4, marginTop: 3 }}>{l.text}</div>
-          </div>)}
-
-          {!isEditor && <div style={{ ...sCard, marginTop: 10, borderColor: "rgba(255,255,255,0.07)" }}>
-            <div style={sSec}>Capture Learning</div>
-            <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 5 }}>
-              {LT.map(t => <button key={t} onClick={() => setNl(p => ({ ...p, type: t }))} style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 12, cursor: "pointer", fontFamily: ff, background: nl.type === t ? "rgba(99,102,241,0.1)" : "transparent", border: nl.type === t ? "1px solid rgba(99,102,241,0.2)" : "1px solid rgba(255,255,255,0.05)", color: nl.type === t ? "#a5b4fc" : "#475569" }}>{t.replace(/_/g, " ")}</button>)}
+        <div className="animate-fade">
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 12 }}>Learnings feed back into product workspace, VSL generator, angle generator.</div>
+          <div className="stagger">
+            {ad.learnings.map(l => <div key={l.id} className="card-flat" style={{ marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="badge badge-accent">{l.type.replace(/_/g, " ")}</span>
+                {!isEditor && <button onClick={() => dispatch({ type: "RM_LEARNING", aid: ad.id, lid: l.id })} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}>✕</button>}
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5, marginTop: 4 }}>{l.text}</div>
+            </div>)}
+          </div>
+          {!isEditor && <div className="card-flat" style={{ marginTop: 14 }}>
+            <div className="section-title">Capture Learning</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+              {LT.map(t => <button key={t} onClick={() => setNl(p => ({ ...p, type: t }))}
+                className={`btn btn-xs ${nl.type === t ? "" : "btn-ghost"}`}
+                style={nl.type === t ? { background: "var(--accent-bg)", color: "var(--accent-light)", borderColor: "var(--accent-border)" } : {}}>
+                {t.replace(/_/g, " ")}
+              </button>)}
             </div>
-            <textarea value={nl.text} onChange={e => setNl(p => ({ ...p, text: e.target.value }))} rows={2} style={{ ...si(), resize: "vertical" }} placeholder="What did we learn?" />
-            <button onClick={addLearning} style={{ ...sBtn("#6366f1"), marginTop: 6, opacity: nl.text.trim() ? 1 : 0.4 }}>+ Save</button>
+            <textarea value={nl.text} onChange={e => setNl(p => ({ ...p, text: e.target.value }))} rows={2} className="input" placeholder="What did we learn?" />
+            <button onClick={addLearning} className="btn btn-primary btn-sm" style={{ marginTop: 8, opacity: nl.text.trim() ? 1 : 0.4 }}>+ Save</button>
           </div>}
         </div>
       )}
@@ -701,42 +1016,55 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role }) {
 // ════════════════════════════════════════════════
 
 function PCard({ ad, th, onClick, onMove, onIterate }) {
-  const la = lm(ad), cl = ad.stage === "live" ? CL(la?.cpa, th) : "none", cs = CS[cl];
+  const bc = bestChannel(ad, th);
+  const la = bc ? bc.metric : lm(ad);
+  const cl = ad.stage === "live" ? CL(la?.cpa, th) : "none", cs = CS[cl];
   const ix = SO.indexOf(ad.stage), ov = od(ad.deadline), gdays = gd(ad, th);
   const unresolvedRevs = ad.revisionRequests?.filter(r => !r.resolved).length || 0;
+  const hasIds = hasAnyChId(ad.channelIds);
+  const hasChData = ad.channelMetrics && Object.values(ad.channelMetrics).some(m => m?.length > 0);
+  const idsButNoData = hasIds && !hasChData && ad.stage === "live";
 
   return (
-    <div onClick={() => onClick(ad)} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.055)", borderRadius: 11, padding: "11px 13px", marginBottom: 7, cursor: "pointer", transition: "all 0.12s", position: "relative", overflow: "hidden" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.14)"; e.currentTarget.style.background = "rgba(255,255,255,0.032)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.055)"; e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}>
-      {ad.stage === "live" && cl !== "none" && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: cs.c }} />}
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "#f1f5f9", marginBottom: 4 }}>{ad.name}</div>
-      <div style={{ display: "flex", gap: 3, marginBottom: 5, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9, padding: "1.5px 5px", borderRadius: 4, background: "rgba(99,102,241,0.08)", color: "#a5b4fc" }}>{ad.type}</span>
-        {ad.editor && <span style={{ fontSize: 9, padding: "1.5px 5px", borderRadius: 4, background: "rgba(255,255,255,0.03)", color: "#64748b" }}>⚙{ad.editor}</span>}
-        {ad.iterations > 0 && <span style={{ fontSize: 9, padding: "1.5px 5px", borderRadius: 4, background: "rgba(217,119,6,0.08)", color: "#d97706" }}>iter{ad.iterations}</span>}
-        {ov && <span style={{ fontSize: 9, padding: "1.5px 5px", borderRadius: 4, background: "rgba(239,68,68,0.08)", color: "#ef4444", fontWeight: 600 }}>OVERDUE</span>}
-        {ad.parentId && <span style={{ fontSize: 9, padding: "1.5px 5px", borderRadius: 4, background: "rgba(16,185,129,0.06)", color: "#6ee7b7" }}>var</span>}
-        {unresolvedRevs > 0 && <span style={{ fontSize: 9, padding: "1.5px 5px", borderRadius: 4, background: "rgba(245,158,11,0.08)", color: "#fbbf24" }}>📝{unresolvedRevs}</span>}
+    <div className="pipeline-card" onClick={() => onClick(ad)}>
+      {ad.stage === "live" && cl !== "none" && <div className="status-bar" style={{ background: cs.c }} />}
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 5 }}>{ad.name}</div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
+        <span className="badge badge-accent" style={{ fontSize: 9.5 }}>{ad.type}</span>
+        {ad.editor && <span className="badge" style={{ fontSize: 9.5 }}>⚙ {ad.editor}</span>}
+        {ad.iterations > 0 && <span className="badge badge-yellow" style={{ fontSize: 9.5 }}>iter {ad.iterations}</span>}
+        {ov && <span className="badge badge-red" style={{ fontSize: 9.5, fontWeight: 700 }}>OVERDUE</span>}
+        {ad.parentId && <span className="badge badge-green" style={{ fontSize: 9.5 }}>var</span>}
+        {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 9.5 }}>📝 {unresolvedRevs}</span>}
       </div>
-      {ad.notes && <div style={{ fontSize: 10.5, color: "#475569", marginBottom: 5, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{ad.notes}</div>}
-      {ad.stage === "live" && la && <div style={{ fontSize: 10.5, marginBottom: 5, fontFamily: fm }}>
-        <span style={{ color: "#475569" }}>CPA: </span><span style={{ color: cs.c, fontWeight: 700 }}>${la.cpa}</span>
-        <span style={{ ...sBadge(cs.c, cs.bg), marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
-        {cl === "green" && gdays >= 5 && <span style={{ ...sBadge("#10b981", "rgba(16,185,129,0.1)"), marginLeft: 3, fontSize: 9 }}>🏆</span>}
+      {ad.notes && <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 6, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{ad.notes}</div>}
+
+      {ad.stage === "live" && la && bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
+        <span style={{ color: bc.color, fontSize: 9.5, fontWeight: 600 }}>{bc.label} </span>
+        <span style={{ color: "var(--text-tertiary)" }}>CPA: </span>
+        <span style={{ color: cs.c, fontWeight: 700 }}>{CUR} {la.cpa}</span>
+        {la.roas > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 6 }}>ROAS: <span style={{ color: la.roas >= 2 ? "var(--green)" : "var(--yellow)", fontWeight: 700 }}>{la.roas}x</span></span>}
+        <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
       </div>}
-      {ad.stage === "live" && cl === "green" && <div style={{ fontSize: 10, color: "#6ee7b7", background: "rgba(16,185,129,0.04)", padding: "3px 7px", borderRadius: 5, marginBottom: 5 }}>🚀 Scale</div>}
-      {ad.stage === "live" && cl === "red" && <div style={{ fontSize: 10, color: "#fca5a5", background: "rgba(239,68,68,0.04)", padding: "3px 7px", borderRadius: 5, marginBottom: 5 }}>⚠ Iter {ad.iterations}/{ad.maxIter}</div>}
+      {ad.stage === "live" && la && !bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
+        <span style={{ color: "var(--text-tertiary)" }}>CPA: </span><span style={{ color: cs.c, fontWeight: 700 }}>{CUR} {la.cpa}</span>
+        <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
+      </div>}
+
+      {idsButNoData && <div style={{ fontSize: 10.5, color: "var(--yellow)", background: "var(--yellow-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Sync to pull data</div>}
+      {ad.stage === "live" && cl === "green" && <div style={{ fontSize: 10.5, color: "var(--green-light)", background: "var(--green-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Scale</div>}
+      {ad.stage === "live" && cl === "red" && <div style={{ fontSize: 10.5, color: "var(--red-light)", background: "var(--red-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Iter {ad.iterations}/{ad.maxIter}</div>}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", gap: 2 }}>
-          {ix > 0 && <button onClick={() => onMove(ad.id, SO[ix - 1])} style={{ width: 20, height: 20, borderRadius: 4, border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)", color: "#475569", cursor: "pointer", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>}
-          {ix < 3 && <button onClick={() => onMove(ad.id, SO[ix + 1])} style={{ width: 20, height: 20, borderRadius: 4, border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)", color: "#475569", cursor: "pointer", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>}
+        <div style={{ display: "flex", gap: 3 }}>
+          {ix > 0 && <button onClick={() => onMove(ad.id, SO[ix - 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>←</button>}
+          {ix < 3 && <button onClick={() => onMove(ad.id, SO[ix + 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>→</button>}
         </div>
-        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-          {ad.thread.length > 0 && <span style={{ fontSize: 8.5, color: "#334155" }}>💬{ad.thread.length}</span>}
-          {ad.learnings.length > 0 && <span style={{ fontSize: 8.5, color: "#334155" }}>🔄{ad.learnings.length}</span>}
-          {ad.comments.length > 0 && <span style={{ fontSize: 8.5, color: "#334155" }}>💭{ad.comments.length}</span>}
-          {ad.stage === "live" && cl === "red" && ad.iterations < ad.maxIter && <button onClick={() => onIterate(ad.id)} style={{ fontSize: 9.5, padding: "2px 7px", borderRadius: 5, border: "1px solid rgba(239,68,68,0.15)", background: "rgba(239,68,68,0.05)", color: "#fca5a5", cursor: "pointer", fontWeight: 600 }}>Iterate →</button>}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {ad.thread.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>💬 {ad.thread.length}</span>}
+          {ad.learnings.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>🔄 {ad.learnings.length}</span>}
+          {ad.comments.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>💭 {ad.comments.length}</span>}
+          {ad.stage === "live" && cl === "red" && ad.iterations < ad.maxIter && <button onClick={() => onIterate(ad.id)} className="btn btn-danger btn-xs">Iterate</button>}
         </div>
       </div>
     </div>
@@ -744,15 +1072,42 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
 }
 
 // ════════════════════════════════════════════════
-// EDITOR STATS + INCENTIVES
+// EDITOR PANEL
 // ════════════════════════════════════════════════
 
-function EditorPanel({ ads, th }) {
+function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
+  const [newName, setNewName] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [selectedEditor, setSelectedEditor] = useState(null);
+  const allProfiles = getAllEditorProfiles();
+
+  const handleAdd = () => {
+    if (newName.trim()) { addEditor(newName); setNewName(""); setShowAdd(false); }
+  };
+
+  const findProfile = (name) => {
+    // Match by displayName across all profiles
+    return Object.values(allProfiles).find(p => p.displayName === name) || null;
+  };
+
   return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>👥 Editor Performance & Incentives</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-        {EDITORS_LIST.map(name => {
+    <div className="animate-fade">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Editor Performance</h2>
+          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>Win rate, quality scores, and bonus tracking for each editor.</p>
+        </div>
+        <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary btn-sm">{showAdd ? "Cancel" : "+ Add Editor"}</button>
+      </div>
+      {showAdd && <div className="card" style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label className="label" style={{ marginTop: 0 }}>Editor Name</label>
+          <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} className="input" placeholder="Enter name..." autoFocus />
+        </div>
+        <button onClick={handleAdd} disabled={!newName.trim() || editors.includes(newName.trim())} className="btn btn-primary btn-sm">Add</button>
+      </div>}
+      <div style={{ display: "grid", gridTemplateColumns: editors.length < 3 ? `repeat(${Math.max(1, editors.length)},1fr)` : "repeat(3,1fr)", gap: 12 }}>
+        {editors.map(name => {
           const all = ads.filter(a => a.editor === name && a.stage !== "killed");
           const live = all.filter(a => a.stage === "live");
           const winners = live.filter(a => { const l = lm(a); return l && CL(l.cpa, th) === "green" && gd(a, th) >= 5; });
@@ -764,34 +1119,166 @@ function EditorPanel({ ads, th }) {
           const onTime = all.length > 0 ? Math.round(((all.length - overdueN) / all.length) * 100) : 100;
           const bonus = winners.length * 75;
           const health = winRate >= 25 && onTime >= 85 && qualScore >= 75 ? "green" : winRate >= 10 || onTime >= 70 ? "yellow" : "red";
-          const hc = health === "green" ? "#10b981" : health === "yellow" ? "#d97706" : "#ef4444";
+          const hc = health === "green" ? "var(--green)" : health === "yellow" ? "var(--yellow)" : "var(--red)";
+          const profile = findProfile(name);
 
           return (
-            <div key={name} style={sCard}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: hc + "15", border: "2px solid " + hc, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: hc }}>{name[0]}</div>
-                  <div><div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div><span style={sBadge(hc, hc + "15")}>{health}</span></div>
+            <div key={name} className="card" onClick={() => setSelectedEditor({ name, profile, stats: { winRate, onTime, qualScore, bonus, all: all.length, overdueN, health } })} style={{ cursor: "pointer", transition: "all var(--transition)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {profile?.photoUrl
+                    ? <img src={profile.photoUrl} style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", border: "2px solid " + hc, objectFit: "cover" }} />
+                    : <div style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", background: "var(--accent-bg)", border: "2px solid " + hc, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: hc }}>{name[0]}</div>}
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{name}</div>
+                    <span className={`badge ${health === "green" ? "badge-green" : health === "yellow" ? "badge-yellow" : "badge-red"}`}>{health}</span>
+                  </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "#6ee7b7", fontFamily: fm }}>${bonus}</div>
-                  <div style={{ fontSize: 8, color: "#475569" }}>BONUS</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--green-light)", fontFamily: "var(--fm)" }}>{CUR} {bonus}</div>
+                  <div style={{ fontSize: 9, color: "var(--text-tertiary)", textTransform: "uppercase" }}>Bonus</div>
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>
-                {[[winRate + "%", "Win Rate", winRate >= 25 ? "#10b981" : "#d97706"], [onTime + "%", "On-Time", onTime >= 85 ? "#10b981" : "#d97706"], [qualScore, "Quality", qualScore >= 75 ? "#10b981" : "#d97706"], [all.length, "Assigned", "#a5b4fc"]].map(([v, l, c]) => (
-                  <div key={l} style={{ textAlign: "center", padding: "5px 0", background: "rgba(255,255,255,0.02)", borderRadius: 6 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: fm, color: c }}>{v}</div>
-                    <div style={{ fontSize: 8, color: "#475569" }}>{l}</div>
+              {profile?.weeklyMinutes && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Capacity: {profile.weeklyMinutes} min/week</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+                {[[winRate + "%", "Win Rate", winRate >= 25 ? "var(--green)" : "var(--yellow)"], [onTime + "%", "On-Time", onTime >= 85 ? "var(--green)" : "var(--yellow)"], [qualScore, "Quality", qualScore >= 75 ? "var(--green)" : "var(--yellow)"], [all.length, "Assigned", "var(--accent-light)"]].map(([v, l, c]) => (
+                  <div key={l} className="stat-box">
+                    <div className="stat-value" style={{ fontSize: 14, color: c }}>{v}</div>
+                    <div className="stat-label">{l}</div>
                   </div>
                 ))}
               </div>
-              {overdueN > 0 && <div style={{ marginTop: 6, fontSize: 11, color: "#fca5a5" }}>⚠ {overdueN} overdue</div>}
+              {overdueN > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--red-light)" }}>{overdueN} overdue</div>}
+              {all.length === 0 && <button onClick={(e) => { e.stopPropagation(); removeEditor(name); }} className="btn btn-ghost btn-xs" style={{ marginTop: 8, color: "var(--red-light)", fontSize: 10.5 }}>Remove Editor</button>}
             </div>
           );
         })}
       </div>
-      <div style={{ fontSize: 10.5, color: "#334155", marginTop: 8 }}>Win bonus: <span style={{ color: "#6ee7b7" }}>$75</span>/winner (green CPA 5+ consecutive days) · Quality = 100 − (revisions × 8) · Health = composite of win rate + on-time + quality</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>Win bonus: <span style={{ color: "var(--green-light)" }}>SAR 75</span>/winner (green CPA 5+ days) · Quality = 100 - (revisions x 8) · Health = composite</div>
+
+      {/* Editor Detail Modal */}
+      {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} />}
+    </div>
+  );
+}
+
+function EditorDetailModal({ editor, onClose }) {
+  const { name, profile, stats } = editor;
+  const [pName, setPName] = useState(profile?.displayName || name);
+  const [pPhoto, setPPhoto] = useState(profile?.photoUrl || null);
+  const [pPortfolio, setPPortfolio] = useState(profile?.portfolioUrl || "");
+  const [pRate, setPRate] = useState(profile?.compensationRate || "");
+  const [pMinutes, setPMinutes] = useState(profile?.weeklyMinutes || "");
+  const [saved, setSaved] = useState(false);
+  const fileRef = useRef(null);
+
+  const handlePhoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPPhoto(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = () => {
+    const email = profile?.email || name.toLowerCase().replace(/\s+/g, ".") + "@team";
+    saveEditorProfile(email, {
+      displayName: pName.trim(),
+      photoUrl: pPhoto,
+      portfolioUrl: pPortfolio.trim(),
+      compensationRate: pRate.trim(),
+      weeklyMinutes: parseInt(pMinutes) || 0,
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const hc = stats.health === "green" ? "var(--green)" : stats.health === "yellow" ? "var(--yellow)" : "var(--red)";
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ maxWidth: 500 }}>
+        {/* Header with photo */}
+        <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 20 }}>
+          <div style={{ position: "relative" }}>
+            {pPhoto
+              ? <img src={pPhoto} style={{ width: 64, height: 64, borderRadius: "var(--radius-full)", border: "3px solid " + hc, objectFit: "cover" }} />
+              : <div style={{ width: 64, height: 64, borderRadius: "var(--radius-full)", background: "var(--accent-bg)", border: "3px solid " + hc, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, color: hc }}>{name[0]}</div>}
+            <button onClick={() => fileRef.current?.click()} style={{ position: "absolute", bottom: -2, right: -2, width: 22, height: 22, borderRadius: "50%", background: "var(--bg-card)", border: "1px solid var(--border)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>✎</button>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 2px" }}>{name}</h3>
+            <span className={`badge ${stats.health === "green" ? "badge-green" : stats.health === "yellow" ? "badge-yellow" : "badge-red"}`}>{stats.health}</span>
+            {profile?.onboardedAt && <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>Joined {new Date(profile.onboardedAt).toLocaleDateString()}</span>}
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 20 }}>
+          {[[stats.winRate + "%", "Win Rate"], [stats.onTime + "%", "On-Time"], [stats.qualScore, "Quality"], [CUR + " " + stats.bonus, "Bonus"]].map(([v, l]) => (
+            <div key={l} className="stat-box">
+              <div className="stat-value" style={{ fontSize: 14 }}>{v}</div>
+              <div className="stat-label">{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Editable profile fields */}
+        <div className="section-title">Profile Details</div>
+        <label className="label" style={{ marginTop: 8 }}>Full Name</label>
+        <input value={pName} onChange={e => setPName(e.target.value)} className="input" />
+        <label className="label">Portfolio URL</label>
+        <input value={pPortfolio} onChange={e => setPPortfolio(e.target.value)} className="input" placeholder="https://..." />
+        {pPortfolio && <a href={pPortfolio} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent-light)", display: "inline-block", marginTop: 4 }}>Open portfolio</a>}
+        <label className="label">Compensation Rate</label>
+        <input value={pRate} onChange={e => setPRate(e.target.value)} className="input" placeholder="e.g. $20/minute edited" />
+        <label className="label">Weekly Capacity (minutes of video)</label>
+        <input type="number" value={pMinutes} onChange={e => setPMinutes(e.target.value)} className="input" placeholder="e.g. 60" min="1" />
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
+          <button onClick={handleSave} className="btn btn-primary btn-sm">Save Changes</button>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Close</button>
+          {saved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ════════════════════════════════════════════════
+// LEARNINGS PAGE
+// ════════════════════════════════════════════════
+
+function LearningsPage({ ads }) {
+  const allLearnings = ads.flatMap(a => a.learnings.map(l => ({ ...l, adName: a.name, adId: a.id })));
+  const grouped = {};
+  allLearnings.forEach(l => { if (!grouped[l.type]) grouped[l.type] = []; grouped[l.type].push(l); });
+
+  return (
+    <div className="animate-fade">
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Learnings Flywheel</h2>
+        <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
+          {allLearnings.length} learnings captured across all ads. These feed back into generators.
+        </p>
+      </div>
+      {allLearnings.length === 0 && <div className="empty-state">No learnings captured yet. Run ads and capture insights from winners.</div>}
+      {Object.entries(grouped).map(([type, items]) => (
+        <div key={type} style={{ marginBottom: 18 }}>
+          <div className="section-title">{type.replace(/_/g, " ")} ({items.length})</div>
+          <div className="stagger">
+            {items.map(l => (
+              <div key={l.id + "-" + l.adId} className="card-flat" style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                  <span className="badge badge-accent">{l.adName}</span>
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{l.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -800,18 +1287,47 @@ function EditorPanel({ ads, th }) {
 // MAIN APP
 // ════════════════════════════════════════════════
 
-export default function App() {
+export default function App({ session, userRole, userName }) {
   const [ads, setAds] = useState(SEED);
   const [openAd, setOpenAd] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [settOpen, setSettOpen] = useState(false);
-  const [showEd, setShowEd] = useState(false);
+  const [page, setPage] = useState("pipeline");
   const [th, setTh] = useState(DT);
-  const [role, setRole] = useState("founder");
-  const [editorName, setEditorName] = useState("Noor");
+  const [role, setRole] = useState(userRole || "founder");
+  const [editors, setEditors] = useState(getEditorsList);
+  const addEditor = (name) => { const n = name.trim(); if (!n || editors.includes(n)) return; const u = [...editors, n]; setEditors(u); saveEditorsList(u); };
+  const removeEditor = (name) => { const u = editors.filter(e => e !== name); setEditors(u); saveEditorsList(u); };
+  const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "Noor") : "Noor");
+  const handleSignOut = () => supabase.auth.signOut();
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
   const did = useRef(null);
+
+  const syncTripleWhale = async () => {
+    if (!isTripleWhaleConfigured()) { setSyncMsg({ ok: false, text: "Configure Triple Whale in Settings first" }); setTimeout(() => setSyncMsg(null), 3000); return; }
+    setSyncing(true); setSyncMsg(null);
+    try {
+      const end = new Date().toISOString().slice(0, 10);
+      const start = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const rows = await fetchAdSetMetrics(start, end);
+      const matches = matchMetricsToAds(rows, ads);
+      let synced = 0, chCount = 0;
+      for (const m of matches) {
+        for (const [ch, data] of Object.entries(m.channels)) {
+          if (data.metrics.length > 0) { dispatch({ type: "SET_CH_METRICS", id: m.adId, channel: ch, metrics: data.metrics }); synced += data.metrics.length; chCount++; }
+        }
+      }
+      const adsWithIds = ads.filter(a => hasAnyChId(a.channelIds) && a.stage !== "killed").length;
+      const noDataAds = adsWithIds - matches.length;
+      let msg = `Synced ${synced} data points across ${chCount} channel(s) for ${matches.length} ad(s)`;
+      if (noDataAds > 0) msg += ` · ${noDataAds} ad(s) had IDs but no data found`;
+      setSyncMsg({ ok: synced > 0, text: msg });
+    } catch (e) { setSyncMsg({ ok: false, text: e.message }); }
+    setSyncing(false);
+    setTimeout(() => setSyncMsg(null), 4000);
+  };
 
   const dispatch = useCallback((a) => {
     setAds(p => {
@@ -819,6 +1335,7 @@ export default function App() {
         case "MOVE": return p.map(x => x.id === a.id ? { ...x, stage: a.stage } : x);
         case "UPDATE": return p.map(x => x.id === a.id ? { ...x, ...a.data } : x);
         case "ADD_METRIC": return p.map(x => x.id === a.id ? { ...x, metrics: [...x.metrics, a.metric] } : x);
+        case "SET_CH_METRICS": return p.map(x => x.id === a.id ? { ...x, channelMetrics: { ...(x.channelMetrics || emptyChMetrics()), [a.channel]: a.metrics } } : x);
         case "ADD_COMMENT": return p.map(x => x.id === a.id ? { ...x, comments: [...x.comments, a.comment] } : x);
         case "RM_COMMENT": return p.map(x => x.id === a.aid ? { ...x, comments: x.comments.filter(c => c.id !== a.cid) } : x);
         case "ADD_ANALYSIS": return p.map(x => x.id === a.id ? { ...x, analyses: [...x.analyses, a.analysis] } : x);
@@ -832,8 +1349,8 @@ export default function App() {
         case "APPROVE_DRAFT": return p.map(x => x.id === a.id ? { ...x, drafts: x.drafts.map(d => d.id === a.did ? { ...d, status: "approved" } : d), finalApproved: true } : x);
         case "ITERATE": return p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; });
         case "KILL": return p.map(x => x.id === a.id ? { ...x, stage: "killed" } : x);
-        case "ADD_AD": { const id = uid(); return [...p, { id, name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [] }]; }
-        case "CREATE_VAR": { const vid = uid(); return [...p.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), vid] } : x), { id: vid, name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [] }]; }
+        case "ADD_AD": { const id = uid(); return [...p, { id, name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics() }]; }
+        case "CREATE_VAR": { const vid = uid(); return [...p.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), vid] } : x), { id: vid, name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics() }]; }
         default: return p;
       }
     });
@@ -864,109 +1381,119 @@ export default function App() {
   const killed = ads.filter(a => a.stage === "killed").length;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#070a10", fontFamily: ff, color: "#e2e8f0", padding: "20px 22px" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <div className="app-layout">
+      <Sidebar
+        page={page}
+        setPage={setPage}
+        role={role}
+        userName={userName}
+        onSignOut={handleSignOut}
+        stats={{ live: live.length, win, lose, learns }}
+      />
 
-      {/* Gate toast */}
-      {gateMsg && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", padding: "10px 20px", borderRadius: 10, background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", fontSize: 13, fontWeight: 600, zIndex: 1100, backdropFilter: "blur(8px)" }}>🚫 {gateMsg}</div>}
+      <div className="main-content">
+        {/* Toasts */}
+        {gateMsg && <div className="toast toast-error">🚫 {gateMsg}</div>}
+        {syncMsg && <div className={`toast ${syncMsg.ok ? "toast-success" : "toast-error"}`}>{syncMsg.ok ? "🐳" : "⚠"} {syncMsg.text}</div>}
 
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 2 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6366f1", boxShadow: "0 0 10px rgba(99,102,241,0.4)" }} />
-            <h1 style={{ fontSize: 19, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>Ad Lifeline Pipeline</h1>
-            {role === "editor" && <span style={sBadge("#d97706", "rgba(217,119,6,0.1)")}>Editor: {editorName}</span>}
-          </div>
-          <p style={{ fontSize: 11.5, color: "#334155", margin: 0 }}>Stage gates enforced. AI analysis via API. CPA auto-classifies.</p>
-        </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 10, padding: "6px 12px", borderRadius: 8, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", fontSize: 11, fontFamily: fm }}>
-            <span style={{ color: "#475569" }}>Live <span style={{ color: "#10b981", fontWeight: 700 }}>{live.length}</span></span>
-            <span style={{ color: "#475569" }}>Win <span style={{ color: "#6ee7b7", fontWeight: 700 }}>{win}</span></span>
-            <span style={{ color: "#475569" }}>Lose <span style={{ color: "#ef4444", fontWeight: 700 }}>{lose}</span></span>
-            <span style={{ color: "#475569" }}>$<span style={{ color: "#a5b4fc", fontWeight: 700 }}>{spend.toLocaleString()}</span></span>
-            <span style={{ color: "#475569" }}>🔄<span style={{ color: "#c4b5fd", fontWeight: 700 }}>{learns}</span></span>
-            {killed > 0 && <span style={{ color: "#475569" }}>☠<span style={{ color: "#ef4444", fontWeight: 700 }}>{killed}</span></span>}
-          </div>
-
-          {/* Role switch */}
-          <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <button onClick={() => setRole("founder")} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: ff, background: role === "founder" ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.02)", color: role === "founder" ? "#a5b4fc" : "#475569" }}>Founder</button>
-            <button onClick={() => setRole("editor")} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: ff, background: role === "editor" ? "rgba(217,119,6,0.12)" : "rgba(255,255,255,0.02)", color: role === "editor" ? "#d97706" : "#475569" }}>Editor</button>
-          </div>
-          {role === "editor" && <select value={editorName} onChange={e => setEditorName(e.target.value)} style={{ ...si("auto"), padding: "6px 10px", fontSize: 11 }}>{EDITORS_LIST.map(e => <option key={e} value={e}>{e}</option>)}</select>}
-
-          {role === "founder" && <>
-            <button onClick={() => setShowEd(!showEd)} style={sBtn(showEd ? "rgba(217,119,6,0.1)" : "rgba(255,255,255,0.03)", showEd ? "#d97706" : "#64748b", "1px solid " + (showEd ? "rgba(217,119,6,0.2)" : "rgba(255,255,255,0.05)"))}>👥</button>
-            <button onClick={() => setSettOpen(true)} style={sBtn("rgba(255,255,255,0.03)", "#64748b", "1px solid rgba(255,255,255,0.05)")}>⚙</button>
-            <button onClick={() => setNewOpen(true)} style={{ ...sBtn("#6366f1"), boxShadow: "0 0 14px rgba(99,102,241,0.2)" }}>+ New Ad</button>
-          </>}
-        </div>
-      </div>
-
-      {/* Stage flow */}
-      <div style={{ display: "flex", alignItems: "center", margin: "0 0 10px", background: "rgba(255,255,255,0.015)", borderRadius: 9, padding: "7px 12px", border: "1px solid rgba(255,255,255,0.03)" }}>
-        {STAGES.filter(s => s.id !== "killed").map((s, i) => (
-          <div key={s.id} style={{ display: "flex", alignItems: "center", flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontSize: 11 }}>{s.icon}</span>
-              <span style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 600 }}>{s.label}</span>
-              <span style={{ fontSize: 9.5, padding: "1px 6px", borderRadius: 7, background: s.color + "15", color: s.color, fontWeight: 700, fontFamily: fm }}>{visibleAds.filter(a => a.stage === s.id).length}</span>
-            </div>
-            {i < 3 && <div style={{ flex: 1, textAlign: "center", minWidth: 8 }}><span style={{ color: "#1e293b", fontSize: 9 }}>→</span></div>}
-          </div>
-        ))}
-      </div>
-
-      {/* Stage exit criteria hint */}
-      <div style={{ display: "flex", gap: 0, marginBottom: 8 }}>
-        {STAGES.filter(s => s.id !== "killed").map(s => (
-          <div key={s.id} style={{ flex: 1, textAlign: "center", fontSize: 9, color: "#1e293b" }}>
-            {s.exitLabel && <>Exit: {s.exitLabel}</>}
-          </div>
-        ))}
-      </div>
-
-      {/* Kanban */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9, alignItems: "flex-start" }}>
-        {STAGES.filter(s => s.id !== "killed").map(stage => {
-          const stageAds = visibleAds.filter(a => a.stage === stage.id);
-          const isOver = dragOver === stage.id;
-          return (
-            <div key={stage.id}
-              onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
-              onDragLeave={() => setDragOver(null)}
-              onDrop={e => { e.preventDefault(); if (did.current != null) tryMove(did.current, stage.id); did.current = null; setDragOver(null); }}
-              style={{ background: isOver ? "rgba(99,102,241,0.03)" : "rgba(255,255,255,0.008)", border: isOver ? "1.5px dashed rgba(99,102,241,0.22)" : "1px solid rgba(255,255,255,0.03)", borderRadius: 13, padding: 9, minHeight: 220, transition: "all 0.15s" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7, paddingBottom: 7, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: stage.color }} /><span style={{ fontSize: 11, fontWeight: 700 }}>{stage.label}</span></div>
-                <span style={{ fontSize: 9.5, color: "#334155", fontFamily: fm }}>{stageAds.length}</span>
+        {/* ── PIPELINE PAGE ── */}
+        {page === "pipeline" && (
+          <div className="animate-fade">
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, marginBottom: 4 }}>Pipeline</h2>
+                <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
+                  {visibleAds.length} ads · {CUR} {spend.toLocaleString()} total spend
+                  {killed > 0 && <span> · {killed} killed</span>}
+                </p>
               </div>
-              {stageAds.length === 0 && <div style={{ padding: "18px 6px", textAlign: "center", color: "#1a1a2e", fontSize: 10.5, border: "1px dashed rgba(255,255,255,0.025)", borderRadius: 7 }}>Drop ads here</div>}
-              {stageAds.map(ad => (
-                <div key={ad.id} draggable onDragStart={() => { did.current = ad.id; }} onDragEnd={() => { did.current = null; }} style={{ cursor: "grab" }}>
-                  <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} />
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                {/* Role switch */}
+                <div style={{ display: "flex", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)" }}>
+                  <button onClick={() => setRole("founder")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "founder" ? "var(--accent-bg)" : "transparent", color: role === "founder" ? "var(--accent-light)" : "var(--text-muted)" }}>Founder</button>
+                  <button onClick={() => setRole("editor")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "editor" ? "var(--yellow-bg)" : "transparent", color: role === "editor" ? "var(--yellow)" : "var(--text-muted)" }}>Editor</button>
+                </div>
+                {role === "editor" && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
+
+                {role === "founder" && <>
+                  <button onClick={syncTripleWhale} disabled={syncing} className={`btn btn-sm ${isTripleWhaleConfigured() ? "btn-success" : "btn-ghost"}`}>
+                    {syncing ? "Syncing..." : "Sync TW"}
+                  </button>
+                  <button onClick={() => setNewOpen(true)} className="btn btn-primary btn-sm">+ New Ad</button>
+                </>}
+              </div>
+            </div>
+
+            {/* Stage flow bar */}
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 16, padding: "8px 14px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
+              {STAGES.filter(s => s.id !== "killed").map((s, i) => (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12 }}>{s.icon}</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-secondary)", fontWeight: 600 }}>{s.label}</span>
+                    <span className="badge" style={{ background: s.color + "18", color: s.color, fontWeight: 700 }}>
+                      {visibleAds.filter(a => a.stage === s.id).length}
+                    </span>
+                  </div>
+                  {i < 3 && <div style={{ flex: 1, textAlign: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 10 }}>→</span></div>}
                 </div>
               ))}
             </div>
-          );
-        })}
+
+            {/* Kanban */}
+            <div className="kanban-grid">
+              {STAGES.filter(s => s.id !== "killed").map(stage => {
+                const stageAds = visibleAds.filter(a => a.stage === stage.id);
+                const isOver = dragOver === stage.id;
+                return (
+                  <div key={stage.id}
+                    className={`kanban-col ${isOver ? "drag-over" : ""}`}
+                    onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
+                    onDragLeave={() => setDragOver(null)}
+                    onDrop={e => { e.preventDefault(); if (did.current != null) tryMove(did.current, stage.id); did.current = null; setDragOver(null); }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--border-light)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: stage.color }} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{stage.label}</span>
+                      </div>
+                      <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{stageAds.length}</span>
+                    </div>
+                    {stageAds.length === 0 && <div className="empty-state">Drop ads here</div>}
+                    <div className="stagger">
+                      {stageAds.map(ad => (
+                        <div key={ad.id} draggable onDragStart={() => { did.current = ad.id; }} onDragEnd={() => { did.current = null; }}>
+                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Threshold rules */}
+            <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 11, color: "var(--text-muted)", flexWrap: "wrap" }}>
+              <span><span style={{ color: "var(--green)" }}>●</span> {"<="} ${th.green} Scale</span>
+              <span><span style={{ color: "var(--yellow)" }}>●</span> {"<="} ${th.yellow} Monitor</span>
+              <span><span style={{ color: "var(--red)" }}>●</span> {">"} ${th.yellow} Iterate/Kill</span>
+            </div>
+          </div>
+        )}
+
+        {/* ── EDITORS PAGE ── */}
+        {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} />}
+
+        {/* ── LEARNINGS PAGE ── */}
+        {page === "learnings" && <LearningsPage ads={ads} />}
+
+        {/* ── SETTINGS PAGE ── */}
+        {page === "settings" && <SettingsPage thresholds={th} setThresholds={setTh} />}
+
+        {/* Modals */}
+        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} />}
+        {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}
       </div>
-
-      {/* Editors */}
-      {showEd && role === "founder" && <EditorPanel ads={ads} th={th} />}
-
-      {/* Rules */}
-      <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "#1e293b", flexWrap: "wrap" }}>
-        <span>🟢 ≤${th.green} → Scale</span><span>🟡 ≤${th.yellow} → Monitor</span><span>🔴 >${th.yellow} → 3 iters max → ☠</span><span>🔄 Learnings → generators</span>
-        {role === "founder" && <span style={{ marginLeft: "auto", color: "#334155", cursor: "pointer" }} onClick={() => setSettOpen(true)}>⚙ Thresholds</span>}
-      </div>
-
-      {/* Modals */}
-      {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} />}
-      {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} />}
-      {settOpen && <SettingsModal onClose={() => setSettOpen(false)} thresholds={th} setThresholds={setTh} />}
     </div>
   );
 }
