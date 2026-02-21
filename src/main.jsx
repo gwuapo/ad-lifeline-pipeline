@@ -94,10 +94,16 @@ function Root() {
   if (role === "founder" && workspaces && workspaces.length === 0) {
     return (
       <WorkspaceSetup onComplete={async (name) => {
-        const ws = await createWorkspace(name);
-        setWorkspaces([ws]);
-        setActiveWorkspaceId(ws.id);
-        localStorage.setItem("al_active_workspace", ws.id);
+        try {
+          const ws = await createWorkspace(name);
+          setWorkspaces([ws]);
+          setActiveWorkspaceId(ws.id);
+          localStorage.setItem("al_active_workspace", ws.id);
+        } catch (e) {
+          console.error("Workspace creation failed:", e);
+          alert("Failed to create workspace: " + (e.message || JSON.stringify(e)));
+          throw e;
+        }
       }} />
     );
   }

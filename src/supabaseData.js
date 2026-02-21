@@ -5,9 +5,20 @@ import { supabase } from "./supabase.js";
 // ════════════════════════════════════════════════
 
 export async function fetchWorkspaces() {
+  // First get workspace IDs the user is a member of
+  const { data: memberships, error: memErr } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", (await supabase.auth.getUser()).data.user?.id);
+  if (memErr) throw memErr;
+
+  const wsIds = (memberships || []).map(m => m.workspace_id);
+  if (wsIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from("workspaces")
-    .select("*, workspace_members(user_id, role, editor_name)")
+    .select("*")
+    .in("id", wsIds)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return data || [];

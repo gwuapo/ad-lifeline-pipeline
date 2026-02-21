@@ -959,7 +959,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
 // EDITOR PANEL
 // ════════════════════════════════════════════════
 
-function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
+function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, activeWorkspaceId }) {
   const [newName, setNewName] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedEditor, setSelectedEditor] = useState(null);
@@ -1047,12 +1047,92 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor }) {
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>Win bonus: <span style={{ color: "var(--green-light)" }}>SAR 75</span>/winner (green CPA 5+ days) · Quality = 100 - (revisions x 8) · Health = composite</div>
 
       {/* Editor Detail Modal */}
-      {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} />}
+      {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
     </div>
   );
 }
 
-function EditorDetailModal({ editor, onClose }) {
+function WorkspaceAssignment({ editorName, editorUserId, workspaces }) {
+  const [assigned, setAssigned] = useState({});
+  const [loading, setLoading] = useState({});
+
+  useEffect(() => {
+    if (!editorUserId) return;
+    // Fetch which workspaces this editor is a member of
+    const load = async () => {
+      try {
+        const { data } = await supabase
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("user_id", editorUserId);
+        const map = {};
+        (data || []).forEach(m => { map[m.workspace_id] = true; });
+        setAssigned(map);
+      } catch (e) { console.error("Load assignments:", e); }
+    };
+    load();
+  }, [editorUserId]);
+
+  const toggle = async (wsId) => {
+    if (!editorUserId) return;
+    setLoading(prev => ({ ...prev, [wsId]: true }));
+    try {
+      if (assigned[wsId]) {
+        await removeMemberFromWorkspace(wsId, editorUserId);
+        setAssigned(prev => { const n = { ...prev }; delete n[wsId]; return n; });
+      } else {
+        await addMemberToWorkspace(wsId, editorUserId, "editor", editorName);
+        setAssigned(prev => ({ ...prev, [wsId]: true }));
+      }
+    } catch (e) {
+      console.error("Toggle workspace:", e);
+      alert("Error: " + e.message);
+    }
+    setLoading(prev => ({ ...prev, [wsId]: false }));
+  };
+
+  if (!editorUserId) {
+    return (
+      <div style={{ marginTop: 16 }}>
+        <div className="section-title">Workspace Access</div>
+        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>This editor hasn't signed up yet. They need an account before you can assign workspaces.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="section-title">Workspace Access</div>
+      <p style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginBottom: 8 }}>Toggle which workspaces this editor can access.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {workspaces.map(ws => (
+          <div key={ws.id} onClick={() => !loading[ws.id] && toggle(ws.id)} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 12px", borderRadius: "var(--radius-md)",
+            background: assigned[ws.id] ? "var(--accent-bg)" : "var(--bg-elevated)",
+            border: `1px solid ${assigned[ws.id] ? "var(--accent-border)" : "var(--border-light)"}`,
+            cursor: loading[ws.id] ? "wait" : "pointer",
+            transition: "all var(--transition)",
+            opacity: loading[ws.id] ? 0.6 : 1,
+          }}>
+            <div style={{
+              width: 18, height: 18, borderRadius: 4,
+              border: `2px solid ${assigned[ws.id] ? "var(--accent)" : "var(--border)"}`,
+              background: assigned[ws.id] ? "var(--accent)" : "transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all var(--transition)",
+            }}>
+              {assigned[ws.id] && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 500, color: assigned[ws.id] ? "var(--accent-light)" : "var(--text-secondary)" }}>{ws.name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
   const { name, profile, stats } = editor;
   const [pName, setPName] = useState(profile?.displayName || name);
   const [pPhoto, setPPhoto] = useState(profile?.photo_url || profile?.photoUrl || null);
@@ -1128,6 +1208,11 @@ function EditorDetailModal({ editor, onClose }) {
         <input value={pRate} onChange={e => setPRate(e.target.value)} className="input" placeholder="e.g. $20/minute edited" />
         <label className="label">Weekly Capacity (minutes of video)</label>
         <input type="number" value={pMinutes} onChange={e => setPMinutes(e.target.value)} className="input" placeholder="e.g. 60" min="1" />
+
+        {/* Workspace assignment */}
+        {workspaces && workspaces.length > 0 && (
+          <WorkspaceAssignment editorName={name} editorUserId={profile?.user_id} workspaces={workspaces} />
+        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
           <button onClick={handleSave} className="btn btn-primary btn-sm">Save Changes</button>
@@ -1459,13 +1544,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         )}
 
         {/* ── EDITORS PAGE ── */}
-        {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} />}
+        {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
 
         {/* ── LEARNINGS PAGE ── */}
         {page === "learnings" && <LearningsPage ads={ads} />}
 
         {/* ── SETTINGS PAGE ── */}
-        {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} />}
+        {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />}
 
         {/* Modals */}
         {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} />}

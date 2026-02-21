@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useTheme } from "./ThemeContext.jsx";
 import { getTripleWhaleConfig, setTripleWhaleConfig, validateApiKey } from "./tripleWhale.js";
 import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, getProxyUrl, setProxyUrl } from "./apiKeys.js";
+import { supabase } from "./supabase.js";
+import { addMemberToWorkspace } from "./supabaseData.js";
 
-export default function SettingsPage({ thresholds, setThresholds }) {
+export default function SettingsPage({ thresholds, setThresholds, activeWorkspaceId, workspaces }) {
   const { isDark, setTheme: setThemeMode } = useTheme();
   const [g, setG] = useState(thresholds.green);
   const [y, setY] = useState(thresholds.yellow);
@@ -66,6 +68,9 @@ export default function SettingsPage({ thresholds, setThresholds }) {
         <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Settings</h2>
         <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>Configure thresholds, API integrations, and appearance.</p>
       </div>
+
+      {/* Team */}
+      <TeamSection activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />
 
       {/* Appearance */}
       <div className="card" style={{ marginBottom: 16 }}>
@@ -257,6 +262,98 @@ export default function SettingsPage({ thresholds, setThresholds }) {
         <button onClick={saveTw} disabled={twLoading} className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>
           {twLoading ? "Validating..." : "Save & Test Connection"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function TeamSection({ activeWorkspaceId, workspaces }) {
+  const [email, setEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("founder");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const activeWs = workspaces?.find(w => w.id === activeWorkspaceId);
+
+  const handleInvite = async () => {
+    if (!email.trim() || !activeWorkspaceId) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      // Look up user by email via Supabase admin or check if they exist
+      // Since we can't look up users by email from the client, we'll use a workaround:
+      // Try to find them in auth.users via RPC, or just store the email and match on login
+      // For now, we'll search workspace_members and editor_profiles
+
+      // The simplest approach: sign them up if needed, or just add by user ID
+      // Since Supabase doesn't expose user lookup by email on client side,
+      // we'll invite them by email — they must already have an account
+      const { data: users } = await supabase.rpc("get_user_id_by_email", { lookup_email: email.trim() }).single();
+
+      if (users) {
+        await addMemberToWorkspace(activeWorkspaceId, users, inviteRole, inviteRole === "editor" ? email.split("@")[0] : null);
+        setResult({ ok: true, msg: `Added ${email.trim()} as ${inviteRole} to ${activeWs?.name || "workspace"}` });
+        setEmail("");
+      } else {
+        // Fallback: try direct insert if RPC doesn't exist
+        setResult({ ok: false, msg: "User not found. They must sign up first, then you can add them here." });
+      }
+    } catch (e) {
+      // If RPC doesn't exist, explain the manual approach
+      if (e.message?.includes("function") || e.message?.includes("rpc")) {
+        setResult({ ok: false, msg: "To add team members: have them sign up first, then run this SQL in Supabase to find their user ID, and add them manually. We'll add a simpler invite flow soon." });
+      } else {
+        setResult({ ok: false, msg: e.message || "Failed to add member" });
+      }
+    }
+    setLoading(false);
+    setTimeout(() => setResult(null), 5000);
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="section-title">Team</div>
+      <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
+        Invite co-founders or editors to <strong style={{ color: "var(--text-secondary)" }}>{activeWs?.name || "this workspace"}</strong>.
+        They must have an Ad Lifeline account first.
+      </p>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label className="label" style={{ marginTop: 0 }}>Email Address</label>
+          <input
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleInvite()}
+            className="input"
+            placeholder="cofounder@company.com"
+          />
+        </div>
+        <div>
+          <label className="label" style={{ marginTop: 0 }}>Role</label>
+          <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} className="input" style={{ cursor: "pointer" }}>
+            <option value="founder">Founder</option>
+            <option value="editor">Editor</option>
+          </select>
+        </div>
+        <button onClick={handleInvite} disabled={loading || !email.trim()} className="btn btn-primary btn-sm" style={{ marginBottom: 1 }}>
+          {loading ? "Adding..." : "Add to Workspace"}
+        </button>
+      </div>
+
+      {result && (
+        <div style={{
+          padding: "8px 12px", borderRadius: "var(--radius-md)", marginTop: 10, fontSize: 12.5, fontWeight: 500,
+          background: result.ok ? "var(--green-bg)" : "var(--red-bg)",
+          border: `1px solid ${result.ok ? "var(--green-border)" : "var(--red-border)"}`,
+          color: result.ok ? "var(--green-light)" : "var(--red-light)",
+        }}>
+          {result.ok ? "✓" : "!"} {result.msg}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10 }}>
+        Co-founders get full access to this workspace. Editors only see ads assigned to them.
       </div>
     </div>
   );
