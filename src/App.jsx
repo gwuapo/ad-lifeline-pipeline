@@ -6,7 +6,7 @@ import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, upsertEditorProfile } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -960,24 +960,51 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
 // ════════════════════════════════════════════════
 
 function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, activeWorkspaceId }) {
-  const [newName, setNewName] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteResult, setInviteResult] = useState(null);
   const [selectedEditor, setSelectedEditor] = useState(null);
   const [allProfiles, setAllProfiles] = useState({});
 
-  // Load profiles once (kept simple — profiles keyed by display_name)
   useEffect(() => {
-    // Profiles will be loaded from workspace context; for now use empty map
-    // The EditorDetailModal handles saving via Supabase
-  }, []);
+    if (!activeWorkspaceId) return;
+    fetchAllEditorProfiles(activeWorkspaceId).then(profiles => {
+      const map = {};
+      profiles.forEach(p => { map[p.display_name || p.editor_name] = p; });
+      setAllProfiles(map);
+    }).catch(() => {});
+  }, [activeWorkspaceId]);
 
-  const handleAdd = () => {
-    if (newName.trim()) { addEditor(newName); setNewName(""); setShowAdd(false); }
+  const handleInvite = async () => {
+    if (!inviteEmail.trim() || !activeWorkspaceId) return;
+    setInviteLoading(true);
+    setInviteResult(null);
+    try {
+      const { data: userId } = await supabase.rpc("get_user_id_by_email", { lookup_email: inviteEmail.trim() });
+      if (!userId) {
+        setInviteResult({ ok: false, msg: "User not found. They must sign up first." });
+        setInviteLoading(false);
+        setTimeout(() => setInviteResult(null), 4000);
+        return;
+      }
+      // Get their display name from profile or email
+      const profile = await fetchEditorProfile(userId);
+      const editorName = profile?.display_name || inviteEmail.split("@")[0];
+      await addMemberToWorkspace(activeWorkspaceId, userId, "editor", editorName);
+      addEditor(editorName);
+      setInviteResult({ ok: true, msg: `Added ${editorName} to workspace` });
+      setInviteEmail("");
+      setShowAdd(false);
+    } catch (e) {
+      setInviteResult({ ok: false, msg: e.message || "Failed to add editor" });
+    }
+    setInviteLoading(false);
+    setTimeout(() => setInviteResult(null), 4000);
   };
 
   const findProfile = (name) => {
-    // Match by displayName across all profiles
-    return Object.values(allProfiles).find(p => p.displayName === name) || null;
+    return allProfiles[name] || null;
   };
 
   return (
@@ -989,12 +1016,27 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
         </div>
         <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary btn-sm">{showAdd ? "Cancel" : "+ Add Editor"}</button>
       </div>
-      {showAdd && <div className="card" style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "flex-end" }}>
-        <div style={{ flex: 1 }}>
-          <label className="label" style={{ marginTop: 0 }}>Editor Name</label>
-          <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} className="input" placeholder="Enter name..." autoFocus />
+      {showAdd && <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label className="label" style={{ marginTop: 0 }}>Editor Email</label>
+            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleInvite()} className="input" placeholder="editor@email.com" autoFocus />
+          </div>
+          <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()} className="btn btn-primary btn-sm">
+            {inviteLoading ? "Adding..." : "Invite to Workspace"}
+          </button>
         </div>
-        <button onClick={handleAdd} disabled={!newName.trim() || editors.includes(newName.trim())} className="btn btn-primary btn-sm">Add</button>
+        {inviteResult && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-md)", marginTop: 8, fontSize: 12.5,
+            background: inviteResult.ok ? "var(--green-bg)" : "var(--red-bg)",
+            border: `1px solid ${inviteResult.ok ? "var(--green-border)" : "var(--red-border)"}`,
+            color: inviteResult.ok ? "var(--green-light)" : "var(--red-light)",
+          }}>
+            {inviteResult.ok ? "✓" : "!"} {inviteResult.msg}
+          </div>
+        )}
+        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>The editor must have an Ad Lifeline account first.</p>
       </div>}
       <div style={{ display: "grid", gridTemplateColumns: editors.length < 3 ? `repeat(${Math.max(1, editors.length)},1fr)` : "repeat(3,1fr)", gap: 12 }}>
         {editors.map(name => {
@@ -1324,7 +1366,20 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   }, [activeWorkspaceId]);
 
   const addEditor = (name) => { const n = name.trim(); if (!n || editors.includes(n)) return; setEditors(prev => [...prev, n]); };
-  const removeEditor = (name) => { setEditors(prev => prev.filter(e => e !== name)); };
+  const removeEditor = async (name) => {
+    // Remove from local state
+    setEditors(prev => prev.filter(e => e !== name));
+    // Also remove from workspace in Supabase
+    if (activeWorkspaceId) {
+      try {
+        const members = await getWorkspaceMembers(activeWorkspaceId);
+        const member = members.find(m => m.editor_name === name && m.role === "editor");
+        if (member) {
+          await removeMemberFromWorkspace(activeWorkspaceId, member.user_id);
+        }
+      } catch (e) { console.error("Remove editor from workspace:", e); }
+    }
+  };
 
   const syncTripleWhale = async () => {
     if (!isTripleWhaleConfigured()) { setSyncMsg({ ok: false, text: "Configure Triple Whale in Settings first" }); setTimeout(() => setSyncMsg(null), 3000); return; }
