@@ -1595,7 +1595,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
       <div className="main-content">
         {/* Top bar with notifications */}
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 0 0", marginBottom: -4 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 0 8px" }}>
           <NotificationBell userId={session?.user?.id} onOpenAd={(adId) => { const ad = ads.find(a => a.id === adId); if (ad) { setOpenAd(ad); setPage("pipeline"); } }} />
         </div>
         {/* Toasts */}

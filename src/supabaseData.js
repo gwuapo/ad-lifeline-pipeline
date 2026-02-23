@@ -397,32 +397,32 @@ export async function getWorkspaceMemberNames(workspaceId) {
     .eq("workspace_id", workspaceId);
   if (error) { console.error("getWorkspaceMemberNames:", error); return []; }
 
-  const names = [];
-  for (const m of (members || [])) {
-    if (m.editor_name) {
-      names.push(m.editor_name);
-    } else {
-      // For founders, look up display name from auth metadata
-      try {
-        const { data } = await supabase.rpc("get_user_id_by_display_name", { lookup_name: "" });
-        // Can't easily get founder names from client — use workspace creator approach
-      } catch {}
-    }
-  }
-
-  // Simpler: fetch all member user IDs, get names from profiles + auth
   const userIds = (members || []).map(m => m.user_id);
+  if (userIds.length === 0) return [];
+
+  // Get editor profiles
   const { data: profiles } = await supabase
     .from("editor_profiles")
     .select("user_id, display_name")
     .in("user_id", userIds);
-
   const profileMap = {};
   (profiles || []).forEach(p => { profileMap[p.user_id] = p.display_name; });
 
-  return (members || []).map(m => ({
-    userId: m.user_id,
-    name: m.editor_name || profileMap[m.user_id] || "Unknown",
-    role: m.role,
-  }));
+  // For founders without editor profiles, look up display names via RPC
+  const results = [];
+  for (const m of (members || [])) {
+    let name = m.editor_name || profileMap[m.user_id];
+    if (!name) {
+      try {
+        const { data } = await supabase.rpc("get_display_name_by_user_id", { uid: m.user_id });
+        name = data || null;
+      } catch {}
+    }
+    results.push({
+      userId: m.user_id,
+      name: name || "Unknown",
+      role: m.role,
+    });
+  }
+  return results;
 }
