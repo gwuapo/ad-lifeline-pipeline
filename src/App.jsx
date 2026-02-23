@@ -268,7 +268,7 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors }) {
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName }) {
   const [tab, setTab] = useState("overview");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -352,7 +352,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors }) {
   const addMetric = () => { const m = { date: nm.date, cpa: +nm.cpa, spend: +nm.spend, conv: +nm.conv, ctr: +nm.ctr, cpm: +nm.cpm }; if (!m.cpa || !m.spend) return; dispatch({ type: "ADD_METRIC", id: ad.id, metric: m }); setNm({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" }); };
   const addComment = () => { if (!nc.text.trim()) return; dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), ...nc, text: nc.text.trim() } }); setNc({ text: "", sentiment: "neutral", hidden: false }); };
   const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } });
-  const sendMsg = () => { if (!msg.trim()) return; dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: isEditor ? ad.editor || "Editor" : "You", text: msg.trim(), ts: now() } }); setMsg(""); };
+  const sendMsg = () => { if (!msg.trim()) return; dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: userName || (isEditor ? ad.editor || "Editor" : "Unknown"), text: msg.trim(), ts: now() } }); setMsg(""); };
   const addLearning = () => { if (!nl.text.trim()) return; dispatch({ type: "ADD_LEARNING", id: ad.id, learning: { id: uid(), ...nl, text: nl.text.trim() } }); setNl({ type: "hook_pattern", text: "" }); };
   const createVar = () => { if (!vf.name.trim()) return; dispatch({ type: "CREATE_VAR", pid: ad.id, name: vf.name.trim(), brief: vf.brief.trim(), type: ad.type, vt: vm.id }); setVm(null); setVf({ name: "", brief: "" }); };
   const doIter = () => { const last = ad.analyses[ad.analyses.length - 1]; dispatch({ type: "ITERATE", id: ad.id, reason: last?.nextIterationPlan || last?.summary || "Based on metrics" }); };
@@ -1610,7 +1610,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />}
 
         {/* Modals */}
-        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} />}
+        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} />}
         {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}
       </div>
     </div>
