@@ -61,10 +61,19 @@ function Root() {
     init();
   }, [session]);
 
-  if (session === undefined || loading) {
+  if (session === undefined) {
     return (
       <div className="loading-screen">
         <div className="loading-dot" />
+      </div>
+    );
+  }
+
+  if (loading && session) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-dot" />
+        <div style={{ marginTop: 16, fontSize: 13, color: "var(--text-muted)" }}>Loading workspace...</div>
       </div>
     );
   }

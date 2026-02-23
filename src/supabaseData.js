@@ -5,12 +5,19 @@ import { supabase } from "./supabase.js";
 // ════════════════════════════════════════════════
 
 export async function fetchWorkspaces() {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+  if (!userId) return [];
+
   // First get workspace IDs the user is a member of
   const { data: memberships, error: memErr } = await supabase
     .from("workspace_members")
     .select("workspace_id")
-    .eq("user_id", (await supabase.auth.getUser()).data.user?.id);
-  if (memErr) throw memErr;
+    .eq("user_id", userId);
+  if (memErr) {
+    console.error("fetchWorkspaces memberships error:", memErr);
+    // If table doesn't exist or RLS error, return empty
+    return [];
+  }
 
   const wsIds = (memberships || []).map(m => m.workspace_id);
   if (wsIds.length === 0) return [];
@@ -20,7 +27,10 @@ export async function fetchWorkspaces() {
     .select("*")
     .in("id", wsIds)
     .order("created_at", { ascending: true });
-  if (error) throw error;
+  if (error) {
+    console.error("fetchWorkspaces error:", error);
+    return [];
+  }
   return data || [];
 }
 
@@ -258,13 +268,21 @@ export function subscribeToAds(workspaceId, callback) {
 // ════════════════════════════════════════════════
 
 export async function fetchEditorProfile(userId) {
-  const { data, error } = await supabase
-    .from("editor_profiles")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
-  if (error && error.code !== "PGRST116") throw error;
-  return data || null;
+  try {
+    const { data, error } = await supabase
+      .from("editor_profiles")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+    if (error && error.code !== "PGRST116") {
+      console.error("fetchEditorProfile error:", error);
+      return null;
+    }
+    return data || null;
+  } catch (e) {
+    console.error("fetchEditorProfile exception:", e);
+    return null;
+  }
 }
 
 export async function upsertEditorProfile(userId, profile) {
