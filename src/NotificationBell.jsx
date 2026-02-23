@@ -73,9 +73,9 @@ export default function NotificationBell({ userId, onOpenAd }) {
         <div style={{
           position: "absolute", top: "100%", right: 0, marginTop: 6,
           width: 360, maxHeight: 420, overflow: "auto",
-          background: "var(--bg-card)", border: "1px solid var(--border)",
+          background: "var(--bg-root)", border: "1px solid var(--border)",
           borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)",
-          zIndex: 1000,
+          zIndex: 1000, backdropFilter: "none",
         }}>
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
