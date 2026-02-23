@@ -1470,12 +1470,14 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </p>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                {/* Role switch */}
-                <div style={{ display: "flex", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)" }}>
-                  <button onClick={() => setRole("founder")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "founder" ? "var(--accent-bg)" : "transparent", color: role === "founder" ? "var(--accent-light)" : "var(--text-muted)" }}>Founder</button>
-                  <button onClick={() => setRole("editor")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "editor" ? "var(--yellow-bg)" : "transparent", color: role === "editor" ? "var(--yellow)" : "var(--text-muted)" }}>Editor</button>
-                </div>
-                {role === "editor" && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
+                {/* Role switch — only for founders (dev/testing) */}
+                {userRole === "founder" && <>
+                  <div style={{ display: "flex", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)" }}>
+                    <button onClick={() => setRole("founder")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "founder" ? "var(--accent-bg)" : "transparent", color: role === "founder" ? "var(--accent-light)" : "var(--text-muted)" }}>Founder</button>
+                    <button onClick={() => setRole("editor")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "editor" ? "var(--yellow-bg)" : "transparent", color: role === "editor" ? "var(--yellow)" : "var(--text-muted)" }}>Editor</button>
+                  </div>
+                  {role === "editor" && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
+                </>}
 
                 {role === "founder" && <>
                   <button onClick={syncTripleWhale} disabled={syncing} className={`btn btn-sm ${isTripleWhaleConfigured() ? "btn-success" : "btn-ghost"}`}>
