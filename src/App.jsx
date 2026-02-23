@@ -6,7 +6,8 @@ import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile } from "./supabaseData.js";
+import NotificationBell from "./NotificationBell.jsx";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -268,7 +269,7 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName }) {
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session }) {
   const [tab, setTab] = useState("overview");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -352,7 +353,74 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName })
   const addMetric = () => { const m = { date: nm.date, cpa: +nm.cpa, spend: +nm.spend, conv: +nm.conv, ctr: +nm.ctr, cpm: +nm.cpm }; if (!m.cpa || !m.spend) return; dispatch({ type: "ADD_METRIC", id: ad.id, metric: m }); setNm({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" }); };
   const addComment = () => { if (!nc.text.trim()) return; dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), ...nc, text: nc.text.trim() } }); setNc({ text: "", sentiment: "neutral", hidden: false }); };
   const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } });
-  const sendMsg = () => { if (!msg.trim()) return; dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: userName || (isEditor ? ad.editor || "Editor" : "Unknown"), text: msg.trim(), ts: now() } }); setMsg(""); };
+  const [memberNames, setMemberNames] = useState([]);
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState("");
+
+  useEffect(() => {
+    if (activeWorkspaceId) {
+      getWorkspaceMemberNames(activeWorkspaceId).then(members => {
+        setMemberNames(members.filter(m => m.name !== userName));
+      }).catch(() => {});
+    }
+  }, [activeWorkspaceId]);
+
+  const sendMsg = async () => {
+    if (!msg.trim()) return;
+    const text = msg.trim();
+    const senderName = userName || (isEditor ? ad.editor || "Editor" : "Unknown");
+    dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: senderName, text, ts: now() } });
+    // Detect @mentions and create notifications
+    const mentions = text.match(/@(\w[\w\s]*?)(?=\s|$|,|\.)/g);
+    if (mentions && activeWorkspaceId) {
+      for (const mention of mentions) {
+        const mentionedName = mention.slice(1).trim();
+        const userId = await resolveUserIdByName(mentionedName, activeWorkspaceId);
+        if (userId) {
+          createNotification({
+            workspaceId: activeWorkspaceId,
+            recipientId: userId,
+            senderName,
+            adId: ad.id,
+            adName: ad.name,
+            message: text,
+          });
+        }
+      }
+    }
+    setMsg("");
+  };
+
+  const handleMsgChange = (e) => {
+    const val = e.target.value;
+    setMsg(val);
+    // Check if user is typing @
+    const lastAt = val.lastIndexOf("@");
+    if (lastAt >= 0 && (lastAt === 0 || val[lastAt - 1] === " ")) {
+      const partial = val.slice(lastAt + 1);
+      if (!partial.includes(" ") || partial.length < 20) {
+        setMentionFilter(partial.toLowerCase());
+        setShowMentions(true);
+        return;
+      }
+    }
+    setShowMentions(false);
+  };
+
+  const insertMention = (name) => {
+    const lastAt = msg.lastIndexOf("@");
+    const before = msg.slice(0, lastAt);
+    setMsg(before + "@" + name + " ");
+    setShowMentions(false);
+  };
+
+  const renderMentions = (text) => {
+    const parts = text.split(/(@\w[\w\s]*?)(?=\s|$|,|\.)/g);
+    return parts.map((part, i) =>
+      part.startsWith("@") ? <span key={i} style={{ color: "var(--accent-light)", fontWeight: 600 }}>{part}</span> : part
+    );
+  };
+
   const addLearning = () => { if (!nl.text.trim()) return; dispatch({ type: "ADD_LEARNING", id: ad.id, learning: { id: uid(), ...nl, text: nl.text.trim() } }); setNl({ type: "hook_pattern", text: "" }); };
   const createVar = () => { if (!vf.name.trim()) return; dispatch({ type: "CREATE_VAR", pid: ad.id, name: vf.name.trim(), brief: vf.brief.trim(), type: ad.type, vt: vm.id }); setVm(null); setVf({ name: "", brief: "" }); };
   const doIter = () => { const last = ad.analyses[ad.analyses.length - 1]; dispatch({ type: "ITERATE", id: ad.id, reason: last?.nextIterationPlan || last?.summary || "Based on metrics" }); };
@@ -784,13 +852,33 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName })
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: m.from === "You" || m.from === "Adolf" ? "var(--accent-light)" : "var(--text-primary)" }}>{m.from}</span>
                   <span style={{ fontSize: 10.5, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{m.ts}</span>
                 </div>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{m.text}</div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{renderMentions(m.text)}</div>
               </div>)}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={msg} onChange={e => setMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} placeholder="Write a message..." className="input" style={{ flex: 1 }} />
-            <button onClick={sendMsg} className="btn btn-primary btn-sm">Send</button>
+          <div style={{ position: "relative" }}>
+            {showMentions && memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).length > 0 && (
+              <div style={{
+                position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 4,
+                background: "var(--bg-card)", border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)",
+                maxHeight: 160, overflow: "auto", zIndex: 10,
+              }}>
+                {memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).map(m => (
+                  <div key={m.userId} onClick={() => insertMention(m.name)} style={{
+                    padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                    borderBottom: "1px solid var(--border-light)", transition: "background 0.1s",
+                  }} onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-primary)" }}>{m.name}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "capitalize" }}>{m.role}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Write a message... use @ to mention" className="input" style={{ flex: 1 }} />
+              <button onClick={sendMsg} className="btn btn-primary btn-sm">Send</button>
+            </div>
           </div>
         </div>
       )}
@@ -1506,6 +1594,10 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       />
 
       <div className="main-content">
+        {/* Top bar with notifications */}
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 0 0", marginBottom: -4 }}>
+          <NotificationBell userId={session?.user?.id} onOpenAd={(adId) => { const ad = ads.find(a => a.id === adId); if (ad) { setOpenAd(ad); setPage("pipeline"); } }} />
+        </div>
         {/* Toasts */}
         {gateMsg && <div className="toast toast-error">🚫 {gateMsg}</div>}
         {syncMsg && <div className={`toast ${syncMsg.ok ? "toast-success" : "toast-error"}`}>{syncMsg.ok ? "🐳" : "⚠"} {syncMsg.text}</div>}
@@ -1610,7 +1702,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />}
 
         {/* Modals */}
-        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} />}
+        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} />}
         {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}
       </div>
     </div>

@@ -317,3 +317,112 @@ export async function fetchAllEditorProfiles(workspaceId) {
     return { ...p, editor_name: member?.editor_name || p.display_name };
   });
 }
+
+// ════════════════════════════════════════════════
+// NOTIFICATIONS
+// ════════════════════════════════════════════════
+
+export async function fetchNotifications() {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("*")
+    .eq("recipient_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) { console.error("fetchNotifications:", error); return []; }
+  return data || [];
+}
+
+export async function createNotification({ workspaceId, recipientId, senderName, adId, adName, message }) {
+  const { error } = await supabase
+    .from("notifications")
+    .insert({ workspace_id: workspaceId, recipient_id: recipientId, sender_name: senderName, ad_id: adId, ad_name: adName, message });
+  if (error) console.error("createNotification:", error);
+}
+
+export async function markNotificationRead(notifId) {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read: true })
+    .eq("id", notifId);
+  if (error) console.error("markNotificationRead:", error);
+}
+
+export async function markAllNotificationsRead() {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+  if (!userId) return;
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read: true })
+    .eq("recipient_id", userId)
+    .eq("read", false);
+  if (error) console.error("markAllNotificationsRead:", error);
+}
+
+export async function resolveUserIdByName(name, workspaceId) {
+  // Try workspace-scoped lookup first
+  try {
+    const { data } = await supabase.rpc("get_user_id_by_name", { lookup_name: name, ws_id: workspaceId });
+    if (data) return data;
+  } catch {}
+  // Fallback to global display name lookup
+  try {
+    const { data } = await supabase.rpc("get_user_id_by_display_name", { lookup_name: name });
+    if (data) return data;
+  } catch {}
+  return null;
+}
+
+export function subscribeToNotifications(userId, callback) {
+  const channel = supabase
+    .channel(`notifs-${userId}`)
+    .on("postgres_changes", {
+      event: "INSERT",
+      schema: "public",
+      table: "notifications",
+      filter: `recipient_id=eq.${userId}`,
+    }, (payload) => {
+      callback(payload.new);
+    })
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+
+export async function getWorkspaceMemberNames(workspaceId) {
+  const { data: members, error } = await supabase
+    .from("workspace_members")
+    .select("user_id, role, editor_name")
+    .eq("workspace_id", workspaceId);
+  if (error) { console.error("getWorkspaceMemberNames:", error); return []; }
+
+  const names = [];
+  for (const m of (members || [])) {
+    if (m.editor_name) {
+      names.push(m.editor_name);
+    } else {
+      // For founders, look up display name from auth metadata
+      try {
+        const { data } = await supabase.rpc("get_user_id_by_display_name", { lookup_name: "" });
+        // Can't easily get founder names from client — use workspace creator approach
+      } catch {}
+    }
+  }
+
+  // Simpler: fetch all member user IDs, get names from profiles + auth
+  const userIds = (members || []).map(m => m.user_id);
+  const { data: profiles } = await supabase
+    .from("editor_profiles")
+    .select("user_id, display_name")
+    .in("user_id", userIds);
+
+  const profileMap = {};
+  (profiles || []).forEach(p => { profileMap[p.user_id] = p.display_name; });
+
+  return (members || []).map(m => ({
+    userId: m.user_id,
+    name: m.editor_name || profileMap[m.user_id] || "Unknown",
+    role: m.role,
+  }));
+}
