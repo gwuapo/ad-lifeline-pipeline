@@ -360,8 +360,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   useEffect(() => {
     if (activeWorkspaceId) {
       getWorkspaceMemberNames(activeWorkspaceId).then(members => {
+        console.log("[mentions] loaded workspace members:", members);
         setMemberNames(members.filter(m => m.name !== userName));
-      }).catch(() => {});
+      }).catch(e => console.error("[mentions] failed to load members:", e));
     }
   }, [activeWorkspaceId]);
 
@@ -371,19 +372,24 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     const senderName = userName || (isEditor ? ad.editor || "Editor" : "Unknown");
     dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: senderName, text, ts: now() } });
     // Detect @mentions using the loaded member names
+    console.log("[mentions] checking text:", text, "members:", memberNames, "wsId:", activeWorkspaceId);
     if (activeWorkspaceId && memberNames.length > 0) {
       for (const member of memberNames) {
-        if (text.includes("@" + member.name)) {
+        const mentionStr = "@" + member.name;
+        console.log("[mentions] checking for:", mentionStr, "found:", text.includes(mentionStr));
+        if (text.includes(mentionStr)) {
           try {
-            await createNotification({
+            console.log("[mentions] creating notification for", member.name, member.userId);
+            const result = await createNotification({
               workspaceId: activeWorkspaceId,
               recipientId: member.userId,
               senderName,
-              adId: ad.id,
+              adId: String(ad.id),
               adName: ad.name,
               message: text,
             });
-          } catch (e) { console.error("Notification error:", e); }
+            console.log("[mentions] notification created:", result);
+          } catch (e) { console.error("[mentions] notification error:", e); }
         }
       }
     }
