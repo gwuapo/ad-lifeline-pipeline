@@ -1,9 +1,9 @@
 -- ════════════════════════════════════════════════
--- NOTIFICATIONS + DISPLAY NAME RPC (v3)
+-- NOTIFICATIONS (v4) - Uses RPC to bypass RLS for inserts
 -- Run this in Supabase SQL Editor
 -- ════════════════════════════════════════════════
 
--- 1) Drop and recreate
+-- 1) Drop and recreate table
 drop table if exists notifications;
 
 create table notifications (
@@ -21,19 +21,13 @@ create table notifications (
 create index idx_notif_recipient on notifications(recipient_id);
 create index idx_notif_workspace on notifications(workspace_id);
 
--- 2) RLS: allow any authenticated user to insert, users read/update/delete their own
-alter table notifications enable row level security;
+grant all on notifications to authenticated;
 
-drop policy if exists "notif_sel" on notifications;
-drop policy if exists "notif_ins" on notifications;
-drop policy if exists "notif_upd" on notifications;
-drop policy if exists "notif_del" on notifications;
+-- 2) RLS - only for select/update/delete (insert via RPC)
+alter table notifications enable row level security;
 
 create policy "notif_sel" on notifications for select
   to authenticated using (recipient_id = auth.uid());
-
-create policy "notif_ins" on notifications for insert
-  to authenticated with check (true);
 
 create policy "notif_upd" on notifications for update
   to authenticated using (recipient_id = auth.uid());
@@ -41,13 +35,29 @@ create policy "notif_upd" on notifications for update
 create policy "notif_del" on notifications for delete
   to authenticated using (recipient_id = auth.uid());
 
--- 3) Grant table access to authenticated role
-grant all on notifications to authenticated;
+-- 3) security definer RPC to insert notifications (bypasses RLS)
+create or replace function create_notification(
+  p_workspace_id uuid,
+  p_recipient_id uuid,
+  p_sender_name text,
+  p_ad_id text,
+  p_ad_name text,
+  p_message text
+)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  insert into notifications (workspace_id, recipient_id, sender_name, ad_id, ad_name, message)
+  values (p_workspace_id, p_recipient_id, p_sender_name, p_ad_id, p_ad_name, p_message);
+end;
+$$;
 
 -- 4) Realtime
 alter publication supabase_realtime add table notifications;
 
--- 5) RPC to look up display_name from auth.users metadata
+-- 5) Display name lookup RPC
 create or replace function get_display_name_by_user_id(uid uuid)
 returns text
 language sql

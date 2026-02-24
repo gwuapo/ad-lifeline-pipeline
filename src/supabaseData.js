@@ -336,15 +336,18 @@ export async function fetchNotifications() {
 }
 
 export async function createNotification({ workspaceId, recipientId, senderName, adId, adName, message }) {
-  const { data, error } = await supabase
-    .from("notifications")
-    .insert({ workspace_id: workspaceId, recipient_id: recipientId, sender_name: senderName, ad_id: adId, ad_name: adName, message })
-    .select();
+  const { error } = await supabase.rpc("create_notification", {
+    p_workspace_id: workspaceId,
+    p_recipient_id: recipientId,
+    p_sender_name: senderName,
+    p_ad_id: adId,
+    p_ad_name: adName,
+    p_message: message,
+  });
   if (error) {
     console.error("createNotification error:", error);
     throw error;
   }
-  return data;
 }
 
 export async function markNotificationRead(notifId) {
