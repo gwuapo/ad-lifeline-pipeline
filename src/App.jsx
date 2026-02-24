@@ -366,34 +366,30 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     }
   }, [activeWorkspaceId]);
 
+  const [mentionDebug, setMentionDebug] = useState(null);
+
   const sendMsg = async () => {
     if (!msg.trim()) return;
     const text = msg.trim();
     const senderName = userName || (isEditor ? ad.editor || "Editor" : "Unknown");
     dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: senderName, text, ts: now() } });
 
-    // Detect @mentions using the loaded member names
-    const hasMentions = text.includes("@");
-    console.log("[mentions] text:", text, "hasMentions:", hasMentions, "memberCount:", memberNames.length, "wsId:", activeWorkspaceId);
-
-    if (hasMentions && activeWorkspaceId) {
-      // If memberNames empty, try loading them now
+    // Detect @mentions
+    if (text.includes("@") && activeWorkspaceId) {
       let members = memberNames;
       if (members.length === 0) {
         try {
           members = await getWorkspaceMemberNames(activeWorkspaceId);
           members = members.filter(m => m.name !== userName);
           setMemberNames(members);
-          console.log("[mentions] lazy-loaded members:", members);
-        } catch (e) { console.error("[mentions] failed to load members:", e); }
+        } catch {}
       }
 
+      let notified = [];
       for (const member of members) {
-        const mentionStr = "@" + member.name;
-        if (text.includes(mentionStr)) {
-          console.log("[mentions] MATCH - creating notification for", member.name, member.userId);
+        if (text.includes("@" + member.name)) {
           try {
-            const result = await createNotification({
+            await createNotification({
               workspaceId: activeWorkspaceId,
               recipientId: member.userId,
               senderName,
@@ -401,9 +397,22 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               adName: ad.name,
               message: text,
             });
-            console.log("[mentions] SUCCESS:", result);
-          } catch (e) { console.error("[mentions] ERROR:", e); }
+            notified.push(member.name);
+          } catch (e) {
+            setMentionDebug("Notification error: " + (e?.message || JSON.stringify(e)));
+            setTimeout(() => setMentionDebug(null), 5000);
+          }
         }
+      }
+      if (notified.length > 0) {
+        setMentionDebug("Notified: " + notified.join(", "));
+        setTimeout(() => setMentionDebug(null), 3000);
+      } else if (members.length === 0) {
+        setMentionDebug("No workspace members found");
+        setTimeout(() => setMentionDebug(null), 3000);
+      } else {
+        setMentionDebug("No match. Members: " + members.map(m => m.name).join(", "));
+        setTimeout(() => setMentionDebug(null), 5000);
       }
     }
     setMsg("");
@@ -897,6 +906,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Write a message... use @ to mention" className="input" style={{ flex: 1 }} />
               <button onClick={sendMsg} className="btn btn-primary btn-sm">Send</button>
             </div>
+            {mentionDebug && <div style={{ fontSize: 11, padding: "6px 8px", marginTop: 4, borderRadius: 6, background: "var(--accent-bg)", color: "var(--accent-light)" }}>{mentionDebug}</div>}
           </div>
         </div>
       )}
