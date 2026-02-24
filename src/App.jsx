@@ -386,10 +386,13 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       }
 
       let notified = [];
+      let errors = [];
+      let matched = [];
       const atParts = text.split("@").slice(1).map(p => p.trim().toLowerCase());
       for (const member of members) {
         const found = atParts.some(p => p.startsWith(member.name.toLowerCase()));
         if (found) {
+          matched.push(member.name);
           try {
             await createNotification({
               workspaceId: activeWorkspaceId,
@@ -401,12 +404,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             });
             notified.push(member.name);
           } catch (e) {
-            setMentionDebug("Notification error: " + (e?.message || JSON.stringify(e)));
-            setTimeout(() => setMentionDebug(null), 5000);
+            errors.push(member.name + ": " + (e?.message || JSON.stringify(e)));
           }
         }
       }
-      if (notified.length > 0) {
+      if (errors.length > 0) {
+        setMentionDebug("MATCHED " + matched.join(", ") + " but ERROR: " + errors.join("; "));
+        setTimeout(() => setMentionDebug(null), 10000);
+      } else if (notified.length > 0) {
         setMentionDebug("Notified: " + notified.join(", "));
         setTimeout(() => setMentionDebug(null), 3000);
       } else if (members.length === 0) {
