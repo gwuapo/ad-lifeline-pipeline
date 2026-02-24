@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useTheme } from "./ThemeContext.jsx";
 import { getTripleWhaleConfig, setTripleWhaleConfig, validateApiKey } from "./tripleWhale.js";
-import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, getProxyUrl, setProxyUrl } from "./apiKeys.js";
+import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, OPENAI_MODELS, getProxyUrl, setProxyUrl, getResearchModelAssignment, setResearchModelAssignment } from "./apiKeys.js";
+import { RESEARCH_STEPS } from "./researchEngine.js";
 import { supabase } from "./supabase.js";
 import { addMemberToWorkspace } from "./supabaseData.js";
 
@@ -21,12 +22,14 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
   // API Keys
   const [claudeKey, setClaudeKey] = useState(getApiKey("claude"));
   const [geminiKey, setGeminiKey] = useState(getApiKey("gemini"));
+  const [openaiKey, setOpenaiKey] = useState(getApiKey("openai"));
   const [apifyKey, setApifyKey] = useState(getApiKey("apify"));
   const [keySaved, setKeySaved] = useState(null);
 
   // Model selection
   const [claudeModel, setClaudeModel] = useState(getSelectedModel("claude"));
   const [geminiModel, setGeminiModel] = useState(getSelectedModel("gemini"));
+  const [openaiModel, setOpenaiModel] = useState(getSelectedModel("openai"));
   const [proxyUrl, setProxyUrlState] = useState(getProxyUrl());
 
   // Analysis prompt
@@ -126,6 +129,35 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={saveThresholds} className="btn btn-primary btn-sm">Save Thresholds</button>
           {saved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+
+      {/* Research Pipeline Models */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">Research Pipeline — Model Assignment</div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+          Assign which AI model runs each research step. Psychographic research runs on all three models simultaneously.
+        </p>
+        {RESEARCH_STEPS.filter(s => !s.id.startsWith("psychographic_") || s.id === "psychographic_summary").map(step => (
+          <div key={step.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{step.label}</span>
+              <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8 }}>{step.description}</span>
+            </div>
+            <select
+              value={getResearchModelAssignment(step.id)}
+              onChange={e => setResearchModelAssignment(step.id, e.target.value)}
+              className="input"
+              style={{ width: 140, cursor: "pointer", fontSize: 11 }}
+            >
+              <option value="gemini">Gemini</option>
+              <option value="claude">Claude</option>
+              <option value="openai">GPT-4o</option>
+            </select>
+          </div>
+        ))}
+        <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 8 }}>
+          Psychographic Deep Research always runs on all 3 models (Gemini, Claude, GPT-4o) to produce independent perspectives.
         </div>
       </div>
 
@@ -230,6 +262,30 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
           <button onClick={() => saveKey("apify", apifyKey)} className="btn btn-ghost btn-sm">Save Token</button>
           {keySaved === "apify" && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+
+      {/* OpenAI */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div className="section-title" style={{ margin: 0 }}>OpenAI (GPT-4o)</div>
+          <span className={`badge ${keyStatus("openai") ? "badge-green" : "badge-red"}`}>
+            {keyStatus("openai") ? "Connected" : "Not configured"}
+          </span>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+          Used for psychographic research in the Product Intelligence pipeline.
+          Get your key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>platform.openai.com</a>.
+        </p>
+        <label className="label" style={{ marginTop: 0 }}>API Key</label>
+        <input type="password" value={openaiKey} onChange={e => setOpenaiKey(e.target.value)} className="input" placeholder="sk-..." />
+        <label className="label">Model</label>
+        <select value={openaiModel} onChange={e => { setOpenaiModel(e.target.value); setSelectedModel("openai", e.target.value); }} className="input" style={{ cursor: "pointer" }}>
+          {OPENAI_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => saveKey("openai", openaiKey)} className="btn btn-ghost btn-sm">Save Key</button>
+          {keySaved === "openai" && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
         </div>
       </div>
 

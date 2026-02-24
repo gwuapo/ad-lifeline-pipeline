@@ -7,6 +7,7 @@ import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdText
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import NotificationBell from "./NotificationBell.jsx";
+import ProductIntelligence from "./ProductIntelligence.jsx";
 import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
@@ -1707,6 +1708,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── EDITORS PAGE ── */}
         {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
+
+        {/* ── RESEARCH PAGE ── */}
+        {page === "research" && <ProductIntelligence activeWorkspaceId={activeWorkspaceId} />}
 
         {/* ── LEARNINGS PAGE ── */}
         {page === "learnings" && <LearningsPage ads={ads} />}

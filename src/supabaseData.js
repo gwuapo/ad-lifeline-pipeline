@@ -379,6 +379,85 @@ export async function clearAllNotifications() {
   if (error) console.error("clearAllNotifications:", error);
 }
 
+// ════════════════════════════════════════════════
+// PRODUCT RESEARCH
+// ════════════════════════════════════════════════
+
+export async function fetchResearchDocs(workspaceId) {
+  const { data, error } = await supabase
+    .from("product_research")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
+  if (error) { console.error("fetchResearchDocs:", error); return []; }
+  return data || [];
+}
+
+export async function upsertResearchDoc(workspaceId, step, doc) {
+  // Check if exists
+  const { data: existing } = await supabase
+    .from("product_research")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("step", step)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("product_research")
+      .update({ ...doc, updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase
+      .from("product_research")
+      .insert({ workspace_id: workspaceId, step, ...doc });
+    if (error) throw error;
+  }
+}
+
+export async function fetchKnowledgeBase(workspaceId) {
+  const { data, error } = await supabase
+    .from("knowledge_base")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) { console.error("fetchKnowledgeBase:", error); return null; }
+  return data;
+}
+
+export async function upsertKnowledgeBase(workspaceId, kb) {
+  const { error } = await supabase
+    .from("knowledge_base")
+    .upsert({ workspace_id: workspaceId, ...kb, updated_at: new Date().toISOString() }, { onConflict: "workspace_id" });
+  if (error) throw error;
+}
+
+export async function updateWorkspaceProductDetails(workspaceId, details) {
+  const { error } = await supabase.rpc("update_workspace_product_details", {
+    ws_id: workspaceId,
+    details,
+  });
+  if (error) {
+    // Fallback to direct update if RPC doesn't exist
+    const { error: e2 } = await supabase
+      .from("workspaces")
+      .update({ product_details: details })
+      .eq("id", workspaceId);
+    if (e2) throw e2;
+  }
+}
+
+export async function getWorkspaceProductDetails(workspaceId) {
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select("product_details")
+    .eq("id", workspaceId)
+    .single();
+  if (error) { console.error("getWorkspaceProductDetails:", error); return {}; }
+  return data?.product_details || {};
+}
+
 export async function resolveUserIdByName(name, workspaceId) {
   // Try workspace-scoped lookup first
   try {
