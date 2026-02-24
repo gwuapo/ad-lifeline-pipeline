@@ -412,8 +412,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         setMentionDebug("No workspace members found");
         setTimeout(() => setMentionDebug(null), 3000);
       } else {
-        setMentionDebug("No match. Members: " + members.map(m => m.name).join(", "));
-        setTimeout(() => setMentionDebug(null), 5000);
+        setMentionDebug("No match in \"" + text + "\" for: " + members.map(m => "@" + m.name).join(", "));
+        setTimeout(() => setMentionDebug(null), 8000);
       }
     }
     setMsg("");
