@@ -386,10 +386,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       }
 
       let notified = [];
-      const textClean = text.normalize("NFKC").trim();
+      const atParts = text.split("@").slice(1).map(p => p.trim().toLowerCase());
       for (const member of members) {
-        const nameClean = member.name.normalize("NFKC").trim();
-        if (textClean.toLowerCase().includes("@" + nameClean.toLowerCase())) {
+        const found = atParts.some(p => p.startsWith(member.name.toLowerCase()));
+        if (found) {
           try {
             await createNotification({
               workspaceId: activeWorkspaceId,
@@ -413,10 +413,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         setMentionDebug("No workspace members found");
         setTimeout(() => setMentionDebug(null), 3000);
       } else {
-        const charDebug = members.map(m => `"${m.name}" [${[...m.name].map(c => c.charCodeAt(0)).join(",")}]`).join(" | ");
-        const textCodes = [...text].map(c => c.charCodeAt(0)).join(",");
-        setMentionDebug("No match. Text codes: " + textCodes + " --- Names: " + charDebug);
-        setTimeout(() => setMentionDebug(null), 15000);
+        setMentionDebug("No match. @parts: [" + atParts.join(", ") + "] names: [" + members.map(m => m.name.toLowerCase()).join(", ") + "]");
+        setTimeout(() => setMentionDebug(null), 10000);
       }
     }
     setMsg("");
