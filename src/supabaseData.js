@@ -369,6 +369,16 @@ export async function markAllNotificationsRead() {
   if (error) console.error("markAllNotificationsRead:", error);
 }
 
+export async function clearAllNotifications() {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+  if (!userId) return;
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("recipient_id", userId);
+  if (error) console.error("clearAllNotifications:", error);
+}
+
 export async function resolveUserIdByName(name, workspaceId) {
   // Try workspace-scoped lookup first
   try {

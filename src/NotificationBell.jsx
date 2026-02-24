@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { fetchNotifications, markNotificationRead, markAllNotificationsRead, subscribeToNotifications } from "./supabaseData.js";
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead, clearAllNotifications, subscribeToNotifications } from "./supabaseData.js";
 
 export default function NotificationBell({ userId, onOpenAd }) {
   const [notifs, setNotifs] = useState([]);
@@ -36,6 +36,11 @@ export default function NotificationBell({ userId, onOpenAd }) {
   const handleMarkAll = async () => {
     await markAllNotificationsRead();
     setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const handleClearAll = async () => {
+    await clearAllNotifications();
+    setNotifs([]);
   };
 
   const timeAgo = (ts) => {
@@ -82,11 +87,18 @@ export default function NotificationBell({ userId, onOpenAd }) {
             padding: "12px 14px 8px", borderBottom: "1px solid var(--border-light)",
           }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>Notifications</span>
-            {unread > 0 && (
-              <button onClick={handleMarkAll} className="btn btn-ghost btn-xs" style={{ fontSize: 10.5, color: "var(--accent-light)" }}>
-                Mark all read
-              </button>
-            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              {unread > 0 && (
+                <button onClick={handleMarkAll} className="btn btn-ghost btn-xs" style={{ fontSize: 10.5, color: "var(--accent-light)" }}>
+                  Mark all read
+                </button>
+              )}
+              {notifs.length > 0 && (
+                <button onClick={handleClearAll} className="btn btn-ghost btn-xs" style={{ fontSize: 10.5, color: "var(--red)" }}>
+                  Clear all
+                </button>
+              )}
+            </div>
           </div>
 
           {notifs.length === 0 && (

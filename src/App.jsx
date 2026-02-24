@@ -269,8 +269,8 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session }) {
-  const [tab, setTab] = useState("overview");
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab }) {
+  const [tab, setTab] = useState(initialTab || "overview");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -366,8 +366,6 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     }
   }, [activeWorkspaceId]);
 
-  const [mentionDebug, setMentionDebug] = useState(null);
-
   const sendMsg = async () => {
     if (!msg.trim()) return;
     const text = msg.trim();
@@ -385,14 +383,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         } catch {}
       }
 
-      let notified = [];
-      let errors = [];
-      let matched = [];
       const atParts = text.split("@").slice(1).map(p => p.trim().toLowerCase());
       for (const member of members) {
-        const found = atParts.some(p => p.startsWith(member.name.toLowerCase()));
-        if (found) {
-          matched.push(member.name);
+        if (atParts.some(p => p.startsWith(member.name.toLowerCase()))) {
           try {
             await createNotification({
               workspaceId: activeWorkspaceId,
@@ -402,24 +395,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               adName: ad.name,
               message: text,
             });
-            notified.push(member.name);
-          } catch (e) {
-            errors.push(member.name + ": " + (e?.message || JSON.stringify(e)));
-          }
+          } catch (e) { console.error("Notification error:", e); }
         }
-      }
-      if (errors.length > 0) {
-        setMentionDebug("MATCHED " + matched.join(", ") + " but ERROR: " + errors.join("; "));
-        setTimeout(() => setMentionDebug(null), 10000);
-      } else if (notified.length > 0) {
-        setMentionDebug("Notified: " + notified.join(", "));
-        setTimeout(() => setMentionDebug(null), 3000);
-      } else if (members.length === 0) {
-        setMentionDebug("No workspace members found");
-        setTimeout(() => setMentionDebug(null), 3000);
-      } else {
-        setMentionDebug("No match. @parts: [" + atParts.join(", ") + "] names: [" + members.map(m => m.name.toLowerCase()).join(", ") + "]");
-        setTimeout(() => setMentionDebug(null), 10000);
       }
     }
     setMsg("");
@@ -913,7 +890,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Write a message... use @ to mention" className="input" style={{ flex: 1 }} />
               <button onClick={sendMsg} className="btn btn-primary btn-sm">Send</button>
             </div>
-            {mentionDebug && <div style={{ fontSize: 11, padding: "6px 8px", marginTop: 4, borderRadius: 6, background: "var(--accent-bg)", color: "var(--accent-light)" }}>{mentionDebug}</div>}
+
           </div>
         </div>
       )}
@@ -1434,6 +1411,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [ads, setAds] = useState([]);
   const [adsLoading, setAdsLoading] = useState(true);
   const [openAd, setOpenAd] = useState(null);
+  const [openAdTab, setOpenAdTab] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
   const [page, setPage] = useState("pipeline");
   const [th, setTh] = useState(DT);
@@ -1631,7 +1609,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       <div className="main-content">
         {/* Top bar with notifications */}
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 0 8px" }}>
-          <NotificationBell userId={session?.user?.id} onOpenAd={(adId) => { const ad = ads.find(a => a.id === adId); if (ad) { setOpenAd(ad); setPage("pipeline"); } }} />
+          <NotificationBell userId={session?.user?.id} onOpenAd={(adId) => { const ad = ads.find(a => a.id === adId); if (ad) { setOpenAdTab("thread"); setOpenAd(ad); setPage("pipeline"); } }} />
         </div>
         {/* Toasts */}
         {gateMsg && <div className="toast toast-error">🚫 {gateMsg}</div>}
@@ -1737,7 +1715,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />}
 
         {/* Modals */}
-        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => setOpenAd(null)} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} />}
+        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} />}
         {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}
       </div>
     </div>
