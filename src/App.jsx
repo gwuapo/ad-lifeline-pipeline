@@ -386,9 +386,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       }
 
       let notified = [];
-      const textLower = text.toLowerCase();
+      const textClean = text.normalize("NFKC").trim();
       for (const member of members) {
-        if (textLower.includes("@" + member.name.toLowerCase())) {
+        const nameClean = member.name.normalize("NFKC").trim();
+        if (textClean.toLowerCase().includes("@" + nameClean.toLowerCase())) {
           try {
             await createNotification({
               workspaceId: activeWorkspaceId,
@@ -412,8 +413,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         setMentionDebug("No workspace members found");
         setTimeout(() => setMentionDebug(null), 3000);
       } else {
-        setMentionDebug("No match in \"" + text + "\" for: " + members.map(m => "@" + m.name).join(", "));
-        setTimeout(() => setMentionDebug(null), 8000);
+        const charDebug = members.map(m => `"${m.name}" [${[...m.name].map(c => c.charCodeAt(0)).join(",")}]`).join(" | ");
+        const textCodes = [...text].map(c => c.charCodeAt(0)).join(",");
+        setMentionDebug("No match. Text codes: " + textCodes + " --- Names: " + charDebug);
+        setTimeout(() => setMentionDebug(null), 15000);
       }
     }
     setMsg("");
