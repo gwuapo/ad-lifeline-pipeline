@@ -371,15 +371,28 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     const text = msg.trim();
     const senderName = userName || (isEditor ? ad.editor || "Editor" : "Unknown");
     dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: senderName, text, ts: now() } });
+
     // Detect @mentions using the loaded member names
-    console.log("[mentions] checking text:", text, "members:", memberNames, "wsId:", activeWorkspaceId);
-    if (activeWorkspaceId && memberNames.length > 0) {
-      for (const member of memberNames) {
+    const hasMentions = text.includes("@");
+    console.log("[mentions] text:", text, "hasMentions:", hasMentions, "memberCount:", memberNames.length, "wsId:", activeWorkspaceId);
+
+    if (hasMentions && activeWorkspaceId) {
+      // If memberNames empty, try loading them now
+      let members = memberNames;
+      if (members.length === 0) {
+        try {
+          members = await getWorkspaceMemberNames(activeWorkspaceId);
+          members = members.filter(m => m.name !== userName);
+          setMemberNames(members);
+          console.log("[mentions] lazy-loaded members:", members);
+        } catch (e) { console.error("[mentions] failed to load members:", e); }
+      }
+
+      for (const member of members) {
         const mentionStr = "@" + member.name;
-        console.log("[mentions] checking for:", mentionStr, "found:", text.includes(mentionStr));
         if (text.includes(mentionStr)) {
+          console.log("[mentions] MATCH - creating notification for", member.name, member.userId);
           try {
-            console.log("[mentions] creating notification for", member.name, member.userId);
             const result = await createNotification({
               workspaceId: activeWorkspaceId,
               recipientId: member.userId,
@@ -388,8 +401,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               adName: ad.name,
               message: text,
             });
-            console.log("[mentions] notification created:", result);
-          } catch (e) { console.error("[mentions] notification error:", e); }
+            console.log("[mentions] SUCCESS:", result);
+          } catch (e) { console.error("[mentions] ERROR:", e); }
         }
       }
     }
