@@ -336,10 +336,15 @@ export async function fetchNotifications() {
 }
 
 export async function createNotification({ workspaceId, recipientId, senderName, adId, adName, message }) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("notifications")
-    .insert({ workspace_id: workspaceId, recipient_id: recipientId, sender_name: senderName, ad_id: adId, ad_name: adName, message });
-  if (error) console.error("createNotification:", error);
+    .insert({ workspace_id: workspaceId, recipient_id: recipientId, sender_name: senderName, ad_id: adId, ad_name: adName, message })
+    .select();
+  if (error) {
+    console.error("createNotification error:", error);
+    throw error;
+  }
+  return data;
 }
 
 export async function markNotificationRead(notifId) {

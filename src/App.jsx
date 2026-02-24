@@ -370,21 +370,20 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     const text = msg.trim();
     const senderName = userName || (isEditor ? ad.editor || "Editor" : "Unknown");
     dispatch({ type: "ADD_MSG", id: ad.id, msg: { from: senderName, text, ts: now() } });
-    // Detect @mentions and create notifications
-    const mentions = text.match(/@(\w[\w\s]*?)(?=\s|$|,|\.)/g);
-    if (mentions && activeWorkspaceId) {
-      for (const mention of mentions) {
-        const mentionedName = mention.slice(1).trim();
-        const userId = await resolveUserIdByName(mentionedName, activeWorkspaceId);
-        if (userId) {
-          createNotification({
-            workspaceId: activeWorkspaceId,
-            recipientId: userId,
-            senderName,
-            adId: ad.id,
-            adName: ad.name,
-            message: text,
-          });
+    // Detect @mentions using the loaded member names
+    if (activeWorkspaceId && memberNames.length > 0) {
+      for (const member of memberNames) {
+        if (text.includes("@" + member.name)) {
+          try {
+            await createNotification({
+              workspaceId: activeWorkspaceId,
+              recipientId: member.userId,
+              senderName,
+              adId: ad.id,
+              adName: ad.name,
+              message: text,
+            });
+          } catch (e) { console.error("Notification error:", e); }
         }
       }
     }
