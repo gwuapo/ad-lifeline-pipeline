@@ -386,8 +386,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       }
 
       let notified = [];
+      const textLower = text.toLowerCase();
       for (const member of members) {
-        if (text.includes("@" + member.name)) {
+        if (textLower.includes("@" + member.name.toLowerCase())) {
           try {
             await createNotification({
               workspaceId: activeWorkspaceId,
