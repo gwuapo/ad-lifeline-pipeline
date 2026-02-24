@@ -405,7 +405,7 @@ export async function getWorkspaceMemberNames(workspaceId) {
   const userIds = (members || []).map(m => m.user_id);
   if (userIds.length === 0) return [];
 
-  // Get editor profiles
+  // Get editor profiles for display names
   const { data: profiles } = await supabase
     .from("editor_profiles")
     .select("user_id, display_name")
@@ -413,21 +413,30 @@ export async function getWorkspaceMemberNames(workspaceId) {
   const profileMap = {};
   (profiles || []).forEach(p => { profileMap[p.user_id] = p.display_name; });
 
-  // For founders without editor profiles, look up display names via RPC
+  // For the current user, we can get their own metadata
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+
   const results = [];
   for (const m of (members || [])) {
     let name = m.editor_name || profileMap[m.user_id];
+    // For founders: use current user's metadata if it's them, otherwise try RPC
     if (!name) {
-      try {
-        const { data } = await supabase.rpc("get_display_name_by_user_id", { uid: m.user_id });
-        name = data || null;
-      } catch {}
+      if (currentUser && m.user_id === currentUser.id) {
+        name = currentUser.user_metadata?.display_name || currentUser.email?.split("@")[0];
+      } else {
+        // Try RPC (may not exist), then fall back to workspace member data
+        try {
+          const { data } = await supabase.rpc("get_display_name_by_user_id", { uid: m.user_id });
+          if (data) name = data;
+        } catch {}
+      }
     }
     results.push({
       userId: m.user_id,
-      name: name || "Unknown",
+      name: name || "Member",
       role: m.role,
     });
   }
+  console.log("[getWorkspaceMemberNames] results:", results);
   return results;
 }

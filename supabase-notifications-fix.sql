@@ -1,10 +1,9 @@
 -- ════════════════════════════════════════════════
--- FIX: Drop foreign key on ad_id so notifications work
--- even if ad hasn't been synced to Supabase yet
--- Run this in Supabase SQL Editor
+-- NOTIFICATIONS + DISPLAY NAME RPC
+-- Run this ONCE in Supabase SQL Editor
 -- ════════════════════════════════════════════════
 
--- Drop the existing table and recreate without FK on ad_id
+-- 1) Recreate notifications table without FK on ad_id
 drop table if exists notifications;
 
 create table notifications (
@@ -30,3 +29,16 @@ create policy "notif_upd" on notifications for update using (recipient_id = auth
 create policy "notif_del" on notifications for delete using (recipient_id = auth.uid());
 
 alter publication supabase_realtime add table notifications;
+
+-- 2) RPC to look up display_name from auth.users metadata by user ID
+create or replace function get_display_name_by_user_id(uid uuid)
+returns text
+language sql
+security definer
+as $$
+  select coalesce(
+    raw_user_meta_data->>'display_name',
+    raw_user_meta_data->>'full_name',
+    split_part(email, '@', 1)
+  ) from auth.users where id = uid limit 1;
+$$;
