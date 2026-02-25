@@ -385,6 +385,7 @@ select.input {
   animation: overlayIn 0.15s ease-out;
 }
 .modal-box {
+  position: relative;
   background: var(--bg-modal);
   backdrop-filter: var(--glass);
   border: 1px solid var(--border);

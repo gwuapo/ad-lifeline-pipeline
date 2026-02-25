@@ -272,6 +272,7 @@ function NewAdForm({ onClose, dispatch, editors }) {
 
 function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab }) {
   const [tab, setTab] = useState(initialTab || "overview");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [scraping, setScraping] = useState(false);
@@ -474,9 +475,39 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 
   return (
     <Modal title="" onClose={onClose} w={720}>
+      {/* Delete confirmation overlay */}
+      {showDeleteConfirm && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 10,
+          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          borderRadius: "var(--radius-xl)",
+        }}>
+          <div style={{
+            background: "var(--bg-root)", border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg)", padding: "24px 28px", maxWidth: 360, textAlign: "center",
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>🗑️</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Delete this ad?</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 18, lineHeight: 1.5 }}>
+              "{ad.name}" will be permanently removed from the pipeline. This cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="btn btn-ghost btn-sm">Cancel</button>
+              <button onClick={() => { dispatch({ type: "DELETE", id: ad.id }); onClose(); }} className="btn btn-sm" style={{ background: "var(--red)", color: "#fff" }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ marginTop: -4, marginBottom: 14 }}>
-        <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>{ad.name}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)" }}>{ad.name}</div>
+          {role === "founder" && (
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 16, padding: "4px 6px" }} title="Delete ad">🗑️</button>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
           <span className="badge" style={{ background: stg.color + "18", color: stg.color }}>{stg.label}</span>
           <span className="badge">{ad.type}</span>
@@ -1000,7 +1031,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 // PIPELINE CARD
 // ════════════════════════════════════════════════
 
-function PCard({ ad, th, onClick, onMove, onIterate, onDelete, role }) {
+function PCard({ ad, th, onClick, onMove, onIterate }) {
   const bc = bestChannel(ad, th);
   const la = bc ? bc.metric : lm(ad);
   const cl = ad.stage === "live" ? CL(la?.cpa, th) : "none", cs = CS[cl];
@@ -1044,7 +1075,6 @@ function PCard({ ad, th, onClick, onMove, onIterate, onDelete, role }) {
         <div style={{ display: "flex", gap: 3 }}>
           {ix > 0 && <button onClick={() => onMove(ad.id, SO[ix - 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>←</button>}
           {ix < 3 && <button onClick={() => onMove(ad.id, SO[ix + 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>→</button>}
-          {role === "founder" && <button onClick={() => { if (confirm("Delete \"" + ad.name + "\"?")) onDelete(ad.id); }} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22, color: "var(--red)" }} title="Delete ad">🗑</button>}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {ad.thread.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>💬 {ad.thread.length}</span>}
@@ -1693,7 +1723,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                     <div className="stagger">
                       {stageAds.map(ad => (
                         <div key={ad.id} draggable onDragStart={() => { did.current = ad.id; }} onDragEnd={() => { did.current = null; }}>
-                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} onDelete={(id) => dispatch({ type: "DELETE", id })} role={role} />
+                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} />
                         </div>
                       ))}
                     </div>
