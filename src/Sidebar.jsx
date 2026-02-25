@@ -18,21 +18,12 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
   return (
     <div className="sidebar">
       {/* Brand */}
-      <div style={{ padding: "4px 10px 14px", display: "flex", alignItems: "center", gap: 9 }}>
-        <div style={{
-          width: 30, height: 30, borderRadius: 8,
-          background: "linear-gradient(135deg, var(--accent), #8b5cf6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 2px 10px rgba(99,102,241,0.3)",
-        }}>
-          <span style={{ fontSize: 14, color: "#fff", fontWeight: 800 }}>A</span>
-        </div>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: -0.3 }}>
-            Ad Lifeline
-          </div>
-          <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>Pipeline</div>
-        </div>
+      <div style={{ padding: "4px 10px 14px" }}>
+        <img
+          src={isDark ? "/nexus-logo-dark.png" : "/nexus-logo-light.png"}
+          alt="Nexus Holdings"
+          style={{ height: 28, objectFit: "contain" }}
+        />
       </div>
 
       {/* Workspace selector */}
