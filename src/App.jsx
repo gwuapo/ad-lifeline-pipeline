@@ -1000,7 +1000,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 // PIPELINE CARD
 // ════════════════════════════════════════════════
 
-function PCard({ ad, th, onClick, onMove, onIterate }) {
+function PCard({ ad, th, onClick, onMove, onIterate, onDelete, role }) {
   const bc = bestChannel(ad, th);
   const la = bc ? bc.metric : lm(ad);
   const cl = ad.stage === "live" ? CL(la?.cpa, th) : "none", cs = CS[cl];
@@ -1044,6 +1044,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
         <div style={{ display: "flex", gap: 3 }}>
           {ix > 0 && <button onClick={() => onMove(ad.id, SO[ix - 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>←</button>}
           {ix < 3 && <button onClick={() => onMove(ad.id, SO[ix + 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>→</button>}
+          {role === "founder" && <button onClick={() => { if (confirm("Delete \"" + ad.name + "\"?")) onDelete(ad.id); }} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22, color: "var(--red)" }} title="Delete ad">🗑</button>}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {ad.thread.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>💬 {ad.thread.length}</span>}
@@ -1536,6 +1537,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         case "APPROVE_DRAFT": next = p.map(x => x.id === a.id ? { ...x, drafts: x.drafts.map(d => d.id === a.did ? { ...d, status: "approved" } : d), finalApproved: true } : x); break;
         case "ITERATE": next = p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; }); break;
         case "KILL": next = p.map(x => x.id === a.id ? { ...x, stage: "killed" } : x); break;
+        case "DELETE": next = p.filter(x => x.id !== a.id); break;
         case "ADD_AD": {
           // Create in Supabase and add to local state
           const newAd = { name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics() };
@@ -1560,9 +1562,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       }
 
       // Persist the changed ad to Supabase
-      const changedId = a.id || a.aid;
-      if (changedId && activeWorkspaceId) {
-        syncAdToDb(changedId, next);
+      if (a.type === "DELETE" && a.id && activeWorkspaceId) {
+        supabase.from("ads").delete().eq("id", a.id).then(({ error }) => { if (error) console.error("Delete ad error:", error); });
+      } else {
+        const changedId = a.id || a.aid;
+        if (changedId && activeWorkspaceId) {
+          syncAdToDb(changedId, next);
+        }
       }
       return next;
     });
@@ -1687,7 +1693,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                     <div className="stagger">
                       {stageAds.map(ad => (
                         <div key={ad.id} draggable onDragStart={() => { did.current = ad.id; }} onDragEnd={() => { did.current = null; }}>
-                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} />
+                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} onDelete={(id) => dispatch({ type: "DELETE", id })} role={role} />
                         </div>
                       ))}
                     </div>
