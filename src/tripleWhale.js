@@ -1,4 +1,18 @@
-const TW_API = "https://api.triplewhale.com/api/v2";
+const TW_API_DIRECT = "https://api.triplewhale.com/api/v2";
+const TW_PROXY = "/api/tw-proxy";
+
+function twFetch(path, options = {}) {
+  const { apiKey, ...fetchOpts } = options;
+  // Use the Vercel proxy to avoid CORS
+  const url = `${TW_PROXY}?path=${encodeURIComponent(path)}`;
+  return fetch(url, {
+    ...fetchOpts,
+    headers: {
+      ...fetchOpts.headers,
+      "x-api-key": apiKey,
+    },
+  });
+}
 
 const TW_CHANNEL_MAP = {
   meta: "facebook-ads",
@@ -30,8 +44,9 @@ export function getTripleWhaleConfig() {
 export async function validateApiKey() {
   const { apiKey } = getConfig();
   if (!apiKey) throw new Error("Triple Whale API key not configured");
-  const res = await fetch(`${TW_API}/users/api-keys/me`, {
-    headers: { accept: "application/json", "x-api-key": apiKey },
+  const res = await twFetch("/users/api-keys/me", {
+    apiKey,
+    headers: { accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Validation failed (${res.status})`);
   return res.json();
@@ -58,12 +73,12 @@ export async function fetchAdSetMetrics(startDate, endDate) {
     ORDER BY event_date DESC
   `;
 
-  const res = await fetch(`${TW_API}/orcabase/api/sql`, {
+  const res = await twFetch("/orcabase/api/sql", {
+    apiKey,
     method: "POST",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
-      "x-api-key": apiKey,
     },
     body: JSON.stringify({
       shopId: shopDomain,
