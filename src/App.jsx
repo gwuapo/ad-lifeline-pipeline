@@ -8,6 +8,7 @@ import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 import ProductIntelligence from "./ProductIntelligence.jsx";
+import CommissionDashboard from "./CommissionDashboard.jsx";
 import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
@@ -1092,12 +1093,14 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
 // ════════════════════════════════════════════════
 
 function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, activeWorkspaceId }) {
+  const [editorTab, setEditorTab] = useState("performance");
   const [showAdd, setShowAdd] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
   const [selectedEditor, setSelectedEditor] = useState(null);
   const [allProfiles, setAllProfiles] = useState({});
+  const [commissionEditor, setCommissionEditor] = useState(null);
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -1141,12 +1144,18 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
 
   return (
     <div className="animate-fade">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Editor Performance</h2>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>Win rate, quality scores, and bonus tracking for each editor.</p>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Editors</h2>
+          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>Performance, commissions, and team management.</p>
         </div>
         <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary btn-sm">{showAdd ? "Cancel" : "+ Add Editor"}</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+        <button onClick={() => setEditorTab("performance")} className={`btn btn-sm ${editorTab === "performance" ? "btn-primary" : "btn-ghost"}`}>Performance</button>
+        <button onClick={() => setEditorTab("commission")} className={`btn btn-sm ${editorTab === "commission" ? "btn-primary" : "btn-ghost"}`}>Commission</button>
       </div>
       {showAdd && <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
@@ -1170,7 +1179,55 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
         )}
         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>The editor must have an Ad Lifeline account first.</p>
       </div>}
-      <div style={{ display: "grid", gridTemplateColumns: editors.length < 3 ? `repeat(${Math.max(1, editors.length)},1fr)` : "repeat(3,1fr)", gap: 12 }}>
+      {/* ── COMMISSION TAB ── */}
+      {editorTab === "commission" && (
+        <div>
+          {commissionEditor ? (
+            <div>
+              <button onClick={() => setCommissionEditor(null)} className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }}>← All Editors</button>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 12 }}>{commissionEditor.name} — Commission</div>
+              <CommissionDashboard ads={ads} editorName={commissionEditor.name} commissionPct={commissionEditor.commissionPct} />
+            </div>
+          ) : (
+            <div>
+              <div className="section-title">Editor Commissions</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>Click an editor to see their detailed commission breakdown. Set commission % in each editor's profile.</div>
+              {editors.map(name => {
+                const profile = findProfile(name);
+                const commPct = profile?.commission_pct ?? profile?.commissionPct ?? 0;
+                const edAds = ads.filter(a => a.editor === name && a.stage !== "killed");
+                const totalSpend = edAds.reduce((s, a) => {
+                  let sp = (a.metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0);
+                  const chm = a.channelMetrics || {};
+                  Object.values(chm).forEach(metrics => { sp += (metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0); });
+                  return s + sp;
+                }, 0);
+                const commission = totalSpend * (commPct / 100);
+                return (
+                  <div key={name} className="card-flat" style={{ marginBottom: 8, padding: "12px 14px", cursor: "pointer" }} onClick={() => setCommissionEditor({ name, commissionPct: commPct })}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", background: "var(--accent-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "var(--accent-light)" }}>{name[0]}</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{name}</div>
+                          <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{commPct}% commission · {edAds.length} ads</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>Spend: {CUR} {totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--green)", fontFamily: "var(--fm)" }}>{CUR} {commission.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PERFORMANCE TAB ── */}
+      {editorTab === "performance" && <><div style={{ display: "grid", gridTemplateColumns: editors.length < 3 ? `repeat(${Math.max(1, editors.length)},1fr)` : "repeat(3,1fr)", gap: 12 }}>
         {editors.map(name => {
           const all = ads.filter(a => a.editor === name && a.stage !== "killed");
           const live = all.filter(a => a.stage === "live");
@@ -1219,6 +1276,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
         })}
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>Win bonus: <span style={{ color: "var(--green-light)" }}>SAR 75</span>/winner (green CPA 5+ days) · Quality = 100 - (revisions x 8) · Health = composite</div>
+      </>}
 
       {/* Editor Detail Modal */}
       {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
@@ -1313,6 +1371,7 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
   const [pPortfolio, setPPortfolio] = useState(profile?.portfolio_url || profile?.portfolioUrl || "");
   const [pRate, setPRate] = useState(profile?.compensation_rate || profile?.compensationRate || "");
   const [pMinutes, setPMinutes] = useState(profile?.weekly_minutes || profile?.weeklyMinutes || "");
+  const [pCommission, setPCommission] = useState(profile?.commission_pct ?? profile?.commissionPct ?? 0);
   const [saved, setSaved] = useState(false);
   const fileRef = useRef(null);
 
@@ -1333,6 +1392,7 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
           portfolio_url: pPortfolio.trim(),
           compensation_rate: pRate.trim(),
           weekly_minutes: parseInt(pMinutes) || 0,
+          commission_pct: parseFloat(pCommission) || 0,
         });
       } catch (e) { console.error("Save profile error:", e); }
     }
@@ -1382,6 +1442,11 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
         <input value={pRate} onChange={e => setPRate(e.target.value)} className="input" placeholder="e.g. $20/minute edited" />
         <label className="label">Weekly Capacity (minutes of video)</label>
         <input type="number" value={pMinutes} onChange={e => setPMinutes(e.target.value)} className="input" placeholder="e.g. 60" min="1" />
+        <label className="label">Commission on Ad Spend (%)</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="number" value={pCommission} onChange={e => setPCommission(e.target.value)} className="input" placeholder="0" min="0" max="100" step="0.1" style={{ width: 100 }} />
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>% of total ad spend on their ads</span>
+        </div>
 
         {/* Workspace assignment */}
         {workspaces && workspaces.length > 0 && (
@@ -1450,6 +1515,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [role, setRole] = useState(userRole || "founder");
   const [editors, setEditors] = useState(DEFAULT_EDITORS);
   const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "") : "");
+  const [myEditorProfile, setMyEditorProfile] = useState(null);
   const handleSignOut = () => supabase.auth.signOut();
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
@@ -1479,6 +1545,10 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         const adEditors = [...new Set(adsData.map(a => a.editor).filter(Boolean))];
         const allEditors = [...new Set([...editorNames, ...adEditors])];
         setEditors(allEditors.length > 0 ? allEditors : DEFAULT_EDITORS);
+        // Load current user's editor profile (for commission display)
+        if (session?.user?.id) {
+          fetchEditorProfile(session.user.id).then(p => { if (p) setMyEditorProfile(p); }).catch(() => {});
+        }
       } catch (e) {
         console.error("Failed to load workspace data:", e);
       }
@@ -1747,6 +1817,52 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── RESEARCH PAGE ── */}
         {page === "research" && <ProductIntelligence activeWorkspaceId={activeWorkspaceId} />}
+
+        {/* ── EARNINGS PAGE ── */}
+        {page === "earnings" && (
+          <div className="animate-fade">
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
+              {role === "editor" ? "My Earnings" : "Editor Earnings"}
+            </h2>
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>
+              {role === "editor" ? "Your commission on ad spend from your assigned ads." : "Commission breakdown for all editors."}
+            </p>
+            {role === "editor" ? (
+              <CommissionDashboard
+                ads={ads}
+                editorName={userName}
+                commissionPct={myEditorProfile?.commission_pct ?? 0}
+                isEditorView
+              />
+            ) : (
+              <div>
+                {editors.map(name => {
+                  const edAds = ads.filter(a => a.editor === name && a.stage !== "killed");
+                  const totalSpend = edAds.reduce((s, a) => {
+                    let sp = (a.metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0);
+                    const chm = a.channelMetrics || {};
+                    Object.values(chm).forEach(metrics => { sp += (metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0); });
+                    return s + sp;
+                  }, 0);
+                  return { name, totalSpend, adCount: edAds.length };
+                }).map(e => (
+                  <div key={e.name} className="card-flat" style={{ marginBottom: 8, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{e.name}</div>
+                        <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{e.adCount} ads</div>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", fontFamily: "var(--fm)" }}>
+                        {CUR} {e.totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} spend
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Set commission % for each editor in the Editors tab → click editor → Commission on Ad Spend field.</div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── LEARNINGS PAGE ── */}
         {page === "learnings" && <LearningsPage ads={ads} />}
