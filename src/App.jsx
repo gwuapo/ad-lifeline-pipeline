@@ -1516,6 +1516,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [editors, setEditors] = useState(DEFAULT_EDITORS);
   const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "") : "");
   const [myEditorProfile, setMyEditorProfile] = useState(null);
+  const [earningsEditor, setEarningsEditor] = useState(null);
+  const [editorProfiles, setEditorProfiles] = useState({});
   const handleSignOut = () => supabase.auth.signOut();
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
@@ -1545,10 +1547,15 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         const adEditors = [...new Set(adsData.map(a => a.editor).filter(Boolean))];
         const allEditors = [...new Set([...editorNames, ...adEditors])];
         setEditors(allEditors.length > 0 ? allEditors : DEFAULT_EDITORS);
-        // Load current user's editor profile (for commission display)
+        // Load editor profiles (for commission display)
         if (session?.user?.id) {
           fetchEditorProfile(session.user.id).then(p => { if (p) setMyEditorProfile(p); }).catch(() => {});
         }
+        fetchAllEditorProfiles(activeWorkspaceId).then(profiles => {
+          const map = {};
+          profiles.forEach(p => { map[p.display_name || p.editor_name] = p; });
+          setEditorProfiles(map);
+        }).catch(() => {});
       } catch (e) {
         console.error("Failed to load workspace data:", e);
       }
@@ -1834,9 +1841,17 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 commissionPct={myEditorProfile?.commission_pct ?? 0}
                 isEditorView
               />
+            ) : earningsEditor ? (
+              <div>
+                <button onClick={() => setEarningsEditor(null)} className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }}>← All Editors</button>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 12 }}>{earningsEditor.name} — Earnings</div>
+                <CommissionDashboard ads={ads} editorName={earningsEditor.name} commissionPct={earningsEditor.commissionPct} />
+              </div>
             ) : (
               <div>
                 {editors.map(name => {
+                  const profile = editorProfiles[name];
+                  const commPct = profile?.commission_pct ?? 0;
                   const edAds = ads.filter(a => a.editor === name && a.stage !== "killed");
                   const totalSpend = edAds.reduce((s, a) => {
                     let sp = (a.metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0);
@@ -1844,21 +1859,26 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                     Object.values(chm).forEach(metrics => { sp += (metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0); });
                     return s + sp;
                   }, 0);
-                  return { name, totalSpend, adCount: edAds.length };
-                }).map(e => (
-                  <div key={e.name} className="card-flat" style={{ marginBottom: 8, padding: "12px 14px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{e.name}</div>
-                        <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{e.adCount} ads</div>
-                      </div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", fontFamily: "var(--fm)" }}>
-                        {CUR} {e.totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} spend
+                  const commission = totalSpend * (commPct / 100);
+                  return (
+                    <div key={name} className="card-flat" style={{ marginBottom: 8, padding: "12px 14px", cursor: "pointer" }} onClick={() => setEarningsEditor({ name, commissionPct: commPct })}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", background: "var(--accent-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "var(--accent-light)" }}>{name[0]}</div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{name}</div>
+                            <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{commPct}% commission · {edAds.length} ads</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>Spend: {CUR} {totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--green)", fontFamily: "var(--fm)" }}>{CUR} {commission.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Set commission % for each editor in the Editors tab → click editor → Commission on Ad Spend field.</div>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Click an editor to see their full earnings dashboard. Set commission % in the Editors tab.</div>
               </div>
             )}
           </div>
