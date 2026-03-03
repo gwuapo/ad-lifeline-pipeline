@@ -142,6 +142,8 @@ function adToRow(ad, workspaceId) {
       channelIds: rest.channelIds || {},
       channelMetrics: rest.channelMetrics || {},
       tiktokUrl: rest.tiktokUrl || "",
+      // Strategy / Ads Lab fields
+      strategy: rest.strategy || {},
     },
   };
 }
@@ -176,6 +178,7 @@ function rowToAd(row) {
     channelIds: d.channelIds || {},
     channelMetrics: d.channelMetrics || {},
     tiktokUrl: d.tiktokUrl || "",
+    strategy: d.strategy || {},
   };
 }
 
@@ -531,4 +534,46 @@ export async function getWorkspaceMemberNames(workspaceId) {
   }
   console.log("[getWorkspaceMemberNames] results:", results);
   return results;
+}
+
+// ════════════════════════════════════════════════
+// STRATEGY DATA
+// ════════════════════════════════════════════════
+
+export async function fetchStrategyData(workspaceId) {
+  const { data, error } = await supabase
+    .from("strategy_data")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (error && error.code === "PGRST116") return null; // no rows
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertStrategyData(workspaceId, section, value) {
+  const { data: existing } = await supabase
+    .from("strategy_data")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .single();
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("strategy_data")
+      .update({ [section]: value, updated_at: new Date().toISOString() })
+      .eq("workspace_id", workspaceId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } else {
+    const { data, error } = await supabase
+      .from("strategy_data")
+      .insert({ workspace_id: workspaceId, [section]: value })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
 }
