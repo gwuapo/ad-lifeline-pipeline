@@ -124,6 +124,12 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+.ads-lab-scroll { overflow-x: auto; scrollbar-width: auto; scrollbar-color: var(--accent) var(--border-light); }
+.ads-lab-scroll::-webkit-scrollbar { height: 12px; }
+.ads-lab-scroll::-webkit-scrollbar-track { background: var(--border-light); border-radius: 6px; }
+.ads-lab-scroll::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 6px; border: 2px solid var(--border-light); }
+.ads-lab-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent-light); }
+
 /* ── ANIMATIONS ── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }

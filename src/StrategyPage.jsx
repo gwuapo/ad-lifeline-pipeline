@@ -579,7 +579,7 @@ function AdsLabTab({ ads, dispatch, strategyData, editors }) {
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>Spreadsheet view of all ads with creative strategy fields. New rows also appear in Pipeline.</div>
 
-      <div style={{ overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 10 }}>
+      <div className="ads-lab-scroll" style={{ border: "1px solid var(--border-light)", borderRadius: 10 }}>
         {/* Header */}
         <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "8px 0", borderBottom: "2px solid var(--border)", minWidth: 1700, background: "var(--bg-elevated)" }}>
           {HEADERS.map(h => (
