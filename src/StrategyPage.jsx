@@ -291,36 +291,87 @@ function FearsTab({ data, onChange, workspaceId }) {
 }
 
 // ════════════════════════════════════════════════
-// TAB: PROBLEM & SOLUTION
+// TAB: PROBLEM & SOLUTION (multiple mechanisms)
 // ════════════════════════════════════════════════
 
 function ProblemSolutionTab({ data, onChange, workspaceId }) {
-  const d = data || {};
-  useAutoSave(workspaceId, "problem_solution", data);
+  const items = Array.isArray(data) ? data : (data && typeof data === "object" && data.problem_name ? [data] : []);
+  useAutoSave(workspaceId, "problem_solution", items);
 
-  const set = (k, v) => onChange({ ...d, [k]: v });
+  const [openIdx, setOpenIdx] = useState(null);
 
-  const Section = ({ title, prefix, color }) => (
+  const add = () => {
+    const n = [...items, { title: "Mechanism " + (items.length + 1), problem_name: "", problem_research: "", problem_summary: "", problem_simple: "", problem_metaphor: "", problem_copy: "", solution_name: "", solution_research: "", solution_summary: "", solution_simple: "", solution_metaphor: "", solution_copy: "" }];
+    onChange(n);
+    setOpenIdx(n.length - 1);
+  };
+  const remove = (i) => { onChange(items.filter((_, j) => j !== i)); if (openIdx === i) setOpenIdx(null); };
+  const set = (i, k, v) => { const n = [...items]; n[i] = { ...n[i], [k]: v }; onChange(n); };
+
+  const FieldSet = ({ idx, prefix, title, color }) => (
     <div style={{ flex: 1 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{title}</div>
       <div style={{ display: "grid", gap: 10 }}>
-        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>The {title}</label><Cell value={d[prefix + "_name"]} onChange={v => set(prefix + "_name", v)} placeholder={`What is the ${title.toLowerCase()}?`} /></div>
-        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Research Document</label><Cell value={d[prefix + "_research"]} onChange={v => set(prefix + "_research", v)} placeholder="Link to research doc..." /></div>
-        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Summary</label><Cell value={d[prefix + "_summary"]} onChange={v => set(prefix + "_summary", v)} placeholder="Summary of findings..." multiline style={{ minHeight: 80 }} /></div>
-        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>4th-Grade Explanation</label><Cell value={d[prefix + "_simple"]} onChange={v => set(prefix + "_simple", v)} placeholder="Explain it like I'm 10..." multiline style={{ minHeight: 80 }} /></div>
-        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Visual Metaphor</label><Cell value={d[prefix + "_metaphor"]} onChange={v => set(prefix + "_metaphor", v)} placeholder="A relatable metaphor..." multiline /></div>
-        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Copywriting Example</label><Cell value={d[prefix + "_copy"]} onChange={v => set(prefix + "_copy", v)} placeholder="Example ad copy..." multiline style={{ minHeight: 80 }} /></div>
+        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>The {title}</label><Cell value={items[idx]?.[prefix + "_name"]} onChange={v => set(idx, prefix + "_name", v)} placeholder={`What is the ${title.toLowerCase()}?`} /></div>
+        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Research Document</label><Cell value={items[idx]?.[prefix + "_research"]} onChange={v => set(idx, prefix + "_research", v)} placeholder="Link to research doc..." /></div>
+        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Summary</label><Cell value={items[idx]?.[prefix + "_summary"]} onChange={v => set(idx, prefix + "_summary", v)} placeholder="Summary of findings..." multiline style={{ minHeight: 80 }} /></div>
+        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>4th-Grade Explanation</label><Cell value={items[idx]?.[prefix + "_simple"]} onChange={v => set(idx, prefix + "_simple", v)} placeholder="Explain it like I'm 10..." multiline style={{ minHeight: 80 }} /></div>
+        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Visual Metaphor</label><Cell value={items[idx]?.[prefix + "_metaphor"]} onChange={v => set(idx, prefix + "_metaphor", v)} placeholder="A relatable metaphor..." multiline /></div>
+        <div><label style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>Copywriting Example</label><Cell value={items[idx]?.[prefix + "_copy"]} onChange={v => set(idx, prefix + "_copy", v)} placeholder="Example ad copy..." multiline style={{ minHeight: 80 }} /></div>
       </div>
     </div>
   );
 
   return (
     <div>
-      <div className="section-title">Problem & Solution</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-        <Section title="Problem" prefix="problem" color="var(--red)" />
-        <Section title="Solution" prefix="solution" color="var(--green)" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div className="section-title" style={{ margin: 0 }}>Problem & Solution Mechanisms</div>
+        <button onClick={add} className="btn btn-primary btn-sm">+ New Mechanism</button>
       </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 14 }}>Each mechanism pairs a root problem with its unique solution. Click to expand and fill in the details.</div>
+
+      {items.length === 0 && <div className="empty-state">No mechanisms yet. Click "+ New Mechanism" to create your first one.</div>}
+
+      {items.map((item, i) => (
+        <div key={i} style={{ marginBottom: 8 }}>
+          {/* Collapsed card */}
+          <div
+            className="card-flat"
+            onClick={() => setOpenIdx(openIdx === i ? null : i)}
+            style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderLeft: openIdx === i ? "3px solid var(--accent)" : "3px solid transparent" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 14, transition: "transform 0.2s", transform: openIdx === i ? "rotate(90deg)" : "rotate(0deg)" }}>▸</span>
+              <div>
+                <input
+                  className="input"
+                  value={item.title || ""}
+                  onChange={e => { e.stopPropagation(); set(i, "title", e.target.value); }}
+                  onClick={e => e.stopPropagation()}
+                  placeholder="Mechanism name..."
+                  style={{ fontSize: 13, fontWeight: 700, border: "none", background: "transparent", padding: 0, color: "var(--text-primary)" }}
+                />
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                  {item.problem_name ? `Problem: ${item.problem_name}` : "No problem defined"}
+                  {" · "}
+                  {item.solution_name ? `Solution: ${item.solution_name}` : "No solution defined"}
+                </div>
+              </div>
+            </div>
+            <button onClick={e => { e.stopPropagation(); remove(i); }} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }}>Remove</button>
+          </div>
+
+          {/* Expanded view */}
+          {openIdx === i && (
+            <div style={{ padding: "16px 20px", background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderTop: "none", borderRadius: "0 0 12px 12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+                <FieldSet idx={i} prefix="problem" title="Problem" color="var(--red)" />
+                <FieldSet idx={i} prefix="solution" title="Solution" color="var(--green)" />
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -497,87 +548,101 @@ const AD_STATUS_OPTIONS = ["Concept", "Scripted", "In Production", "Ready to Lau
 const AD_FORMAT_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
 const GRABS_OPTIONS = ["Yes - Strong Hook", "Somewhat", "No - Weak", "Untested"];
 
-function AdsLabTab({ ads, dispatch, strategyData }) {
+function AdsLabTab({ ads, dispatch, strategyData, editors }) {
   const avatarNames = (strategyData?.avatars || []).map(a => a.name).filter(Boolean);
   const desireList = (strategyData?.desires || []).map(d => d.want).filter(Boolean);
   const triggerList = (strategyData?.emotional_triggers || []).map(t => t.trigger).filter(Boolean);
+  const [newName, setNewName] = useState("");
 
   const updateStrategy = (adId, key, value) => {
     dispatch({ type: "UPDATE", id: adId, updates: { strategy: { ...((ads.find(a => a.id === adId) || {}).strategy || {}), [key]: value } } });
   };
 
-  // Group by batch
-  const grouped = {};
-  ads.forEach(ad => {
-    const batch = ad.strategy?.batch || "Unassigned";
-    if (!grouped[batch]) grouped[batch] = [];
-    grouped[batch].push(ad);
-  });
+  const addNewRow = () => {
+    const name = newName.trim() || "New Ad " + (ads.length + 1);
+    dispatch({ type: "ADD_AD", ad: { name, type: "UGC", editor: "", deadline: "", brief: "", notes: "" } });
+    setNewName("");
+  };
+
+  const COLS = "140px 60px 100px 1fr 90px 110px 1fr 100px 110px 120px 100px 1fr 80px 1fr 90px 100px";
+  const HEADERS = ["Ad Name", "Batch", "Status", "Concept", "Format", "Avatar", "Hook / Headline", "Grabs Attn?", "Desire", "Trigger", "Objections?", "Why Not?", "Confidence", "Why It Should Work", "Results", "Key Learnings"];
+  const visibleAds = ads.filter(a => a.stage !== "killed");
 
   return (
     <div>
-      <div className="section-title">Ads Lab</div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 14 }}>Creative strategy layer for your pipeline ads. Fill in the strategy fields to track what angles, triggers, and avatars each ad targets.</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div className="section-title" style={{ margin: 0 }}>Ads Lab</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Ad name..." style={{ fontSize: 11, width: 160 }} onKeyDown={e => e.key === "Enter" && addNewRow()} />
+          <button onClick={addNewRow} className="btn btn-primary btn-sm">+ Add Row</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>Spreadsheet view of all ads with creative strategy fields. New rows also appear in Pipeline.</div>
 
-      <div style={{ overflowX: "auto" }}>
+      <div style={{ overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 10 }}>
         {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: "60px 100px 1fr 90px 110px 1fr 100px 110px 120px 100px 1fr 80px 1fr 90px 100px", gap: 4, padding: "6px 0", borderBottom: "1px solid var(--border)", minWidth: 1600 }}>
-          {["Batch", "Status", "Concept", "Format", "Avatar", "Hook / Headline", "Grabs Attn?", "Desire", "Trigger", "Objections?", "Why Not?", "Confidence", "Why It Should Work", "Results", "Key Learnings"].map(h => (
-            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.3, padding: "0 2px" }}>{h}</div>
+        <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "8px 0", borderBottom: "2px solid var(--border)", minWidth: 1700, background: "var(--bg-elevated)" }}>
+          {HEADERS.map(h => (
+            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.3, padding: "0 6px" }}>{h}</div>
           ))}
         </div>
 
         {/* Rows */}
-        {ads.filter(a => a.stage !== "killed").map(ad => {
+        {visibleAds.map((ad, rowIdx) => {
           const s = ad.strategy || {};
+          const bg = rowIdx % 2 === 0 ? "transparent" : "var(--bg-elevated)";
           return (
-            <div key={ad.id} style={{ display: "grid", gridTemplateColumns: "60px 100px 1fr 90px 110px 1fr 100px 110px 120px 100px 1fr 80px 1fr 90px 100px", gap: 4, padding: "4px 0", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: 1600 }}>
-              <input className="input" value={s.batch || ""} onChange={e => updateStrategy(ad.id, "batch", e.target.value)} placeholder="#" style={{ fontSize: 10, padding: "4px 6px" }} />
-              <select className="input" value={s.ad_status || ad.stage || ""} onChange={e => updateStrategy(ad.id, "ad_status", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+            <div key={ad.id} style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "3px 0", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: 1700, background: bg }}>
+              <div style={{ padding: "0 6px", fontSize: 11, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.name}>{ad.name}</div>
+              <input className="input" value={s.batch || ""} onChange={e => updateStrategy(ad.id, "batch", e.target.value)} placeholder="#" style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <select className="input" value={s.ad_status || ""} onChange={e => updateStrategy(ad.id, "ad_status", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 {AD_STATUS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
-              <input className="input" value={s.concept || ""} onChange={e => updateStrategy(ad.id, "concept", e.target.value)} placeholder="Concept..." style={{ fontSize: 10, padding: "4px 6px" }} />
-              <select className="input" value={s.format || ad.type || ""} onChange={e => updateStrategy(ad.id, "format", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+              <input className="input" value={s.concept || ""} onChange={e => updateStrategy(ad.id, "concept", e.target.value)} placeholder="Concept..." style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <select className="input" value={s.format || ad.type || ""} onChange={e => updateStrategy(ad.id, "format", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 {AD_FORMAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
-              <select className="input" value={s.avatar || ""} onChange={e => updateStrategy(ad.id, "avatar", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+              <select className="input" value={s.avatar || ""} onChange={e => updateStrategy(ad.id, "avatar", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 {avatarNames.map(a => <option key={a} value={a}>{a.length > 30 ? a.slice(0, 30) + "..." : a}</option>)}
               </select>
-              <input className="input" value={s.hook || ""} onChange={e => updateStrategy(ad.id, "hook", e.target.value)} placeholder="Hook..." style={{ fontSize: 10, padding: "4px 6px" }} />
-              <select className="input" value={s.grabs_attention || ""} onChange={e => updateStrategy(ad.id, "grabs_attention", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+              <input className="input" value={s.hook || ""} onChange={e => updateStrategy(ad.id, "hook", e.target.value)} placeholder="Hook..." style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <select className="input" value={s.grabs_attention || ""} onChange={e => updateStrategy(ad.id, "grabs_attention", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 {GRABS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
-              <select className="input" value={s.desire || ""} onChange={e => updateStrategy(ad.id, "desire", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+              <select className="input" value={s.desire || ""} onChange={e => updateStrategy(ad.id, "desire", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 {desireList.map(d => <option key={d} value={d}>{d.length > 30 ? d.slice(0, 30) + "..." : d}</option>)}
               </select>
-              <select className="input" value={s.trigger || ""} onChange={e => updateStrategy(ad.id, "trigger", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+              <select className="input" value={s.trigger || ""} onChange={e => updateStrategy(ad.id, "trigger", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 {triggerList.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select className="input" value={s.handles_objections || ""} onChange={e => updateStrategy(ad.id, "handles_objections", e.target.value)} style={{ fontSize: 10, padding: "4px 4px" }}>
+              <select className="input" value={s.handles_objections || ""} onChange={e => updateStrategy(ad.id, "handles_objections", e.target.value)} style={{ fontSize: 10, padding: "4px 4px", border: "none", background: "transparent" }}>
                 <option value="">...</option>
                 <option value="Yes">Yes</option>
                 <option value="No">No</option>
                 <option value="Partially">Partially</option>
               </select>
-              <input className="input" value={s.why_not || ""} onChange={e => updateStrategy(ad.id, "why_not", e.target.value)} placeholder="If no, why..." style={{ fontSize: 10, padding: "4px 6px" }} />
-              <input className="input" type="number" min="1" max="10" value={s.confidence || ""} onChange={e => updateStrategy(ad.id, "confidence", e.target.value)} placeholder="1-10" style={{ fontSize: 10, padding: "4px 6px" }} />
-              <input className="input" value={s.why_work || ""} onChange={e => updateStrategy(ad.id, "why_work", e.target.value)} placeholder="Why it should work..." style={{ fontSize: 10, padding: "4px 6px" }} />
-              <input className="input" value={s.results || ""} onChange={e => updateStrategy(ad.id, "results", e.target.value)} placeholder="Results..." style={{ fontSize: 10, padding: "4px 6px" }} />
-              <input className="input" value={s.learnings || ""} onChange={e => updateStrategy(ad.id, "learnings", e.target.value)} placeholder="Learnings..." style={{ fontSize: 10, padding: "4px 6px" }} />
+              <input className="input" value={s.why_not || ""} onChange={e => updateStrategy(ad.id, "why_not", e.target.value)} placeholder="If no, why..." style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <input className="input" type="number" min="1" max="10" value={s.confidence || ""} onChange={e => updateStrategy(ad.id, "confidence", e.target.value)} placeholder="1-10" style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <input className="input" value={s.why_work || ""} onChange={e => updateStrategy(ad.id, "why_work", e.target.value)} placeholder="Why it should work..." style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <input className="input" value={s.results || ""} onChange={e => updateStrategy(ad.id, "results", e.target.value)} placeholder="Results..." style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
+              <input className="input" value={s.learnings || ""} onChange={e => updateStrategy(ad.id, "learnings", e.target.value)} placeholder="Learnings..." style={{ fontSize: 10, padding: "4px 6px", border: "none", background: "transparent" }} />
             </div>
           );
         })}
+
+        {/* Empty row hint */}
+        {visibleAds.length === 0 && (
+          <div style={{ padding: "20px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>No ads yet. Use "+ Add Row" above to create your first ad.</div>
+        )}
       </div>
 
-      {ads.filter(a => a.stage !== "killed").length === 0 && (
-        <div className="empty-state" style={{ marginTop: 16 }}>No ads in pipeline yet. Create ads in the Pipeline tab first.</div>
-      )}
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8 }}>{visibleAds.length} ad{visibleAds.length !== 1 ? "s" : ""} in lab · New rows also appear in Pipeline</div>
     </div>
   );
 }
@@ -595,7 +660,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
     desires: [],
     emotional_triggers: [],
     fears: [],
-    problem_solution: {},
+    problem_solution: [],
     headlines: [],
     market_sophistication: {},
     products: [],
@@ -613,7 +678,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
           desires: data.desires || [],
           emotional_triggers: data.emotional_triggers || [],
           fears: data.fears || [],
-          problem_solution: data.problem_solution || {},
+          problem_solution: Array.isArray(data.problem_solution) ? data.problem_solution : (data.problem_solution && typeof data.problem_solution === "object" && Object.keys(data.problem_solution).length > 0 ? [data.problem_solution] : []),
           headlines: data.headlines || [],
           market_sophistication: data.market_sophistication || {},
           products: data.products || [],
@@ -660,7 +725,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
       {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} workspaceId={activeWorkspaceId} />}
       {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} workspaceId={activeWorkspaceId} />}
       {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} workspaceId={activeWorkspaceId} />}
-      {tab === "adslab" && <AdsLabTab ads={ads} dispatch={dispatch} strategyData={strat} />}
+      {tab === "adslab" && <AdsLabTab ads={ads} dispatch={dispatch} strategyData={strat} editors={[]} />}
       {tab === "ai" && <ProductIntelligence activeWorkspaceId={activeWorkspaceId} />}
     </div>
   );
