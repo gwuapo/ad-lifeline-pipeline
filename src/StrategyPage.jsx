@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { fetchStrategyData, upsertStrategyData, subscribeToStrategy } from "./supabaseData.js";
 import ProductIntelligence from "./ProductIntelligence.jsx";
 
@@ -21,30 +21,7 @@ const TABS = [
 // AUTOSAVE HOOK
 // ════════════════════════════════════════════════
 
-function useAutoSave(workspaceId, section, data, onStatus) {
-  const timer = useRef(null);
-  const lastSaved = useRef(null);
-
-  useEffect(() => {
-    if (!workspaceId || data === null || data === undefined) return;
-
-    const serialized = JSON.stringify(data);
-
-    // Skip if data hasn't changed since last save (or initial load)
-    if (lastSaved.current === null) { lastSaved.current = serialized; return; }
-    if (serialized === lastSaved.current) return;
-
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      if (onStatus) onStatus("saving");
-      upsertStrategyData(workspaceId, section, data)
-        .then(() => { lastSaved.current = serialized; if (onStatus) onStatus("saved"); })
-        .catch(e => { console.error("Strategy save error:", e); if (onStatus) onStatus("error"); });
-    }, 1500);
-
-    return () => clearTimeout(timer.current);
-  }, [workspaceId, section, data]);
-}
+// No more autosave -- manual save only
 
 // ════════════════════════════════════════════════
 // EDITABLE CELL
@@ -77,9 +54,8 @@ function Cell({ value, onChange, placeholder, multiline, style }) {
 // TAB: BRAND OVERVIEW
 // ════════════════════════════════════════════════
 
-function BrandTab({ data, onChange, workspaceId, onStatus }) {
+function BrandTab({ data, onChange }) {
   const d = data || {};
-  useAutoSave(workspaceId, "brand_info", data, onStatus);
 
   const set = (k, v) => onChange({ ...d, [k]: v });
 
@@ -111,9 +87,8 @@ function BrandTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: AVATARS
 // ════════════════════════════════════════════════
 
-function AvatarsTab({ data, onChange, workspaceId, onStatus }) {
+function AvatarsTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "avatars", data, onStatus);
 
   const add = () => onChange([...items, { name: "", raw_research: "", clean_insight: "", category_insights: "", awareness_level: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -172,9 +147,8 @@ function AvatarsTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: DESIRES
 // ════════════════════════════════════════════════
 
-function DesiresTab({ data, onChange, workspaceId, onStatus }) {
+function DesiresTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "desires", data, onStatus);
 
   const add = () => onChange([...items, { want: "", so_1: "", so_2: "", core: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -226,9 +200,8 @@ function DesiresTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: EMOTIONAL TRIGGERS
 // ════════════════════════════════════════════════
 
-function TriggersTab({ data, onChange, workspaceId, onStatus }) {
+function TriggersTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "emotional_triggers", data, onStatus);
 
   const add = () => onChange([...items, { trigger: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -268,9 +241,8 @@ function TriggersTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: FEARS
 // ════════════════════════════════════════════════
 
-function FearsTab({ data, onChange, workspaceId, onStatus }) {
+function FearsTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "fears", data, onStatus);
 
   const add = () => onChange([...items, { fear: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -305,9 +277,8 @@ function FearsTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: PROBLEM & SOLUTION (multiple mechanisms)
 // ════════════════════════════════════════════════
 
-function ProblemSolutionTab({ data, onChange, workspaceId, onStatus }) {
+function ProblemSolutionTab({ data, onChange }) {
   const items = Array.isArray(data) ? data : (data && typeof data === "object" && data.problem_name ? [data] : []);
-  useAutoSave(workspaceId, "problem_solution", items, onStatus);
 
   const [openIdx, setOpenIdx] = useState(null);
 
@@ -391,9 +362,8 @@ function ProblemSolutionTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: HEADLINES
 // ════════════════════════════════════════════════
 
-function HeadlinesTab({ data, onChange, workspaceId, onStatus }) {
+function HeadlinesTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "headlines", data, onStatus);
 
   const add = () => onChange([...items, { headline: "", trigger: "", desire: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -428,9 +398,8 @@ function HeadlinesTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: MARKET SOPHISTICATION
 // ════════════════════════════════════════════════
 
-function MarketTab({ data, onChange, workspaceId, onStatus }) {
+function MarketTab({ data, onChange }) {
   const d = data || {};
-  useAutoSave(workspaceId, "market_sophistication", data, onStatus);
 
   const set = (k, v) => onChange({ ...d, [k]: v });
 
@@ -464,9 +433,8 @@ function MarketTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: PRODUCT
 // ════════════════════════════════════════════════
 
-function ProductTab({ data, onChange, workspaceId, onStatus }) {
+function ProductTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "products", data, onStatus);
 
   const add = () => onChange([...items, { name: "", feature: "", why: "", benefit_1: "", benefit_2: "", trigger: "", desire: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -505,9 +473,8 @@ function ProductTab({ data, onChange, workspaceId, onStatus }) {
 // TAB: OBJECTIONS
 // ════════════════════════════════════════════════
 
-function ObjectionsTab({ data, onChange, workspaceId, onStatus }) {
+function ObjectionsTab({ data, onChange }) {
   const items = data || [];
-  useAutoSave(workspaceId, "objections", data, onStatus);
 
   const add = (type) => onChange([...items, { type, objection: "", thinking: "", fear: "", handle: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -730,15 +697,25 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
   const updateSection = (section) => (value) => {
     dirtyRef.current.add(section);
     setStrat(prev => ({ ...prev, [section]: value }));
+    setSaveStatus("unsaved");
   };
 
-  // Called by useAutoSave when save completes -- clear dirty flag
-  const handleSaveStatus = (status) => {
-    setSaveStatus(status);
-    if (status === "saved") {
+  const saveAll = async () => {
+    if (!activeWorkspaceId) return;
+    setSaveStatus("saving");
+    try {
+      const sections = ["brand_info", "avatars", "desires", "emotional_triggers", "fears", "problem_solution", "headlines", "market_sophistication", "products", "objections"];
+      for (const s of sections) {
+        if (dirtyRef.current.has(s)) {
+          await upsertStrategyData(activeWorkspaceId, s, strat[s]);
+        }
+      }
       dirtyRef.current.clear();
+      setSaveStatus("saved");
       setTimeout(() => setSaveStatus(null), 2000);
-    } else if (status === "error") {
+    } catch (e) {
+      console.error("Save error:", e);
+      setSaveStatus("error");
       setTimeout(() => setSaveStatus(null), 4000);
     }
   };
@@ -765,24 +742,37 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
         ))}
       </div>
 
-      {/* Save status */}
-      {saveStatus && (
-        <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 100, padding: "8px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, boxShadow: "var(--shadow-lg)", transition: "opacity 0.3s", background: saveStatus === "saving" ? "var(--bg-elevated)" : saveStatus === "saved" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: saveStatus === "saving" ? "var(--text-muted)" : saveStatus === "saved" ? "var(--green)" : "var(--red)", border: `1px solid ${saveStatus === "saving" ? "var(--border)" : saveStatus === "saved" ? "var(--green)" : "var(--red)"}` }}>
-          {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved ✓" : "Save failed ✗ — check Supabase"}
-        </div>
-      )}
+      {/* Manual save button */}
+      <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 100, display: "flex", alignItems: "center", gap: 8 }}>
+        {saveStatus === "saved" && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 600 }}>Saved ✓</span>}
+        {saveStatus === "error" && <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>Save failed ✗</span>}
+        {tab !== "adslab" && tab !== "ai" && (
+          <button
+            onClick={saveAll}
+            disabled={saveStatus === "saving" || !dirtyRef.current.size}
+            className="btn btn-primary btn-sm"
+            style={{
+              padding: "8px 20px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+              boxShadow: "var(--shadow-lg)",
+              opacity: dirtyRef.current.size ? 1 : 0.5,
+            }}
+          >
+            {saveStatus === "saving" ? "Saving..." : dirtyRef.current.size ? "Save Changes" : "Saved"}
+          </button>
+        )}
+      </div>
 
       {/* Tab content */}
-      {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "headlines" && <HeadlinesTab data={strat.headlines} onChange={updateSection("headlines")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
-      {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} />}
+      {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} />}
+      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} />}
+      {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} />}
+      {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} />}
+      {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} />}
+      {tab === "headlines" && <HeadlinesTab data={strat.headlines} onChange={updateSection("headlines")} />}
+      {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} />}
+      {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} />}
+      {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} />}
       {tab === "adslab" && <AdsLabTab ads={ads} dispatch={dispatch} strategyData={strat} editors={[]} />}
       {tab === "ai" && <ProductIntelligence activeWorkspaceId={activeWorkspaceId} />}
     </div>
