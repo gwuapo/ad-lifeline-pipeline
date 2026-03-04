@@ -555,7 +555,7 @@ function AdsLabTab({ ads, dispatch, strategyData, editors }) {
   const [newName, setNewName] = useState("");
 
   const updateStrategy = (adId, key, value) => {
-    dispatch({ type: "UPDATE", id: adId, updates: { strategy: { ...((ads.find(a => a.id === adId) || {}).strategy || {}), [key]: value } } });
+    dispatch({ type: "UPDATE", id: adId, data: { strategy: { ...((ads.find(a => a.id === adId) || {}).strategy || {}), [key]: value } } });
   };
 
   const addNewRow = () => {
