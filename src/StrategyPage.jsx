@@ -23,22 +23,27 @@ const TABS = [
 
 function useAutoSave(workspaceId, section, data, onStatus) {
   const timer = useRef(null);
-  const initialLoad = useRef(true);
-  const save = useCallback(() => {
-    if (!workspaceId || data === null || data === undefined) return;
-    if (onStatus) onStatus("saving");
-    upsertStrategyData(workspaceId, section, data)
-      .then(() => { if (onStatus) onStatus("saved"); })
-      .catch(e => { console.error("Strategy save error:", e); if (onStatus) onStatus("error"); });
-  }, [workspaceId, section, data]);
+  const lastSaved = useRef(null);
 
   useEffect(() => {
-    // Skip autosave on initial load
-    if (initialLoad.current) { initialLoad.current = false; return; }
+    if (!workspaceId || data === null || data === undefined) return;
+
+    const serialized = JSON.stringify(data);
+
+    // Skip if data hasn't changed since last save (or initial load)
+    if (lastSaved.current === null) { lastSaved.current = serialized; return; }
+    if (serialized === lastSaved.current) return;
+
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(save, 1200);
+    timer.current = setTimeout(() => {
+      if (onStatus) onStatus("saving");
+      upsertStrategyData(workspaceId, section, data)
+        .then(() => { lastSaved.current = serialized; if (onStatus) onStatus("saved"); })
+        .catch(e => { console.error("Strategy save error:", e); if (onStatus) onStatus("error"); });
+    }, 1500);
+
     return () => clearTimeout(timer.current);
-  }, [save]);
+  }, [workspaceId, section, data]);
 }
 
 // ════════════════════════════════════════════════
@@ -731,8 +736,10 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
   const handleSaveStatus = (status) => {
     setSaveStatus(status);
     if (status === "saved") {
-      // Clear all dirty flags after successful save, then re-fetch to sync
       dirtyRef.current.clear();
+      setTimeout(() => setSaveStatus(null), 2000);
+    } else if (status === "error") {
+      setTimeout(() => setSaveStatus(null), 4000);
     }
   };
 
