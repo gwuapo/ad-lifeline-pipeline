@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchStrategyData, upsertStrategyData } from "./supabaseData.js";
+import { fetchStrategyData, upsertStrategyData, subscribeToStrategy } from "./supabaseData.js";
 import ProductIntelligence from "./ProductIntelligence.jsx";
 
 const TABS = [
@@ -686,6 +686,29 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
         });
       }
     }).catch(e => console.error("Load strategy:", e)).finally(() => setLoading(false));
+
+    // Realtime: re-fetch when another user edits strategy
+    const unsub = subscribeToStrategy(activeWorkspaceId, () => {
+      fetchStrategyData(activeWorkspaceId).then(data => {
+        if (data) {
+          setStrat(prev => {
+            // Only update sections the local user isn't actively editing (simple merge)
+            const next = { ...prev };
+            const sections = ["brand_info", "avatars", "desires", "emotional_triggers", "fears", "problem_solution", "headlines", "market_sophistication", "products", "objections"];
+            sections.forEach(s => {
+              if (s === "problem_solution") {
+                next[s] = Array.isArray(data[s]) ? data[s] : (data[s] && typeof data[s] === "object" && Object.keys(data[s]).length > 0 ? [data[s]] : prev[s]);
+              } else {
+                next[s] = data[s] ?? prev[s];
+              }
+            });
+            return next;
+          });
+        }
+      }).catch(() => {});
+    });
+
+    return () => { unsub(); };
   }, [activeWorkspaceId]);
 
   const updateSection = (section) => (value) => {

@@ -9,7 +9,7 @@ import SettingsPage from "./SettingsPage.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 import StrategyPage from "./StrategyPage.jsx";
 import CommissionDashboard from "./CommissionDashboard.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -207,6 +207,64 @@ function checkGate(ad, fromStage, toStage) {
 // ════════════════════════════════════════════════
 // NEW AD FORM
 // ════════════════════════════════════════════════
+
+const PAGE_LABELS = { pipeline: "Pipeline", strategy: "Strategy", editors: "Editors", earnings: "Earnings", learnings: "Learnings", settings: "Settings" };
+const PRESENCE_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6"];
+
+function PresenceBubbles({ presenceState, currentUserId, currentPage }) {
+  // Parse presence state into list of online users
+  const users = [];
+  for (const [key, presences] of Object.entries(presenceState || {})) {
+    const p = presences?.[0];
+    if (p && p.user_id !== currentUserId) {
+      users.push({ id: p.user_id, name: p.user_name || "User", page: p.page || "pipeline" });
+    }
+  }
+
+  if (users.length === 0) return null;
+
+  // Group by page
+  const byPage = {};
+  users.forEach(u => {
+    if (!byPage[u.page]) byPage[u.page] = [];
+    byPage[u.page].push(u);
+  });
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {users.map((u, i) => {
+        const color = PRESENCE_COLORS[i % PRESENCE_COLORS.length];
+        const initials = u.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+        const pageLabel = PAGE_LABELS[u.page] || u.page;
+        return (
+          <div key={u.id} style={{ position: "relative", cursor: "default" }} title={`${u.name} is viewing ${pageLabel}`}>
+            <div style={{
+              width: 30, height: 30, borderRadius: "var(--radius-full)",
+              background: color, display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 700, color: "#fff",
+              border: "2px solid var(--bg-root)",
+              boxShadow: `0 0 0 2px ${color}40`,
+            }}>
+              {initials}
+            </div>
+            {/* Page badge */}
+            <div style={{
+              position: "absolute", bottom: -4, left: "50%", transform: "translateX(-50%)",
+              fontSize: 7, fontWeight: 700, color: "#fff", background: color,
+              padding: "1px 4px", borderRadius: 4, whiteSpace: "nowrap",
+              lineHeight: 1.2, letterSpacing: 0.3,
+            }}>
+              {pageLabel}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 2 }}>
+        {users.length} online
+      </div>
+    </div>
+  );
+}
 
 function NewAdForm({ onClose, dispatch, editors }) {
   const [f, setF] = useState({ name: "", type: "VSL", editor: "", deadline: "", brief: "", notes: "", channelIds: emptyChIds() });
@@ -1510,7 +1568,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [openAd, setOpenAd] = useState(null);
   const [openAdTab, setOpenAdTab] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [page, setPage] = useState("pipeline");
+  const [page, setPageRaw] = useState("pipeline");
+  const [presenceState, setPresenceState] = useState({});
+  const presenceRef = useRef(null);
   const [th, setTh] = useState(DT);
   const [role, setRole] = useState(userRole || "founder");
   const [editors, setEditors] = useState(DEFAULT_EDITORS);
@@ -1518,6 +1578,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [myEditorProfile, setMyEditorProfile] = useState(null);
   const [earningsEditor, setEarningsEditor] = useState(null);
   const [editorProfiles, setEditorProfiles] = useState({});
+  const setPage = (p) => { setPageRaw(p); if (presenceRef.current) presenceRef.current.updatePage(p); };
   const handleSignOut = () => supabase.auth.signOut();
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
@@ -1572,7 +1633,14 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       } catch (e) { console.error("Realtime refresh error:", e); }
     });
 
-    return () => { cancelled = true; unsub(); };
+    // Presence channel
+    if (session?.user?.id) {
+      const presence = createPresenceChannel(activeWorkspaceId, session.user.id, userName || "User");
+      presenceRef.current = presence;
+      presence.subscribe((state) => setPresenceState(state));
+    }
+
+    return () => { cancelled = true; unsub(); if (presenceRef.current) { presenceRef.current.unsubscribe(); presenceRef.current = null; } };
   }, [activeWorkspaceId]);
 
   const addEditor = (name) => { const n = name.trim(); if (!n || editors.includes(n)) return; setEditors(prev => [...prev, n]); };
@@ -1721,8 +1789,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       />
 
       <div className="main-content">
-        {/* Top bar with notifications */}
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 0 8px" }}>
+        {/* Top bar with presence + notifications */}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", padding: "12px 0 8px", gap: 12 }}>
+          <PresenceBubbles presenceState={presenceState} currentUserId={session?.user?.id} currentPage={page} />
           <NotificationBell userId={session?.user?.id} onOpenAd={(adId) => { const ad = ads.find(a => a.id === adId); if (ad) { setOpenAdTab("thread"); setOpenAd(ad); setPage("pipeline"); } }} />
         </div>
         {/* Toasts */}

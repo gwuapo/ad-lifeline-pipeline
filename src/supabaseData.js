@@ -540,6 +540,52 @@ export async function getWorkspaceMemberNames(workspaceId) {
 // STRATEGY DATA
 // ════════════════════════════════════════════════
 
+// Realtime subscription for strategy_data changes
+export function subscribeToStrategy(workspaceId, callback) {
+  const channel = supabase
+    .channel(`strategy-${workspaceId}`)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "strategy_data",
+      filter: `workspace_id=eq.${workspaceId}`,
+    }, (payload) => {
+      callback(payload);
+    })
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}
+
+// Presence: track who's viewing which tab
+export function createPresenceChannel(workspaceId, userId, userName) {
+  const channel = supabase.channel(`presence-${workspaceId}`, {
+    config: { presence: { key: userId } },
+  });
+
+  return {
+    channel,
+    subscribe: (onSync) => {
+      channel.on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState();
+        onSync(state);
+      });
+      channel.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ user_id: userId, user_name: userName, page: "pipeline", online_at: new Date().toISOString() });
+        }
+      });
+    },
+    updatePage: (page) => {
+      channel.track({ user_id: userId, user_name: userName, page, online_at: new Date().toISOString() });
+    },
+    unsubscribe: () => {
+      channel.untrack();
+      supabase.removeChannel(channel);
+    },
+  };
+}
+
 export async function fetchStrategyData(workspaceId) {
   const { data, error } = await supabase
     .from("strategy_data")
