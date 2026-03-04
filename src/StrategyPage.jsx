@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { fetchStrategyData, upsertStrategyData, subscribeToStrategy } from "./supabaseData.js";
+import { fetchStrategyData, upsertStrategyData } from "./supabaseData.js";
 import ProductIntelligence from "./ProductIntelligence.jsx";
 
 const TABS = [
@@ -676,30 +676,6 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
         });
       }
     }).catch(e => console.error("Load strategy:", e)).finally(() => setLoading(false));
-
-    // Realtime: re-fetch when another user edits strategy, but skip dirty sections
-    const unsub = subscribeToStrategy(activeWorkspaceId, () => {
-      fetchStrategyData(activeWorkspaceId).then(data => {
-        if (data) {
-          setStrat(prev => {
-            const next = { ...prev };
-            const sections = ["brand_info", "avatars", "desires", "emotional_triggers", "fears", "problem_solution", "headlines", "market_sophistication", "products", "objections"];
-            sections.forEach(s => {
-              // Don't overwrite sections with unsaved local edits
-              if (dirtyRef.current.has(s)) return;
-              if (s === "problem_solution") {
-                next[s] = parsePS(data[s]);
-              } else {
-                next[s] = data[s] ?? prev[s];
-              }
-            });
-            return next;
-          });
-        }
-      }).catch(() => {});
-    });
-
-    return () => { unsub(); };
   }, [activeWorkspaceId]);
 
   const updateSection = (section) => (value) => {
@@ -727,6 +703,9 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
       setTimeout(() => setSaveStatus(null), 4000);
     }
   };
+
+  // Also remove dirtyRef - no longer needed without realtime
+  // Keep it for the save button opacity logic only
 
   if (loading) return <div className="empty-state">Loading strategy data...</div>;
 
