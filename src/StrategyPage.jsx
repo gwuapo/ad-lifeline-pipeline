@@ -147,10 +147,11 @@ function AvatarsTab({ data, onChange }) {
 // TAB: DESIRES
 // ════════════════════════════════════════════════
 
-function DesiresTab({ data, onChange }) {
+function DesiresTab({ data, onChange, avatars }) {
   const items = data || [];
+  const avatarNames = (avatars || []).map(a => a.name).filter(Boolean);
 
-  const add = () => onChange([...items, { want: "", so_1: "", so_2: "", core: "", quote_1: "", quote_2: "", quote_3: "" }]);
+  const add = () => onChange([...items, { avatar: "", want: "", so_1: "", so_2: "", core: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
   const set = (i, k, v) => { const n = [...items]; n[i] = { ...n[i], [k]: v }; onChange(n); };
 
@@ -165,7 +166,14 @@ function DesiresTab({ data, onChange }) {
       {items.map((d, i) => (
         <div key={i} className="card-flat" style={{ padding: 14, marginBottom: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-light)" }}>Desire {i + 1}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-light)" }}>Desire {i + 1}</span>
+              <select className="input" value={d.avatar || ""} onChange={e => set(i, "avatar", e.target.value)} style={{ fontSize: 11, padding: "3px 8px", maxWidth: 220 }}>
+                <option value="">Select Avatar...</option>
+                {avatarNames.map(a => <option key={a} value={a}>{a.length > 40 ? a.slice(0, 40) + "..." : a}</option>)}
+              </select>
+              {d.avatar && <span style={{ fontSize: 9, color: "var(--accent-light)", fontWeight: 600 }}>{d.avatar.length > 25 ? d.avatar.slice(0, 25) + "..." : d.avatar}</span>}
+            </div>
             <button onClick={() => remove(i)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }}>Remove</button>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -765,7 +773,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
       {/* Tab content */}
       {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} />}
       {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} />}
-      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} />}
+      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} avatars={strat.avatars} />}
       {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} />}
       {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} />}
       {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} />}
