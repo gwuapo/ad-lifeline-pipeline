@@ -660,7 +660,8 @@ function AdsLabTab({ ads, dispatch, strategyData, editors }) {
 export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
   const [tab, setTab] = useState("brand");
   const [loading, setLoading] = useState(true);
-  const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error"
+  const [saveStatus, setSaveStatus] = useState(null);
+  const dirtyRef = useRef(new Set()); // tracks which sections have unsaved local edits
   const [strat, setStrat] = useState({
     brand_info: {},
     avatars: [],
@@ -674,6 +675,8 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
     objections: [],
   });
 
+  const parsePS = (raw) => Array.isArray(raw) ? raw : (raw && typeof raw === "object" && Object.keys(raw).length > 0 ? [raw] : []);
+
   useEffect(() => {
     if (!activeWorkspaceId) return;
     setLoading(true);
@@ -685,7 +688,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
           desires: data.desires || [],
           emotional_triggers: data.emotional_triggers || [],
           fears: data.fears || [],
-          problem_solution: Array.isArray(data.problem_solution) ? data.problem_solution : (data.problem_solution && typeof data.problem_solution === "object" && Object.keys(data.problem_solution).length > 0 ? [data.problem_solution] : []),
+          problem_solution: parsePS(data.problem_solution),
           headlines: data.headlines || [],
           market_sophistication: data.market_sophistication || {},
           products: data.products || [],
@@ -694,17 +697,18 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
       }
     }).catch(e => console.error("Load strategy:", e)).finally(() => setLoading(false));
 
-    // Realtime: re-fetch when another user edits strategy
+    // Realtime: re-fetch when another user edits strategy, but skip dirty sections
     const unsub = subscribeToStrategy(activeWorkspaceId, () => {
       fetchStrategyData(activeWorkspaceId).then(data => {
         if (data) {
           setStrat(prev => {
-            // Only update sections the local user isn't actively editing (simple merge)
             const next = { ...prev };
             const sections = ["brand_info", "avatars", "desires", "emotional_triggers", "fears", "problem_solution", "headlines", "market_sophistication", "products", "objections"];
             sections.forEach(s => {
+              // Don't overwrite sections with unsaved local edits
+              if (dirtyRef.current.has(s)) return;
               if (s === "problem_solution") {
-                next[s] = Array.isArray(data[s]) ? data[s] : (data[s] && typeof data[s] === "object" && Object.keys(data[s]).length > 0 ? [data[s]] : prev[s]);
+                next[s] = parsePS(data[s]);
               } else {
                 next[s] = data[s] ?? prev[s];
               }
@@ -719,7 +723,17 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
   }, [activeWorkspaceId]);
 
   const updateSection = (section) => (value) => {
+    dirtyRef.current.add(section);
     setStrat(prev => ({ ...prev, [section]: value }));
+  };
+
+  // Called by useAutoSave when save completes -- clear dirty flag
+  const handleSaveStatus = (status) => {
+    setSaveStatus(status);
+    if (status === "saved") {
+      // Clear all dirty flags after successful save, then re-fetch to sync
+      dirtyRef.current.clear();
+    }
   };
 
   if (loading) return <div className="empty-state">Loading strategy data...</div>;
@@ -752,16 +766,16 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
       )}
 
       {/* Tab content */}
-      {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "headlines" && <HeadlinesTab data={strat.headlines} onChange={updateSection("headlines")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
-      {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "headlines" && <HeadlinesTab data={strat.headlines} onChange={updateSection("headlines")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
+      {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} workspaceId={activeWorkspaceId} onStatus={handleSaveStatus} />}
       {tab === "adslab" && <AdsLabTab ads={ads} dispatch={dispatch} strategyData={strat} editors={[]} />}
       {tab === "ai" && <ProductIntelligence activeWorkspaceId={activeWorkspaceId} />}
     </div>
