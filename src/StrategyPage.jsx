@@ -21,14 +21,20 @@ const TABS = [
 // AUTOSAVE HOOK
 // ════════════════════════════════════════════════
 
-function useAutoSave(workspaceId, section, data) {
+function useAutoSave(workspaceId, section, data, onStatus) {
   const timer = useRef(null);
+  const initialLoad = useRef(true);
   const save = useCallback(() => {
     if (!workspaceId || data === null || data === undefined) return;
-    upsertStrategyData(workspaceId, section, data).catch(e => console.error("Strategy save error:", e));
+    if (onStatus) onStatus("saving");
+    upsertStrategyData(workspaceId, section, data)
+      .then(() => { if (onStatus) onStatus("saved"); })
+      .catch(e => { console.error("Strategy save error:", e); if (onStatus) onStatus("error"); });
   }, [workspaceId, section, data]);
 
   useEffect(() => {
+    // Skip autosave on initial load
+    if (initialLoad.current) { initialLoad.current = false; return; }
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(save, 1200);
     return () => clearTimeout(timer.current);
@@ -66,9 +72,9 @@ function Cell({ value, onChange, placeholder, multiline, style }) {
 // TAB: BRAND OVERVIEW
 // ════════════════════════════════════════════════
 
-function BrandTab({ data, onChange, workspaceId }) {
+function BrandTab({ data, onChange, workspaceId, onStatus }) {
   const d = data || {};
-  useAutoSave(workspaceId, "brand_info", data);
+  useAutoSave(workspaceId, "brand_info", data, onStatus);
 
   const set = (k, v) => onChange({ ...d, [k]: v });
 
@@ -100,9 +106,9 @@ function BrandTab({ data, onChange, workspaceId }) {
 // TAB: AVATARS
 // ════════════════════════════════════════════════
 
-function AvatarsTab({ data, onChange, workspaceId }) {
+function AvatarsTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "avatars", data);
+  useAutoSave(workspaceId, "avatars", data, onStatus);
 
   const add = () => onChange([...items, { name: "", raw_research: "", clean_insight: "", category_insights: "", awareness_level: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -161,9 +167,9 @@ function AvatarsTab({ data, onChange, workspaceId }) {
 // TAB: DESIRES
 // ════════════════════════════════════════════════
 
-function DesiresTab({ data, onChange, workspaceId }) {
+function DesiresTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "desires", data);
+  useAutoSave(workspaceId, "desires", data, onStatus);
 
   const add = () => onChange([...items, { want: "", so_1: "", so_2: "", core: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -215,9 +221,9 @@ function DesiresTab({ data, onChange, workspaceId }) {
 // TAB: EMOTIONAL TRIGGERS
 // ════════════════════════════════════════════════
 
-function TriggersTab({ data, onChange, workspaceId }) {
+function TriggersTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "emotional_triggers", data);
+  useAutoSave(workspaceId, "emotional_triggers", data, onStatus);
 
   const add = () => onChange([...items, { trigger: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -257,9 +263,9 @@ function TriggersTab({ data, onChange, workspaceId }) {
 // TAB: FEARS
 // ════════════════════════════════════════════════
 
-function FearsTab({ data, onChange, workspaceId }) {
+function FearsTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "fears", data);
+  useAutoSave(workspaceId, "fears", data, onStatus);
 
   const add = () => onChange([...items, { fear: "", quote_1: "", quote_2: "", quote_3: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -294,9 +300,9 @@ function FearsTab({ data, onChange, workspaceId }) {
 // TAB: PROBLEM & SOLUTION (multiple mechanisms)
 // ════════════════════════════════════════════════
 
-function ProblemSolutionTab({ data, onChange, workspaceId }) {
+function ProblemSolutionTab({ data, onChange, workspaceId, onStatus }) {
   const items = Array.isArray(data) ? data : (data && typeof data === "object" && data.problem_name ? [data] : []);
-  useAutoSave(workspaceId, "problem_solution", items);
+  useAutoSave(workspaceId, "problem_solution", items, onStatus);
 
   const [openIdx, setOpenIdx] = useState(null);
 
@@ -380,9 +386,9 @@ function ProblemSolutionTab({ data, onChange, workspaceId }) {
 // TAB: HEADLINES
 // ════════════════════════════════════════════════
 
-function HeadlinesTab({ data, onChange, workspaceId }) {
+function HeadlinesTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "headlines", data);
+  useAutoSave(workspaceId, "headlines", data, onStatus);
 
   const add = () => onChange([...items, { headline: "", trigger: "", desire: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -417,9 +423,9 @@ function HeadlinesTab({ data, onChange, workspaceId }) {
 // TAB: MARKET SOPHISTICATION
 // ════════════════════════════════════════════════
 
-function MarketTab({ data, onChange, workspaceId }) {
+function MarketTab({ data, onChange, workspaceId, onStatus }) {
   const d = data || {};
-  useAutoSave(workspaceId, "market_sophistication", data);
+  useAutoSave(workspaceId, "market_sophistication", data, onStatus);
 
   const set = (k, v) => onChange({ ...d, [k]: v });
 
@@ -453,9 +459,9 @@ function MarketTab({ data, onChange, workspaceId }) {
 // TAB: PRODUCT
 // ════════════════════════════════════════════════
 
-function ProductTab({ data, onChange, workspaceId }) {
+function ProductTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "products", data);
+  useAutoSave(workspaceId, "products", data, onStatus);
 
   const add = () => onChange([...items, { name: "", feature: "", why: "", benefit_1: "", benefit_2: "", trigger: "", desire: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -494,9 +500,9 @@ function ProductTab({ data, onChange, workspaceId }) {
 // TAB: OBJECTIONS
 // ════════════════════════════════════════════════
 
-function ObjectionsTab({ data, onChange, workspaceId }) {
+function ObjectionsTab({ data, onChange, workspaceId, onStatus }) {
   const items = data || [];
-  useAutoSave(workspaceId, "objections", data);
+  useAutoSave(workspaceId, "objections", data, onStatus);
 
   const add = (type) => onChange([...items, { type, objection: "", thinking: "", fear: "", handle: "" }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
@@ -654,6 +660,7 @@ function AdsLabTab({ ads, dispatch, strategyData, editors }) {
 export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
   const [tab, setTab] = useState("brand");
   const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error"
   const [strat, setStrat] = useState({
     brand_info: {},
     avatars: [],
@@ -737,17 +744,24 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
         ))}
       </div>
 
+      {/* Save status */}
+      {saveStatus && (
+        <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 100, padding: "8px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, boxShadow: "var(--shadow-lg)", transition: "opacity 0.3s", background: saveStatus === "saving" ? "var(--bg-elevated)" : saveStatus === "saved" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: saveStatus === "saving" ? "var(--text-muted)" : saveStatus === "saved" ? "var(--green)" : "var(--red)", border: `1px solid ${saveStatus === "saving" ? "var(--border)" : saveStatus === "saved" ? "var(--green)" : "var(--red)"}` }}>
+          {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved ✓" : "Save failed ✗ — check Supabase"}
+        </div>
+      )}
+
       {/* Tab content */}
-      {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} workspaceId={activeWorkspaceId} />}
-      {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} workspaceId={activeWorkspaceId} />}
-      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} workspaceId={activeWorkspaceId} />}
-      {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} workspaceId={activeWorkspaceId} />}
-      {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} workspaceId={activeWorkspaceId} />}
-      {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} workspaceId={activeWorkspaceId} />}
-      {tab === "headlines" && <HeadlinesTab data={strat.headlines} onChange={updateSection("headlines")} workspaceId={activeWorkspaceId} />}
-      {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} workspaceId={activeWorkspaceId} />}
-      {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} workspaceId={activeWorkspaceId} />}
-      {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} workspaceId={activeWorkspaceId} />}
+      {tab === "brand" && <BrandTab data={strat.brand_info} onChange={updateSection("brand_info")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "avatars" && <AvatarsTab data={strat.avatars} onChange={updateSection("avatars")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "desires" && <DesiresTab data={strat.desires} onChange={updateSection("desires")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "triggers" && <TriggersTab data={strat.emotional_triggers} onChange={updateSection("emotional_triggers")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "fears" && <FearsTab data={strat.fears} onChange={updateSection("fears")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "problem" && <ProblemSolutionTab data={strat.problem_solution} onChange={updateSection("problem_solution")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "headlines" && <HeadlinesTab data={strat.headlines} onChange={updateSection("headlines")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "market" && <MarketTab data={strat.market_sophistication} onChange={updateSection("market_sophistication")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "product" && <ProductTab data={strat.products} onChange={updateSection("products")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
+      {tab === "objections" && <ObjectionsTab data={strat.objections} onChange={updateSection("objections")} workspaceId={activeWorkspaceId} onStatus={setSaveStatus} />}
       {tab === "adslab" && <AdsLabTab ads={ads} dispatch={dispatch} strategyData={strat} editors={[]} />}
       {tab === "ai" && <ProductIntelligence activeWorkspaceId={activeWorkspaceId} />}
     </div>
