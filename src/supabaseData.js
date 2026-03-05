@@ -623,3 +623,99 @@ export async function upsertStrategyData(workspaceId, section, value) {
     return data;
   }
 }
+
+// ════════════════════════════════════════════════
+// SPLIT TESTS
+// ════════════════════════════════════════════════
+
+export async function fetchSplitTests(workspaceId) {
+  const { data, error } = await supabase.from("split_tests").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createSplitTest(workspaceId, test) {
+  const { data, error } = await supabase.from("split_tests").insert({ workspace_id: workspaceId, ...test }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateSplitTest(testId, updates) {
+  const { data, error } = await supabase.from("split_tests").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", testId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteSplitTest(testId) {
+  const { error } = await supabase.from("split_tests").delete().eq("id", testId);
+  if (error) throw error;
+}
+
+// Variations
+export async function fetchVariations(splitTestId) {
+  const { data, error } = await supabase.from("split_test_variations").select("*").eq("split_test_id", splitTestId).order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createVariation(variation) {
+  const { data, error } = await supabase.from("split_test_variations").insert(variation).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateVariation(varId, updates) {
+  const { data, error } = await supabase.from("split_test_variations").update(updates).eq("id", varId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteVariation(varId) {
+  const { error } = await supabase.from("split_test_variations").delete().eq("id", varId);
+  if (error) throw error;
+}
+
+// Snapshots
+export async function fetchSnapshots(variationIds) {
+  if (!variationIds.length) return [];
+  const { data, error } = await supabase.from("split_test_snapshots").select("*").in("variation_id", variationIds).order("date", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertSnapshot(snapshot) {
+  const { data, error } = await supabase.from("split_test_snapshots").upsert(snapshot, { onConflict: "variation_id,date" }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function bulkUpsertSnapshots(snapshots) {
+  if (!snapshots.length) return [];
+  const { data, error } = await supabase.from("split_test_snapshots").upsert(snapshots, { onConflict: "variation_id,date" }).select();
+  if (error) throw error;
+  return data || [];
+}
+
+// Offer Library
+export async function fetchOfferLibrary(workspaceId) {
+  const { data, error } = await supabase.from("offer_library").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createOffer(workspaceId, offer) {
+  const { data, error } = await supabase.from("offer_library").insert({ workspace_id: workspaceId, ...offer }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateOffer(offerId, updates) {
+  const { data, error } = await supabase.from("offer_library").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", offerId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteOffer(offerId) {
+  const { error } = await supabase.from("offer_library").delete().eq("id", offerId);
+  if (error) throw error;
+}

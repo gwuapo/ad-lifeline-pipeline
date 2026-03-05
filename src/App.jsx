@@ -9,6 +9,7 @@ import SettingsPage from "./SettingsPage.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 import StrategyPage from "./StrategyPage.jsx";
 import CommissionDashboard from "./CommissionDashboard.jsx";
+import SplitTestPage from "./SplitTestPage.jsx";
 import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
@@ -1893,6 +1894,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── RESEARCH PAGE ── */}
         {page === "strategy" && <StrategyPage activeWorkspaceId={activeWorkspaceId} ads={ads} dispatch={dispatch} />}
+
+        {/* ── SPLIT TESTS PAGE ── */}
+        {page === "splittests" && <SplitTestPage activeWorkspaceId={activeWorkspaceId} />}
 
         {/* ── EARNINGS PAGE ── */}
         {page === "earnings" && (

@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { id: "pipeline", icon: "📊", label: "Pipeline" },
   { id: "strategy", icon: "🧪", label: "Strategy" },
   { id: "editors", icon: "👥", label: "Editors" },
+  { id: "splittests", icon: "⚖️", label: "Split Tests" },
   { id: "earnings", icon: "💰", label: "Earnings" },
   { id: "learnings", icon: "🧠", label: "Learnings" },
 ];
@@ -69,6 +70,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         {NAV_ITEMS.filter(item => {
           if (item.id === "editors" && role === "editor") return false;
           if (item.id === "strategy" && role === "editor") return false;
+          if (item.id === "splittests" && role === "editor") return false;
           if (item.id === "learnings" && role === "editor") return false;
           return true;
         }).map(item => (
