@@ -211,6 +211,7 @@ function NewTestWizard({ onClose, onCreated, workspaceId, offerLibrary }) {
   };
 
   const [creating, setCreating] = useState(false);
+  const [activeVarTab, setActiveVarTab] = useState(0);
 
   const handleCreate = async () => {
     if (!name.trim()) return;
@@ -277,11 +278,11 @@ function NewTestWizard({ onClose, onCreated, workspaceId, offerLibrary }) {
         <div>
           <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
             {variations.map((v, i) => (
-              <button key={i} className={`btn btn-xs ${i === (variations._activeTab || 0) ? "btn-primary" : "btn-ghost"}`} onClick={() => setVariations(prev => { const n = [...prev]; n._activeTab = i; return n; })}>{v.name || `Var ${i + 1}`}</button>
+              <button key={i} className={`btn btn-xs ${i === activeVarTab ? "btn-primary" : "btn-ghost"}`} onClick={() => setActiveVarTab(i)}>{v.name || `Var ${i + 1}`}</button>
             ))}
           </div>
           {variations.map((v, vi) => {
-            if (vi !== (variations._activeTab || 0)) return null;
+            if (vi !== activeVarTab) return null;
             return (
               <div key={vi} className="card-flat" style={{ padding: 16 }}>
                 <div style={{ display: "grid", gap: 10 }}>
