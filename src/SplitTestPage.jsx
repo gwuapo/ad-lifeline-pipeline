@@ -1,5 +1,61 @@
 import { useState, useEffect, useMemo } from "react";
 import { fetchSplitTests, createSplitTest, updateSplitTest, deleteSplitTest, fetchVariations, createVariation, updateVariation, fetchSnapshots, bulkUpsertSnapshots, fetchOfferLibrary, createOffer, updateOffer, deleteOffer } from "./supabaseData.js";
+import { isTripleWhaleConfigured, getTripleWhaleConfig } from "./tripleWhale.js";
+
+const TW_PROXY = "/api/tw-proxy";
+
+async function syncVariationFromTW(variation, startDate, endDate) {
+  const { apiKey, shopDomain } = getTripleWhaleConfig();
+  if (!apiKey || !shopDomain) throw new Error("Triple Whale not configured -- go to Settings first");
+
+  const adSetIds = [];
+  if (variation.ad_set_id_meta) adSetIds.push({ id: variation.ad_set_id_meta, channel: "facebook-ads" });
+  if (variation.ad_set_id_tiktok) adSetIds.push({ id: variation.ad_set_id_tiktok, channel: "tiktok-ads" });
+  if (adSetIds.length === 0) return [];
+
+  const conditions = adSetIds.map(a => `(adset_id = '${a.id}' AND channel = '${a.channel}')`).join(" OR ");
+  const query = `
+    SELECT event_date, adset_id, channel,
+      SUM(spend) as spend, SUM(orders_quantity) as orders, SUM(order_revenue) as revenue
+    FROM pixel_joined_tvf
+    WHERE event_date BETWEEN @startDate AND @endDate AND (${conditions})
+    GROUP BY event_date, adset_id, channel
+    ORDER BY event_date ASC
+  `;
+
+  const res = await fetch(`${TW_PROXY}?path=${encodeURIComponent("/orcabase/api/sql")}`, {
+    method: "POST",
+    headers: { "accept": "application/json", "content-type": "application/json", "x-api-key": apiKey },
+    body: JSON.stringify({ shopId: shopDomain, query, period: { startDate, endDate } }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`TW API error (${res.status}): ${body}`);
+  }
+
+  const data = await res.json();
+  const rows = Array.isArray(data) ? data : data.rows || data.data || [];
+
+  // Aggregate by date across channels
+  const byDate = {};
+  for (const row of rows) {
+    const d = row.event_date;
+    if (!byDate[d]) byDate[d] = { ad_spend: 0, orders: 0, revenue: 0 };
+    byDate[d].ad_spend += Number(row.spend) || 0;
+    byDate[d].orders += Number(row.orders) || 0;
+    byDate[d].revenue += Number(row.revenue) || 0;
+  }
+
+  return Object.entries(byDate).map(([date, m]) => ({
+    variation_id: variation.id,
+    date,
+    ad_spend: +m.ad_spend.toFixed(2),
+    orders: Math.round(m.orders),
+    revenue: +m.revenue.toFixed(2),
+    source: "triple_whale",
+  }));
+}
 
 // ════════════════════════════════════════════════
 // METRICS ENGINE
@@ -379,24 +435,58 @@ function NewTestWizard({ onClose, onCreated, workspaceId, offerLibrary }) {
 // TEST DETAIL VIEW
 // ════════════════════════════════════════════════
 
-function TestDetail({ test, onBack, onSync, syncing, currency }) {
+function TestDetail({ test, onBack, currency }) {
   const [vars, setVars] = useState([]);
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
+
+  // Date range for TW sync
+  const defaultStart = test.start_date || new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+  const defaultEnd = new Date(Date.now() - 86400000).toISOString().split("T")[0]; // yesterday
+  const [syncStart, setSyncStart] = useState(defaultStart);
+  const [syncEnd, setSyncEnd] = useState(defaultEnd);
+
+  const reload = async () => {
+    const v = await fetchVariations(test.id);
+    setVars(v);
+    if (v.length > 0) {
+      const s = await fetchSnapshots(v.map(x => x.id));
+      setSnapshots(s);
+    }
+    return v;
+  };
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const v = await fetchVariations(test.id);
-      setVars(v);
-      if (v.length > 0) {
-        const s = await fetchSnapshots(v.map(x => x.id));
-        setSnapshots(s);
-      }
-      setLoading(false);
-    };
-    load();
+    setLoading(true);
+    reload().finally(() => setLoading(false));
   }, [test.id]);
+
+  const handleSync = async () => {
+    if (!isTripleWhaleConfigured()) { setSyncMsg({ ok: false, text: "Configure Triple Whale in Settings first (API key + shop domain)" }); return; }
+    const linkedVars = vars.filter(v => v.ad_set_id_meta || v.ad_set_id_tiktok);
+    if (linkedVars.length === 0) { setSyncMsg({ ok: false, text: "No variations have ad set IDs linked. Enter data manually below." }); return; }
+
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      let totalRows = 0;
+      for (const v of linkedVars) {
+        const snaps = await syncVariationFromTW(v, syncStart, syncEnd);
+        if (snaps.length > 0) {
+          await bulkUpsertSnapshots(snaps);
+          totalRows += snaps.length;
+        }
+      }
+      await reload();
+      setSyncMsg({ ok: true, text: totalRows > 0 ? `Synced ${totalRows} data points from Triple Whale` : "No data found for the given date range and ad set IDs" });
+    } catch (e) {
+      console.error("Sync error:", e);
+      setSyncMsg({ ok: false, text: e.message });
+    }
+    setSyncing(false);
+  };
 
   const cur = currency || test.currency || "SAR";
 
@@ -438,8 +528,14 @@ function TestDetail({ test, onBack, onSync, syncing, currency }) {
             <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{daysSinceStart} days running</span>
           </div>
         </div>
-        <button onClick={() => onSync(test, vars)} disabled={syncing} className="btn btn-primary btn-sm">{syncing ? "Syncing..." : "Sync Data"}</button>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="date" className="input" value={syncStart} onChange={e => setSyncStart(e.target.value)} style={{ fontSize: 10, padding: "4px 6px", width: 120 }} />
+          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>to</span>
+          <input type="date" className="input" value={syncEnd} onChange={e => setSyncEnd(e.target.value)} style={{ fontSize: 10, padding: "4px 6px", width: 120 }} />
+          <button onClick={handleSync} disabled={syncing} className="btn btn-primary btn-sm">{syncing ? "Syncing..." : "Sync Data"}</button>
+        </div>
       </div>
+      {syncMsg && <div style={{ fontSize: 11, color: syncMsg.ok ? "var(--green)" : "var(--red)", marginBottom: 10 }}>{syncMsg.text}</div>}
 
       {/* Winner callout */}
       {winner && metricsPerVar.length > 1 && winner.metrics.totalSpend > 0 && (
@@ -491,23 +587,24 @@ function TestDetail({ test, onBack, onSync, syncing, currency }) {
         <MetricRow label="NCM per $1 Ad Spend" values={metricsPerVar.map(m => m.metrics.ncmPerDollar)} format="ncm" highlight />
       </div>
 
-      {/* Manual data entry for variations without ad set IDs */}
-      {vars.some(v => !v.ad_set_id_meta && !v.ad_set_id_tiktok) && (
-        <div style={{ padding: "16px 18px", borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border-light)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Manual Data Entry</div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 10 }}>For variations without ad set IDs linked</div>
-          {vars.filter(v => !v.ad_set_id_meta && !v.ad_set_id_tiktok).map(v => (
-            <div key={v.id} className="card-flat" style={{ padding: 10, marginBottom: 6 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>{v.name} <span className="badge" style={{ fontSize: 8 }}>Manual</span></div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                <div><label style={{ fontSize: 9, color: "var(--text-muted)" }}>Total Spend</label><input className="input" type="number" defaultValue={v.manual_spend || 0} onBlur={e => updateVariation(v.id, { manual_spend: +e.target.value })} style={{ fontSize: 11 }} /></div>
-                <div><label style={{ fontSize: 9, color: "var(--text-muted)" }}>Total Orders</label><input className="input" type="number" defaultValue={v.manual_orders || 0} onBlur={e => updateVariation(v.id, { manual_orders: +e.target.value })} style={{ fontSize: 11 }} /></div>
-                <div><label style={{ fontSize: 9, color: "var(--text-muted)" }}>Total Revenue</label><input className="input" type="number" defaultValue={v.manual_revenue || 0} onBlur={e => updateVariation(v.id, { manual_revenue: +e.target.value })} style={{ fontSize: 11 }} /></div>
-              </div>
+      {/* Manual data entry -- always shown as fallback */}
+      <div style={{ padding: "16px 18px", borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border-light)" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Manual Data Entry</div>
+        <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 10 }}>Enter or override total spend, orders, and revenue per variation. Used when no ad set IDs are linked or as a fallback.</div>
+        {vars.map(v => (
+          <div key={v.id} className="card-flat" style={{ padding: 10, marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+              {v.name}
+              {(v.ad_set_id_meta || v.ad_set_id_tiktok) ? <span className="badge" style={{ fontSize: 8, marginLeft: 6 }}>Has Ad Set ID</span> : <span className="badge" style={{ fontSize: 8, marginLeft: 6 }}>Manual</span>}
             </div>
-          ))}
-        </div>
-      )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div><label style={{ fontSize: 9, color: "var(--text-muted)" }}>Total Spend</label><input className="input" type="number" defaultValue={v.manual_spend || 0} onBlur={async e => { await updateVariation(v.id, { manual_spend: +e.target.value }); reload(); }} style={{ fontSize: 11 }} /></div>
+              <div><label style={{ fontSize: 9, color: "var(--text-muted)" }}>Total Orders</label><input className="input" type="number" defaultValue={v.manual_orders || 0} onBlur={async e => { await updateVariation(v.id, { manual_orders: +e.target.value }); reload(); }} style={{ fontSize: 11 }} /></div>
+              <div><label style={{ fontSize: 9, color: "var(--text-muted)" }}>Total Revenue</label><input className="input" type="number" defaultValue={v.manual_revenue || 0} onBlur={async e => { await updateVariation(v.id, { manual_revenue: +e.target.value }); reload(); }} style={{ fontSize: 11 }} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -613,7 +710,6 @@ export default function SplitTestPage({ activeWorkspaceId }) {
   const [loading, setLoading] = useState(true);
   const [selectedTest, setSelectedTest] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [syncing, setSyncing] = useState(false);
   const [offerLib, setOfferLib] = useState([]);
 
   useEffect(() => {
@@ -624,21 +720,6 @@ export default function SplitTestPage({ activeWorkspaceId }) {
       fetchOfferLibrary(activeWorkspaceId),
     ]).then(([t, o]) => { setTests(t); setOfferLib(o); }).finally(() => setLoading(false));
   }, [activeWorkspaceId]);
-
-  const handleSync = async (test, vars) => {
-    setSyncing(true);
-    try {
-      const res = await fetch(`/api/tw-sync?testId=${test.id}`, { method: "POST" });
-      if (res.ok) {
-        // Refresh test data
-        const v = await fetchVariations(test.id);
-        if (v.length > 0) await fetchSnapshots(v.map(x => x.id));
-      }
-    } catch (e) { console.error("Sync error:", e); }
-    setSyncing(false);
-    // Force re-render by re-selecting
-    setSelectedTest({ ...test });
-  };
 
   const filteredTests = filter === "all" ? tests : tests.filter(t => t.status === filter);
 
@@ -696,7 +777,7 @@ export default function SplitTestPage({ activeWorkspaceId }) {
       )}
 
       {view === "detail" && selectedTest && (
-        <TestDetail test={selectedTest} onBack={() => { setView("dashboard"); setSelectedTest(null); }} onSync={handleSync} syncing={syncing} />
+        <TestDetail test={selectedTest} onBack={() => { setView("dashboard"); setSelectedTest(null); }} />
       )}
 
       {view === "library" && (
