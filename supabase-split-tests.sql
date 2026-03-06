@@ -6,7 +6,7 @@
 -- Offer Library (reusable offer configurations)
 create table if not exists offer_library (
   id uuid default gen_random_uuid() primary key,
-  workspace_id uuid references workspaces(id) on delete cascade not null,
+  workspace_id uuid not null,
   name text not null,
   tiers jsonb default '[]'::jsonb,
   quantity_mix jsonb default '[]'::jsonb,
@@ -19,7 +19,7 @@ create table if not exists offer_library (
 -- Split Tests
 create table if not exists split_tests (
   id uuid default gen_random_uuid() primary key,
-  workspace_id uuid references workspaces(id) on delete cascade not null,
+  workspace_id uuid not null,
   name text not null,
   platforms jsonb default '["meta"]'::jsonb,
   currency text default 'SAR',
@@ -61,64 +61,32 @@ create table if not exists split_test_snapshots (
   unique (variation_id, date)
 );
 
--- RLS
+-- RLS (simple: any authenticated user can access)
 alter table offer_library enable row level security;
 alter table split_tests enable row level security;
 alter table split_test_variations enable row level security;
 alter table split_test_snapshots enable row level security;
 
 -- offer_library policies
-create policy "offer_library_select" on offer_library for select using (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
-create policy "offer_library_insert" on offer_library for insert with check (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
-create policy "offer_library_update" on offer_library for update using (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
-create policy "offer_library_delete" on offer_library for delete using (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
+create policy "offer_library_select" on offer_library for select using (auth.uid() is not null);
+create policy "offer_library_insert" on offer_library for insert with check (auth.uid() is not null);
+create policy "offer_library_update" on offer_library for update using (auth.uid() is not null);
+create policy "offer_library_delete" on offer_library for delete using (auth.uid() is not null);
 
 -- split_tests policies
-create policy "split_tests_select" on split_tests for select using (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
-create policy "split_tests_insert" on split_tests for insert with check (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
-create policy "split_tests_update" on split_tests for update using (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
-create policy "split_tests_delete" on split_tests for delete using (
-  workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
-);
+create policy "split_tests_select" on split_tests for select using (auth.uid() is not null);
+create policy "split_tests_insert" on split_tests for insert with check (auth.uid() is not null);
+create policy "split_tests_update" on split_tests for update using (auth.uid() is not null);
+create policy "split_tests_delete" on split_tests for delete using (auth.uid() is not null);
 
--- split_test_variations policies (via parent split_test)
-create policy "variations_select" on split_test_variations for select using (
-  split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()))
-);
-create policy "variations_insert" on split_test_variations for insert with check (
-  split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()))
-);
-create policy "variations_update" on split_test_variations for update using (
-  split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()))
-);
-create policy "variations_delete" on split_test_variations for delete using (
-  split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()))
-);
+-- split_test_variations policies
+create policy "variations_select" on split_test_variations for select using (auth.uid() is not null);
+create policy "variations_insert" on split_test_variations for insert with check (auth.uid() is not null);
+create policy "variations_update" on split_test_variations for update using (auth.uid() is not null);
+create policy "variations_delete" on split_test_variations for delete using (auth.uid() is not null);
 
--- split_test_snapshots policies (via parent variation → split_test)
-create policy "snapshots_select" on split_test_snapshots for select using (
-  variation_id in (select id from split_test_variations where split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())))
-);
-create policy "snapshots_insert" on split_test_snapshots for insert with check (
-  variation_id in (select id from split_test_variations where split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())))
-);
-create policy "snapshots_update" on split_test_snapshots for update using (
-  variation_id in (select id from split_test_variations where split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())))
-);
-create policy "snapshots_delete" on split_test_snapshots for delete using (
-  variation_id in (select id from split_test_variations where split_test_id in (select id from split_tests where workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())))
-);
+-- split_test_snapshots policies
+create policy "snapshots_select" on split_test_snapshots for select using (auth.uid() is not null);
+create policy "snapshots_insert" on split_test_snapshots for insert with check (auth.uid() is not null);
+create policy "snapshots_update" on split_test_snapshots for update using (auth.uid() is not null);
+create policy "snapshots_delete" on split_test_snapshots for delete using (auth.uid() is not null);

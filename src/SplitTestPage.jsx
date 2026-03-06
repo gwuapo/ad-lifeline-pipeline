@@ -213,9 +213,12 @@ function NewTestWizard({ onClose, onCreated, workspaceId, offerLibrary }) {
   const [creating, setCreating] = useState(false);
   const [activeVarTab, setActiveVarTab] = useState(0);
 
+  const [createError, setCreateError] = useState(null);
+
   const handleCreate = async () => {
     if (!name.trim()) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const test = await createSplitTest(workspaceId, { name, platforms, currency, usd_exchange_rate: exchangeRate, start_date: startDate, status: "active" });
       for (const v of variations) {
@@ -224,6 +227,7 @@ function NewTestWizard({ onClose, onCreated, workspaceId, offerLibrary }) {
       onCreated(test);
     } catch (e) {
       console.error("Create test error:", e);
+      setCreateError(e.message || "Failed to create test. Make sure you've run supabase-split-tests.sql.");
     }
     setCreating(false);
   };
@@ -363,6 +367,7 @@ function NewTestWizard({ onClose, onCreated, workspaceId, offerLibrary }) {
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button onClick={() => setStep(2)} className="btn btn-ghost">← Back</button>
             <button onClick={handleCreate} disabled={creating} className="btn btn-primary">{creating ? "Creating..." : "Launch Test"}</button>
+            {createError && <div style={{ fontSize: 11, color: "var(--red)", marginTop: 6 }}>{createError}</div>}
           </div>
         </div>
       )}
@@ -520,15 +525,26 @@ function OfferLibraryView({ workspaceId }) {
     fetchOfferLibrary(workspaceId).then(setOffers).finally(() => setLoading(false));
   }, [workspaceId]);
 
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+
   const handleSave = async (offer) => {
-    if (offer.id) {
-      const updated = await updateOffer(offer.id, { name: offer.name, tiers: offer.tiers, quantity_mix: offer.quantity_mix, payment_pct: offer.payment_pct, refund_rate: offer.refund_rate });
-      setOffers(prev => prev.map(o => o.id === updated.id ? updated : o));
-    } else {
-      const created = await createOffer(workspaceId, { name: offer.name, tiers: offer.tiers, quantity_mix: offer.quantity_mix, payment_pct: offer.payment_pct, refund_rate: offer.refund_rate });
-      setOffers(prev => [created, ...prev]);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (offer.id) {
+        const updated = await updateOffer(offer.id, { name: offer.name, tiers: offer.tiers, quantity_mix: offer.quantity_mix, payment_pct: offer.payment_pct, refund_rate: offer.refund_rate });
+        setOffers(prev => prev.map(o => o.id === updated.id ? updated : o));
+      } else {
+        const created = await createOffer(workspaceId, { name: offer.name, tiers: offer.tiers, quantity_mix: offer.quantity_mix, payment_pct: offer.payment_pct, refund_rate: offer.refund_rate });
+        setOffers(prev => [created, ...prev]);
+      }
+      setEditing(null);
+    } catch (e) {
+      console.error("Save offer error:", e);
+      setSaveError(e.message || "Failed to save offer. Make sure you've run supabase-split-tests.sql.");
     }
-    setEditing(null);
+    setSaving(false);
   };
 
   const handleDelete = async (id) => {
@@ -560,9 +576,10 @@ function OfferLibraryView({ workspaceId }) {
             ))}
             <button onClick={() => { const tiers = [...editing.tiers, { label: `Tier ${editing.tiers.length + 1}`, price: 0, landed_cost: 0 }]; const mix = [...(editing.quantity_mix || []), 0]; setEditing(p => ({ ...p, tiers, quantity_mix: mix })); }} className="btn btn-ghost btn-xs">+ Add Tier</button>
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => handleSave(editing)} className="btn btn-primary btn-sm" disabled={!editing.name?.trim()}>Save</button>
+              <button onClick={() => handleSave(editing)} className="btn btn-primary btn-sm" disabled={!editing.name?.trim() || saving}>{saving ? "Saving..." : "Save"}</button>
               <button onClick={() => setEditing(null)} className="btn btn-ghost btn-sm">Cancel</button>
             </div>
+            {saveError && <div style={{ fontSize: 11, color: "var(--red)", marginTop: 6 }}>{saveError}</div>}
           </div>
         </div>
       )}
