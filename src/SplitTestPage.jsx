@@ -140,22 +140,43 @@ function computeDailyNCM(variation, snapshots) {
 // ════════════════════════════════════════════════
 
 const CHART_COLORS = ["#22c55e", "#6366f1", "#f59e0b", "#ef4444", "#8b5cf6"];
+const CHART_COLORS_ALPHA = ["rgba(34,197,94,0.12)", "rgba(99,102,241,0.10)", "rgba(245,158,11,0.10)", "rgba(239,68,68,0.10)", "rgba(139,92,246,0.10)"];
 
-function NCMChart({ variationData, width = 600, height = 200 }) {
-  if (!variationData || variationData.length === 0) return <div className="empty-state">No data for chart yet</div>;
+function NCMChart({ variationData, width = 700, height = 280 }) {
+  if (!variationData || variationData.length === 0 || variationData.every(v => v.data.length === 0))
+    return <div className="empty-state">No data for chart yet</div>;
 
+  const [hoverIdx, setHoverIdx] = useState(null);
+
+  const maxLen = Math.max(...variationData.map(v => v.data.length));
   const allValues = variationData.flatMap(v => v.data.map(d => d.value));
-  const maxVal = Math.max(...allValues, 0.01);
-  const minVal = Math.min(...allValues, 0);
+  const rawMax = Math.max(...allValues, 0.01);
+  const rawMin = Math.min(...allValues, 0);
+  const padding = (rawMax - rawMin) * 0.1 || 0.05;
+  const maxVal = rawMax + padding;
+  const minVal = rawMin - padding;
   const range = maxVal - minVal || 1;
-  const padY = 20, padX = 0;
-  const chartH = height - padY * 2, chartW = width;
 
-  const [hover, setHover] = useState(null);
+  const padT = 16, padB = 40, padL = 52, padR = 16;
+  const chartW = width - padL - padR;
+  const chartH = height - padT - padB;
+
+  const getX = (i) => padL + (i / Math.max(maxLen - 1, 1)) * chartW;
+  const getY = (v) => padT + chartH - ((v - minVal) / range) * chartH;
+
+  // Date labels from longest variation
+  const longestVar = variationData.reduce((a, b) => a.data.length >= b.data.length ? a : b, variationData[0]);
+  const dateLabels = longestVar.data.map(d => d.label);
+  const maxLabels = 10;
+  const labelStep = Math.max(1, Math.ceil(dateLabels.length / maxLabels));
+
+  // Y-axis ticks
+  const yTicks = 5;
+  const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => minVal + (range * i) / yTicks);
 
   function linePath(data) {
     if (data.length < 2) return "";
-    const pts = data.map((d, i) => ({ x: padX + (i / Math.max(data.length - 1, 1)) * chartW, y: padY + chartH - ((d.value - minVal) / range) * chartH }));
+    const pts = data.map((d, i) => ({ x: getX(i), y: getY(d.value) }));
     let path = `M ${pts[0].x},${pts[0].y}`;
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[Math.max(i - 1, 0)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(i + 2, pts.length - 1)];
@@ -164,22 +185,134 @@ function NCMChart({ variationData, width = 600, height = 200 }) {
     return path;
   }
 
+  function areaPath(data, colorIdx) {
+    if (data.length < 2) return "";
+    const line = linePath(data);
+    const lastX = getX(data.length - 1);
+    const firstX = getX(0);
+    const bottom = padT + chartH;
+    return `${line} L ${lastX},${bottom} L ${firstX},${bottom} Z`;
+  }
+
+  const handleMouseMove = (e) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * width;
+    const idx = Math.round(((mouseX - padL) / chartW) * Math.max(maxLen - 1, 1));
+    if (idx >= 0 && idx < maxLen) setHoverIdx(idx);
+    else setHoverIdx(null);
+  };
+
   return (
     <div style={{ position: "relative" }}>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        {[0, 0.25, 0.5, 0.75, 1].map(pct => {
-          const y = padY + chartH * (1 - pct);
-          return <line key={pct} x1={0} y1={y} x2={width} y2={y} stroke="var(--border-light)" strokeWidth="0.5" strokeDasharray="4 4" />;
+      <svg
+        width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
+        style={{ overflow: "visible" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <defs>
+          {variationData.map((_, i) => (
+            <linearGradient key={i} id={`ncm-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity="0.15" />
+              <stop offset="100%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity="0" />
+            </linearGradient>
+          ))}
+        </defs>
+
+        {/* Grid lines */}
+        {yTickVals.map((v, i) => {
+          const y = getY(v);
+          return (
+            <g key={i}>
+              <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="var(--border-light)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.5" />
+              <text x={padL - 8} y={y + 3} textAnchor="end" fill="var(--text-muted)" fontSize="9" fontFamily="var(--fm)">{v.toFixed(2)}</text>
+            </g>
+          );
         })}
+
+        {/* X-axis date labels */}
+        {dateLabels.map((label, i) => {
+          if (i % labelStep !== 0 && i !== dateLabels.length - 1) return null;
+          return <text key={i} x={getX(i)} y={height - 8} textAnchor="middle" fill="var(--text-muted)" fontSize="9" fontFamily="var(--fm)">{label}</text>;
+        })}
+
+        {/* Area fills */}
         {variationData.map((v, vi) => (
-          <path key={vi} d={linePath(v.data)} fill="none" stroke={CHART_COLORS[vi % CHART_COLORS.length]} strokeWidth="2.5" strokeLinecap="round" />
+          <path key={`area-${vi}`} d={areaPath(v.data, vi)} fill={`url(#ncm-grad-${vi})`} />
         ))}
+
+        {/* Lines */}
+        {variationData.map((v, vi) => (
+          <path key={`line-${vi}`} d={linePath(v.data)} fill="none" stroke={CHART_COLORS[vi % CHART_COLORS.length]} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+
+        {/* Hover crosshair + dots */}
+        {hoverIdx !== null && (
+          <>
+            <line x1={getX(hoverIdx)} y1={padT} x2={getX(hoverIdx)} y2={padT + chartH} stroke="var(--text-muted)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.6" />
+            {variationData.map((v, vi) => {
+              const d = v.data[hoverIdx];
+              if (!d) return null;
+              const cx = getX(hoverIdx), cy = getY(d.value);
+              return (
+                <g key={vi}>
+                  <circle cx={cx} cy={cy} r="5" fill="var(--bg-primary)" stroke={CHART_COLORS[vi % CHART_COLORS.length]} strokeWidth="2" />
+                  <circle cx={cx} cy={cy} r="2" fill={CHART_COLORS[vi % CHART_COLORS.length]} />
+                </g>
+              );
+            })}
+          </>
+        )}
       </svg>
-      <div style={{ display: "flex", gap: 12, marginTop: 6, justifyContent: "center" }}>
+
+      {/* Hover tooltip */}
+      {hoverIdx !== null && (() => {
+        const hasData = variationData.some(v => v.data[hoverIdx]);
+        if (!hasData) return null;
+        const dateLabel = variationData.find(v => v.data[hoverIdx])?.data[hoverIdx]?.label || "";
+        const tooltipX = getX(hoverIdx);
+        const flipLeft = tooltipX > width * 0.7;
+        return (
+          <div style={{
+            position: "absolute",
+            top: 8,
+            left: flipLeft ? "auto" : `${(tooltipX / width) * 100}%`,
+            right: flipLeft ? `${((width - tooltipX) / width) * 100}%` : "auto",
+            transform: flipLeft ? "translateX(8px)" : "translateX(-50%)",
+            background: "rgba(15,15,20,0.85)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 10,
+            padding: "10px 14px",
+            pointerEvents: "none",
+            zIndex: 10,
+            minWidth: 130,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginBottom: 6, letterSpacing: 0.3 }}>{dateLabel}</div>
+            {variationData.map((v, vi) => {
+              const d = v.data[hoverIdx];
+              if (!d) return null;
+              return (
+                <div key={vi} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: CHART_COLORS[vi % CHART_COLORS.length], flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", flex: 1 }}>{v.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: d.value >= 0 ? CHART_COLORS[vi % CHART_COLORS.length] : "var(--red)", fontFamily: "var(--fm)" }}>{d.value.toFixed(3)}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 16, marginTop: 8, justifyContent: "center" }}>
         {variationData.map((v, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10 }}>
-            <div style={{ width: 10, height: 3, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length] }} />
-            <span style={{ color: "var(--text-muted)" }}>{v.name}</span>
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10 }}>
+            <div style={{ width: 12, height: 3, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>{v.name}</span>
           </div>
         ))}
       </div>
