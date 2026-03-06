@@ -3,7 +3,7 @@
 -- Run this in Supabase SQL Editor
 -- ════════════════════════════════════════════════
 
--- Offer Library (reusable offer configurations)
+-- Tables (if not exists = safe to re-run)
 create table if not exists offer_library (
   id uuid default gen_random_uuid() primary key,
   workspace_id uuid not null,
@@ -16,7 +16,6 @@ create table if not exists offer_library (
   updated_at timestamptz default now()
 );
 
--- Split Tests
 create table if not exists split_tests (
   id uuid default gen_random_uuid() primary key,
   workspace_id uuid not null,
@@ -31,7 +30,6 @@ create table if not exists split_tests (
   updated_at timestamptz default now()
 );
 
--- Variations (child of split_tests)
 create table if not exists split_test_variations (
   id uuid default gen_random_uuid() primary key,
   split_test_id uuid references split_tests(id) on delete cascade not null,
@@ -48,7 +46,6 @@ create table if not exists split_test_variations (
   created_at timestamptz default now()
 );
 
--- Daily Snapshots (synced from Triple Whale)
 create table if not exists split_test_snapshots (
   id uuid default gen_random_uuid() primary key,
   variation_id uuid references split_test_variations(id) on delete cascade not null,
@@ -61,31 +58,49 @@ create table if not exists split_test_snapshots (
   unique (variation_id, date)
 );
 
--- RLS (simple: any authenticated user can access)
+-- Enable RLS
 alter table offer_library enable row level security;
 alter table split_tests enable row level security;
 alter table split_test_variations enable row level security;
 alter table split_test_snapshots enable row level security;
 
--- offer_library policies
+-- Drop existing policies (safe even if they don't exist)
+drop policy if exists "offer_library_select" on offer_library;
+drop policy if exists "offer_library_insert" on offer_library;
+drop policy if exists "offer_library_update" on offer_library;
+drop policy if exists "offer_library_delete" on offer_library;
+
+drop policy if exists "split_tests_select" on split_tests;
+drop policy if exists "split_tests_insert" on split_tests;
+drop policy if exists "split_tests_update" on split_tests;
+drop policy if exists "split_tests_delete" on split_tests;
+
+drop policy if exists "variations_select" on split_test_variations;
+drop policy if exists "variations_insert" on split_test_variations;
+drop policy if exists "variations_update" on split_test_variations;
+drop policy if exists "variations_delete" on split_test_variations;
+
+drop policy if exists "snapshots_select" on split_test_snapshots;
+drop policy if exists "snapshots_insert" on split_test_snapshots;
+drop policy if exists "snapshots_update" on split_test_snapshots;
+drop policy if exists "snapshots_delete" on split_test_snapshots;
+
+-- Recreate policies (any authenticated user)
 create policy "offer_library_select" on offer_library for select using (auth.uid() is not null);
 create policy "offer_library_insert" on offer_library for insert with check (auth.uid() is not null);
 create policy "offer_library_update" on offer_library for update using (auth.uid() is not null);
 create policy "offer_library_delete" on offer_library for delete using (auth.uid() is not null);
 
--- split_tests policies
 create policy "split_tests_select" on split_tests for select using (auth.uid() is not null);
 create policy "split_tests_insert" on split_tests for insert with check (auth.uid() is not null);
 create policy "split_tests_update" on split_tests for update using (auth.uid() is not null);
 create policy "split_tests_delete" on split_tests for delete using (auth.uid() is not null);
 
--- split_test_variations policies
 create policy "variations_select" on split_test_variations for select using (auth.uid() is not null);
 create policy "variations_insert" on split_test_variations for insert with check (auth.uid() is not null);
 create policy "variations_update" on split_test_variations for update using (auth.uid() is not null);
 create policy "variations_delete" on split_test_variations for delete using (auth.uid() is not null);
 
--- split_test_snapshots policies
 create policy "snapshots_select" on split_test_snapshots for select using (auth.uid() is not null);
 create policy "snapshots_insert" on split_test_snapshots for insert with check (auth.uid() is not null);
 create policy "snapshots_update" on split_test_snapshots for update using (auth.uid() is not null);

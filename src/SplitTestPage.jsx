@@ -655,7 +655,7 @@ export default function SplitTestPage({ activeWorkspaceId }) {
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button onClick={() => setView("library")} className="btn btn-ghost btn-sm">Offer Library</button>
-              <button onClick={() => setView("new")} className="btn btn-primary btn-sm">+ New Split Test</button>
+              <button onClick={() => { fetchOfferLibrary(activeWorkspaceId).then(setOfferLib).catch(() => {}); setView("new"); }} className="btn btn-primary btn-sm">+ New Split Test</button>
             </div>
           </div>
 
@@ -701,7 +701,7 @@ export default function SplitTestPage({ activeWorkspaceId }) {
 
       {view === "library" && (
         <div>
-          <button onClick={() => setView("dashboard")} className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }}>← Back to Tests</button>
+          <button onClick={() => { fetchOfferLibrary(activeWorkspaceId).then(setOfferLib).catch(() => {}); setView("dashboard"); }} className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }}>← Back to Tests</button>
           <OfferLibraryView workspaceId={activeWorkspaceId} />
         </div>
       )}
