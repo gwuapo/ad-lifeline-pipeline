@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { fetchSplitTests, createSplitTest, updateSplitTest, deleteSplitTest, fetchVariations, createVariation, updateVariation, fetchSnapshots, bulkUpsertSnapshots, fetchOfferLibrary, createOffer, updateOffer, deleteOffer } from "./supabaseData.js";
 import { isTripleWhaleConfigured, getTripleWhaleConfig } from "./tripleWhale.js";
 
@@ -147,6 +147,8 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
     return <div className="empty-state">No data for chart yet</div>;
 
   const [hoverIdx, setHoverIdx] = useState(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const containerRef = useRef(null);
 
   const maxLen = Math.max(...variationData.map(v => v.data.length));
   const allValues = variationData.flatMap(v => v.data.map(d => d.value));
@@ -164,13 +166,11 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
   const getX = (i) => padL + (i / Math.max(maxLen - 1, 1)) * chartW;
   const getY = (v) => padT + chartH - ((v - minVal) / range) * chartH;
 
-  // Date labels from longest variation
   const longestVar = variationData.reduce((a, b) => a.data.length >= b.data.length ? a : b, variationData[0]);
   const dateLabels = longestVar.data.map(d => d.label);
   const maxLabels = 10;
   const labelStep = Math.max(1, Math.ceil(dateLabels.length / maxLabels));
 
-  // Y-axis ticks
   const yTicks = 5;
   const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => minVal + (range * i) / yTicks);
 
@@ -185,7 +185,7 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
     return path;
   }
 
-  function areaPath(data, colorIdx) {
+  function areaPath(data) {
     if (data.length < 2) return "";
     const line = linePath(data);
     const lastX = getX(data.length - 1);
@@ -195,22 +195,22 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
   }
 
   const handleMouseMove = (e) => {
-    const svg = e.currentTarget;
-    const rect = svg.getBoundingClientRect();
-    const mouseX = ((e.clientX - rect.left) / rect.width) * width;
-    const idx = Math.round(((mouseX - padL) / chartW) * Math.max(maxLen - 1, 1));
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    setMousePos({ x: relX, y: relY });
+
+    const svgX = (relX / rect.width) * width;
+    const idx = Math.round(((svgX - padL) / chartW) * Math.max(maxLen - 1, 1));
     if (idx >= 0 && idx < maxLen) setHoverIdx(idx);
     else setHoverIdx(null);
   };
 
   return (
-    <div style={{ position: "relative" }}>
-      <svg
-        width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
-        style={{ overflow: "visible" }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setHoverIdx(null)}
-      >
+    <div ref={containerRef} style={{ position: "relative" }} onMouseMove={handleMouseMove} onMouseLeave={() => setHoverIdx(null)}>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: "visible", display: "block" }}>
         <defs>
           {variationData.map((_, i) => (
             <linearGradient key={i} id={`ncm-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -220,7 +220,7 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
           ))}
         </defs>
 
-        {/* Grid lines */}
+        {/* Grid lines + Y labels */}
         {yTickVals.map((v, i) => {
           const y = getY(v);
           return (
@@ -239,7 +239,7 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
 
         {/* Area fills */}
         {variationData.map((v, vi) => (
-          <path key={`area-${vi}`} d={areaPath(v.data, vi)} fill={`url(#ncm-grad-${vi})`} />
+          <path key={`area-${vi}`} d={areaPath(v.data)} fill={`url(#ncm-grad-${vi})`} />
         ))}
 
         {/* Lines */}
@@ -250,15 +250,15 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
         {/* Hover crosshair + dots */}
         {hoverIdx !== null && (
           <>
-            <line x1={getX(hoverIdx)} y1={padT} x2={getX(hoverIdx)} y2={padT + chartH} stroke="var(--text-muted)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.6" />
+            <line x1={getX(hoverIdx)} y1={padT} x2={getX(hoverIdx)} y2={padT + chartH} stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
             {variationData.map((v, vi) => {
               const d = v.data[hoverIdx];
               if (!d) return null;
               const cx = getX(hoverIdx), cy = getY(d.value);
               return (
                 <g key={vi}>
-                  <circle cx={cx} cy={cy} r="5" fill="var(--bg-primary)" stroke={CHART_COLORS[vi % CHART_COLORS.length]} strokeWidth="2" />
-                  <circle cx={cx} cy={cy} r="2" fill={CHART_COLORS[vi % CHART_COLORS.length]} />
+                  <circle cx={cx} cy={cy} r="6" fill="none" stroke={CHART_COLORS[vi % CHART_COLORS.length]} strokeWidth="1.5" opacity="0.3" />
+                  <circle cx={cx} cy={cy} r="3.5" fill="var(--bg-primary)" stroke={CHART_COLORS[vi % CHART_COLORS.length]} strokeWidth="2" />
                 </g>
               );
             })}
@@ -266,40 +266,40 @@ function NCMChart({ variationData, width = 700, height = 280 }) {
         )}
       </svg>
 
-      {/* Hover tooltip */}
+      {/* Tooltip -- positioned at actual mouse coordinates */}
       {hoverIdx !== null && (() => {
         const hasData = variationData.some(v => v.data[hoverIdx]);
         if (!hasData) return null;
         const dateLabel = variationData.find(v => v.data[hoverIdx])?.data[hoverIdx]?.label || "";
-        const tooltipX = getX(hoverIdx);
-        const flipLeft = tooltipX > width * 0.7;
+        const containerW = containerRef.current?.getBoundingClientRect().width || 600;
+        const flipLeft = mousePos.x > containerW * 0.65;
         return (
           <div style={{
             position: "absolute",
-            top: 8,
-            left: flipLeft ? "auto" : `${(tooltipX / width) * 100}%`,
-            right: flipLeft ? `${((width - tooltipX) / width) * 100}%` : "auto",
-            transform: flipLeft ? "translateX(8px)" : "translateX(-50%)",
-            background: "rgba(15,15,20,0.85)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 10,
+            top: 12,
+            left: flipLeft ? undefined : mousePos.x + 14,
+            right: flipLeft ? (containerW - mousePos.x + 14) : undefined,
+            background: "rgba(12,12,18,0.88)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 12,
             padding: "10px 14px",
             pointerEvents: "none",
             zIndex: 10,
-            minWidth: 130,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            minWidth: 140,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.04) inset",
+            transition: "left 0.06s ease, right 0.06s ease",
           }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginBottom: 6, letterSpacing: 0.3 }}>{dateLabel}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", marginBottom: 7, letterSpacing: 0.5, textTransform: "uppercase" }}>{dateLabel}</div>
             {variationData.map((v, vi) => {
               const d = v.data[hoverIdx];
               if (!d) return null;
               return (
-                <div key={vi} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: CHART_COLORS[vi % CHART_COLORS.length], flexShrink: 0 }} />
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", flex: 1 }}>{v.name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: d.value >= 0 ? CHART_COLORS[vi % CHART_COLORS.length] : "var(--red)", fontFamily: "var(--fm)" }}>{d.value.toFixed(3)}</span>
+                <div key={vi} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: CHART_COLORS[vi % CHART_COLORS.length], flexShrink: 0, boxShadow: `0 0 6px ${CHART_COLORS[vi % CHART_COLORS.length]}40` }} />
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", flex: 1 }}>{v.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: d.value >= 0 ? CHART_COLORS[vi % CHART_COLORS.length] : "#ef4444", fontFamily: "var(--fm)" }}>{d.value.toFixed(3)}</span>
                 </div>
               );
             })}
@@ -626,9 +626,9 @@ function TestDetail({ test, onBack, currency }) {
   const metricsPerVar = useMemo(() =>
     vars.map(v => ({
       variation: v,
-      metrics: computeMetrics(v, snapshots.filter(s => s.variation_id === v.id)),
+      metrics: computeMetrics(v, snapshots.filter(s => s.variation_id === v.id && s.date >= syncStart && s.date <= syncEnd)),
     })),
-    [vars, snapshots]
+    [vars, snapshots, syncStart, syncEnd]
   );
 
   const winner = metricsPerVar.length > 0 ? metricsPerVar.reduce((best, curr) => curr.metrics.ncmPerDollar > best.metrics.ncmPerDollar ? curr : best, metricsPerVar[0]) : null;
@@ -636,9 +636,9 @@ function TestDetail({ test, onBack, currency }) {
   const chartData = useMemo(() =>
     vars.map((v, i) => ({
       name: v.name,
-      data: computeDailyNCM(v, snapshots.filter(s => s.variation_id === v.id)),
+      data: computeDailyNCM(v, snapshots.filter(s => s.variation_id === v.id && s.date >= syncStart && s.date <= syncEnd)),
     })),
-    [vars, snapshots]
+    [vars, snapshots, syncStart, syncEnd]
   );
 
   const daysSinceStart = test.start_date ? Math.floor((Date.now() - new Date(test.start_date).getTime()) / 86400000) : 0;
