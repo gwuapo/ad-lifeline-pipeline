@@ -121,7 +121,8 @@ function computeDailyNCM(variation, snapshots) {
 
   // Cumulative NCM/$ per day
   let cumSpend = 0, cumOrders = 0;
-  return snapshots.sort((a, b) => a.date.localeCompare(b.date)).map(s => {
+  const sorted = [...snapshots].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return sorted.map(s => {
     cumSpend += s.ad_spend || 0;
     cumOrders += s.orders || 0;
     const gr = cumOrders * blendedAOV;
@@ -131,7 +132,8 @@ function computeDailyNCM(variation, snapshots) {
     const c2 = c1 - cumSpend;
     const pf = nr * (paymentPct / 100);
     const c3 = c2 - pf;
-    return { date: s.date, label: new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: cumSpend > 0 ? c3 / cumSpend : 0 };
+    const dateStr = String(s.date).slice(0, 10);
+    return { date: dateStr, label: new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: cumSpend > 0 ? c3 / cumSpend : 0 };
   });
 }
 
@@ -623,10 +625,19 @@ function TestDetail({ test, onBack, currency }) {
 
   const cur = currency || test.currency || "SAR";
 
+  // Normalize snapshot dates to YYYY-MM-DD for reliable filtering
+  const normalizeDate = (d) => typeof d === "string" ? d.slice(0, 10) : d;
+
+  const filterSnaps = (varId) => snapshots.filter(s => {
+    if (s.variation_id !== varId) return false;
+    const d = normalizeDate(s.date);
+    return d >= syncStart && d <= syncEnd;
+  });
+
   const metricsPerVar = useMemo(() =>
     vars.map(v => ({
       variation: v,
-      metrics: computeMetrics(v, snapshots.filter(s => s.variation_id === v.id && s.date >= syncStart && s.date <= syncEnd)),
+      metrics: computeMetrics(v, filterSnaps(v.id)),
     })),
     [vars, snapshots, syncStart, syncEnd]
   );
@@ -636,7 +647,7 @@ function TestDetail({ test, onBack, currency }) {
   const chartData = useMemo(() =>
     vars.map((v, i) => ({
       name: v.name,
-      data: computeDailyNCM(v, snapshots.filter(s => s.variation_id === v.id && s.date >= syncStart && s.date <= syncEnd)),
+      data: computeDailyNCM(v, filterSnaps(v.id)),
     })),
     [vars, snapshots, syncStart, syncEnd]
   );
