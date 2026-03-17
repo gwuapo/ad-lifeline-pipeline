@@ -88,6 +88,49 @@ export async function getWorkspaceMembers(workspaceId) {
 }
 
 // ════════════════════════════════════════════════
+// WORKSPACE INVITES
+// ════════════════════════════════════════════════
+
+export async function getWorkspaceInvites(workspaceId) {
+  const { data, error } = await supabase
+    .from("workspace_invites")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) { console.error("getWorkspaceInvites:", error); return []; }
+  return data || [];
+}
+
+export async function sendInvite(workspaceId, email, role) {
+  const session = (await supabase.auth.getSession()).data.session;
+  if (!session) throw new Error("Not authenticated");
+
+  const res = await fetch("/api/invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+    body: JSON.stringify({ email, role, workspaceId }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to send invite");
+  return data;
+}
+
+export async function revokeInvite(inviteId) {
+  const { error } = await supabase
+    .from("workspace_invites")
+    .delete()
+    .eq("id", inviteId);
+  if (error) throw error;
+}
+
+export async function acceptPendingInvites() {
+  const { data, error } = await supabase.rpc("accept_pending_invites");
+  if (error) { console.error("acceptPendingInvites:", error); return []; }
+  return data || [];
+}
+
+// ════════════════════════════════════════════════
 // WORKSPACE SETTINGS
 // ════════════════════════════════════════════════
 

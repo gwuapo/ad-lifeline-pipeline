@@ -6,7 +6,7 @@ import { getMetaConfig, setMetaConfig, isMetaConfigured } from "./metaComments.j
 import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, OPENAI_MODELS, getProxyUrl, setProxyUrl, getResearchModelAssignment, setResearchModelAssignment } from "./apiKeys.js";
 import { RESEARCH_STEPS } from "./researchEngine.js";
 import { supabase } from "./supabase.js";
-import { addMemberToWorkspace, getWorkspaceMembers, removeMemberFromWorkspace } from "./supabaseData.js";
+import { addMemberToWorkspace, getWorkspaceMembers, removeMemberFromWorkspace, getWorkspaceInvites, sendInvite, revokeInvite } from "./supabaseData.js";
 
 const SETTINGS_TABS = [
   { id: "profile", icon: "👤", label: "Profile" },
@@ -152,27 +152,31 @@ function ProfileTab({ session, userName }) {
 
 function TeamTab({ activeWorkspaceId, workspaces, session }) {
   const [members, setMembers] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("founder");
+  const [inviteRole, setInviteRole] = useState("editor");
   const [inviting, setInviting] = useState(false);
   const [result, setResult] = useState(null);
   const [removing, setRemoving] = useState(null);
+  const [revoking, setRevoking] = useState(null);
 
   const activeWs = workspaces?.find(w => w.id === activeWorkspaceId);
   const currentUserId = session?.user?.id;
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    loadMembers();
+    loadTeam();
   }, [activeWorkspaceId]);
 
-  const loadMembers = async () => {
+  const loadTeam = async () => {
     setLoading(true);
     try {
-      const data = await getWorkspaceMembers(activeWorkspaceId);
-      // Enrich with display names
-      const enriched = await Promise.all(data.map(async (m) => {
+      const [membersData, invitesData] = await Promise.all([
+        getWorkspaceMembers(activeWorkspaceId),
+        getWorkspaceInvites(activeWorkspaceId).catch(() => []),
+      ]);
+      const enriched = await Promise.all(membersData.map(async (m) => {
         let name = m.editor_name || "";
         if (!name) {
           try {
@@ -186,7 +190,9 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
         return { ...m, display_name: name || m.user_id?.slice(0, 8) + "..." };
       }));
       setMembers(enriched);
-    } catch (e) { console.error("Load members:", e); }
+      // Only show pending invites (not ones already accepted)
+      setInvites(invitesData.filter(i => i.status === "pending"));
+    } catch (e) { console.error("Load team:", e); }
     setLoading(false);
   };
 
@@ -194,26 +200,19 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
     if (!email.trim() || !activeWorkspaceId) return;
     setInviting(true); setResult(null);
     try {
-      const { data: userId } = await supabase.rpc("get_user_id_by_email", { lookup_email: email.trim() }).single();
-      if (userId) {
-        await addMemberToWorkspace(activeWorkspaceId, userId, inviteRole, inviteRole === "editor" ? email.split("@")[0] : null);
-        setResult({ ok: true, msg: `Added ${email.trim()} as ${ROLE_LABELS[inviteRole]}` });
-        setEmail("");
-        loadMembers();
-      } else {
-        setResult({ ok: false, msg: "User not found. They need to sign up first." });
-      }
+      const data = await sendInvite(activeWorkspaceId, email.trim(), inviteRole);
+      setResult({ ok: true, msg: data.message });
+      setEmail("");
+      loadTeam();
     } catch (e) {
-      if (e.message?.includes("function") || e.message?.includes("rpc")) {
-        setResult({ ok: false, msg: "Have them sign up first, then add them here." });
-      } else if (e.message?.includes("duplicate") || e.message?.includes("unique")) {
-        setResult({ ok: false, msg: "This user is already a member of this workspace." });
+      if (e.message?.includes("duplicate") || e.message?.includes("unique") || e.message?.includes("already")) {
+        setResult({ ok: false, msg: "This person is already a member or has a pending invite." });
       } else {
-        setResult({ ok: false, msg: e.message || "Failed to add member" });
+        setResult({ ok: false, msg: e.message || "Failed to send invite" });
       }
     }
     setInviting(false);
-    setTimeout(() => setResult(null), 5000);
+    setTimeout(() => setResult(null), 6000);
   };
 
   const handleRemove = async (member) => {
@@ -226,29 +225,37 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
     setRemoving(null);
   };
 
+  const handleRevoke = async (invite) => {
+    setRevoking(invite.id);
+    try {
+      await revokeInvite(invite.id);
+      setInvites(prev => prev.filter(i => i.id !== invite.id));
+    } catch (e) { console.error("Revoke invite:", e); }
+    setRevoking(null);
+  };
+
+  const totalCount = members.length + invites.length;
+
   return (
     <div>
-      {/* Team header */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div>
             <div className="section-title" style={{ margin: 0 }}>Team Members</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-              {members.length} member{members.length !== 1 ? "s" : ""} in <strong style={{ color: "var(--text-secondary)" }}>{activeWs?.name || "workspace"}</strong>
+              {totalCount} member{totalCount !== 1 ? "s" : ""}{invites.length > 0 ? ` (${invites.length} pending)` : ""} in <strong style={{ color: "var(--text-secondary)" }}>{activeWs?.name || "workspace"}</strong>
             </div>
           </div>
+          <button onClick={loadTeam} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>Refresh</button>
         </div>
 
-        {/* Member list */}
         {loading ? (
           <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading team...</div>
         ) : (
           <div style={{ marginBottom: 16 }}>
+            {/* Active members */}
             {members.map(m => (
-              <div key={m.user_id} style={{
-                display: "flex", alignItems: "center", gap: 12, padding: "10px 0",
-                borderBottom: "1px solid var(--border-light)",
-              }}>
+              <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-light)" }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: "var(--radius-full)",
                   background: ROLE_BG[m.role] || "var(--bg-elevated)", border: `1.5px solid ${ROLE_COLORS[m.role] || "var(--border)"}`,
@@ -262,7 +269,6 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                     {m.display_name}
                     {m.user_id === currentUserId && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>(you)</span>}
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{m.editor_name ? m.editor_name : ""}</div>
                 </div>
                 <span className="badge" style={{ background: ROLE_BG[m.role], color: ROLE_COLORS[m.role], fontWeight: 600 }}>
                   {ROLE_LABELS[m.role] || m.role}
@@ -275,7 +281,37 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                 )}
               </div>
             ))}
-            {members.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>No members found</div>}
+
+            {/* Pending invites */}
+            {invites.map(inv => (
+              <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-light)", opacity: 0.7 }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: "var(--radius-full)",
+                  background: "var(--bg-elevated)", border: "1.5px dashed var(--border)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 14, color: "var(--text-muted)", flexShrink: 0,
+                }}>
+                  {inv.email[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>{inv.email}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Invited {new Date(inv.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <span className="badge" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px dashed var(--border)" }}>
+                  Pending -- {ROLE_LABELS[inv.role] || inv.role}
+                </span>
+                <button onClick={() => handleRevoke(inv)} disabled={revoking === inv.id}
+                  className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 11, padding: "4px 8px" }}>
+                  {revoking === inv.id ? "..." : "Revoke"}
+                </button>
+              </div>
+            ))}
+
+            {members.length === 0 && invites.length === 0 && (
+              <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>No members yet</div>
+            )}
           </div>
         )}
 
@@ -296,7 +332,7 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
               </select>
             </div>
             <button onClick={handleInvite} disabled={inviting || !email.trim()} className="btn btn-primary btn-sm" style={{ marginBottom: 1 }}>
-              {inviting ? "Adding..." : "Add"}
+              {inviting ? "Sending..." : "Send Invite"}
             </button>
           </div>
           {result && (
@@ -310,7 +346,7 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
             </div>
           )}
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-            Members must have an account first. Founders get full access. Strategists see pipeline + strategy (view-only). Editors only see assigned ads.
+            If they don't have an account yet, they'll receive a signup email and be added to your workspace automatically.
           </div>
         </div>
       </div>
@@ -349,43 +385,8 @@ function IntegrationsTab() {
   const [openaiModel, setOpenaiModel] = useState(getSelectedModel("openai"));
   const [proxyUrl, setProxyUrlState] = useState(getProxyUrl());
 
-  const [geminiStatus, setGeminiStatus] = useState(null);
-  const [geminiTesting, setGeminiTesting] = useState(false);
-
   const saveKey = (service, value) => { setApiKey(service, value.trim()); setKeySaved(service); setTimeout(() => setKeySaved(null), 2000); };
   const keyStatus = (service) => isConfigured(service);
-
-  const saveAndTestGemini = async () => {
-    const key = geminiKey.trim();
-    setApiKey("gemini", key);
-    setGeminiStatus(null);
-    if (!key) return;
-    setGeminiTesting(true);
-    try {
-      const model = getSelectedModel("gemini");
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: "Say OK" }] }], generationConfig: { maxOutputTokens: 5 } }),
-      });
-      if (res.status === 400) {
-        const body = await res.json().catch(() => ({}));
-        const msg = body?.error?.message || "";
-        if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid")) {
-          setGeminiStatus({ ok: false, msg: "API key is invalid. Double-check it at aistudio.google.com/apikey" });
-        } else {
-          setGeminiStatus({ ok: false, msg: msg || `Error ${res.status}` });
-        }
-      } else if (res.status === 401 || res.status === 403) {
-        setGeminiStatus({ ok: false, msg: "API key unauthorized. Make sure the key has Generative Language API enabled." });
-      } else if (res.ok) {
-        setGeminiStatus({ ok: true, msg: "Connected" });
-      } else {
-        const body = await res.text().catch(() => "");
-        setGeminiStatus({ ok: false, msg: `Error ${res.status}: ${body.slice(0, 100)}` });
-      }
-    } catch (e) { setGeminiStatus({ ok: false, msg: e.message }); }
-    setGeminiTesting(false);
-  };
 
   const saveTw = async () => {
     setTripleWhaleConfig(twKey.trim(), twShop.trim()); setTwStatus(null);
@@ -418,14 +419,16 @@ function IntegrationsTab() {
         <button onClick={saveTw} disabled={twLoading} className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>{twLoading ? "Validating..." : "Save & Test"}</button>
       </IntCard>
 
-      <IntCard title="Gemini (Google AI)" statusOk={geminiStatus?.ok || keyStatus("gemini")} status={geminiStatus?.ok ? "Connected" : keyStatus("gemini") ? "Saved" : "Not configured"}>
+      <IntCard title="Gemini (Google AI)" statusOk={keyStatus("gemini")} status={keyStatus("gemini") ? "Connected" : "Not configured"}>
         <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Multimodal video analysis. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>Get key</a></p>
         <label className="label" style={{ marginTop: 0 }}>API Key</label>
         <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} className="input" placeholder="AIza..." />
         <label className="label">Model</label>
         <select value={geminiModel} onChange={e => { setGeminiModel(e.target.value); setSelectedModel("gemini", e.target.value); }} className="input" style={{ cursor: "pointer" }}>{GEMINI_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
-        {geminiStatus && <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", marginTop: 10, fontSize: 12.5, background: geminiStatus.ok ? "var(--green-bg)" : "var(--red-bg)", border: `1px solid ${geminiStatus.ok ? "var(--green-border)" : "var(--red-border)"}`, color: geminiStatus.ok ? "var(--green-light)" : "var(--red-light)" }}>{geminiStatus.ok ? "✓" : "✕"} {geminiStatus.msg}</div>}
-        <button onClick={saveAndTestGemini} disabled={geminiTesting} className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>{geminiTesting ? "Testing..." : "Save & Test Connection"}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => saveKey("gemini", geminiKey)} className="btn btn-ghost btn-sm">Save Key</button>
+          {keySaved === "gemini" && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
         <div style={{ borderTop: "1px solid var(--border-light)", marginTop: 14, paddingTop: 14 }}>
           <label className="label" style={{ marginTop: 0 }}>Upload Proxy URL <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-muted)" }}>(videos over 20MB)</span></label>
           <input value={proxyUrl} onChange={e => { setProxyUrlState(e.target.value); setProxyUrl(e.target.value.trim()); }} className="input" placeholder="https://gemini-upload-proxy.workers.dev" />

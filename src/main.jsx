@@ -6,7 +6,7 @@ import AuthPage from "./AuthPage.jsx";
 import EditorOnboarding from "./EditorOnboarding.jsx";
 import WorkspaceSetup from "./WorkspaceSetup.jsx";
 import App from "./App.jsx";
-import { fetchWorkspaces, createWorkspace, fetchEditorProfile } from "./supabaseData.js";
+import { fetchWorkspaces, createWorkspace, fetchEditorProfile, acceptPendingInvites } from "./supabaseData.js";
 import "./styles.css";
 
 function Root() {
@@ -32,6 +32,9 @@ function Root() {
 
     const init = async () => {
       try {
+        // Accept any pending workspace invites for this email
+        try { await acceptPendingInvites(); } catch (e) { console.log("No pending invites or table not ready:", e.message); }
+
         const ws = await fetchWorkspaces();
         setWorkspaces(ws);
 
