@@ -68,10 +68,12 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
       {/* Nav items */}
       <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {NAV_ITEMS.filter(item => {
-          if (item.id === "editors" && role === "editor") return false;
-          if (item.id === "strategy" && role === "editor") return false;
-          if (item.id === "splittests" && role === "editor") return false;
-          if (item.id === "learnings" && role === "editor") return false;
+          if (role === "editor") {
+            return item.id === "pipeline" || item.id === "earnings";
+          }
+          if (role === "strategist") {
+            return item.id !== "editors" && item.id !== "splittests";
+          }
           return true;
         }).map(item => (
           <div
@@ -104,7 +106,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
       <div className="nav-section-label">Support</div>
 
       {BOTTOM_ITEMS.filter(item => {
-        if (item.id === "settings" && role === "editor") return false;
+        if (item.id === "settings" && (role === "editor" || role === "strategist")) return false;
         return true;
       }).map(item => (
         <div

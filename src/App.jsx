@@ -397,6 +397,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const winner = cl === "green" && gdays >= 5;
   const kids = allAds.filter(a => a.parentId === ad.id);
   const isEditor = role === "editor";
+  const isStrategist = role === "strategist";
+  const isRestricted = isEditor || isStrategist; // both see only assigned ads
+  const canEditAd = !isEditor || isStrategist; // strategists can edit assigned ads, editors can only submit drafts
 
   const analyze = async () => {
     setBusy(true); setAiStatus(null);
@@ -674,8 +677,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* Gate error */}
       {gateErr && <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>🚫 {gateErr}</div>}
 
-      {/* Stage movement */}
-      {ad.stage !== "killed" && !isEditor && (
+      {/* Stage movement -- founder only */}
+      {ad.stage !== "killed" && role === "founder" && (
         <div style={{ display: "flex", gap: 4, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginRight: 4 }}>Move to:</span>
           {SO.filter(s => s !== ad.stage).map(s => {
@@ -694,7 +697,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           {winner ? "Confirmed winner (5+ days). Scale aggressively via variations." : `${gdays}/5 green days to confirm winner.`}
         </div>
       )}
-      {ad.stage === "live" && cl === "red" && !isEditor && (
+      {ad.stage === "live" && cl === "red" && role === "founder" && (
         <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>
           <div>Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached — kill or pivot." : "Run analysis then iterate."}</div>
           {ad.iterations < ad.maxIter && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
@@ -798,7 +801,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             </div>)}
           </div>}
 
-          {ad.stage === "live" && cl === "green" && !isEditor && <div style={{ marginTop: 18 }}>
+          {ad.stage === "live" && cl === "green" && role === "founder" && <div style={{ marginTop: 18 }}>
             <div className="section-title">Create Variations</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
               {VT.map(v => <div key={v.id} onClick={() => { setVm(v); setVf({ name: ad.name + " — " + v.label, brief: "" }); }}
@@ -841,7 +844,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
-                  {d.status === "in-review" && !isEditor && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                  {d.status === "in-review" && role === "founder" && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
                 </div>
               </div>
               {d.url && <div style={{ marginTop: 5 }}>
@@ -2094,7 +2097,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
   useEffect(() => { if (openAd) { const f = ads.find(a => a.id === openAd.id); if (f) setOpenAd(f); } }, [ads]);
 
-  const visibleAds = role === "editor" ? ads.filter(a => a.editor === editorName && a.stage !== "killed") : ads.filter(a => a.stage !== "killed");
+  const visibleAds = (role === "editor" || role === "strategist") ? ads.filter(a => a.editor === editorName && a.stage !== "killed") : ads.filter(a => a.stage !== "killed");
   const live = visibleAds.filter(a => a.stage === "live");
   const win = live.filter(a => CL(lm(a)?.cpa, th) === "green").length;
   const lose = live.filter(a => CL(lm(a)?.cpa, th) === "red").length;
@@ -2147,9 +2150,10 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 {userRole === "founder" && <>
                   <div style={{ display: "flex", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)" }}>
                     <button onClick={() => setRole("founder")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "founder" ? "var(--accent-bg)" : "transparent", color: role === "founder" ? "var(--accent-light)" : "var(--text-muted)" }}>Founder</button>
+                    <button onClick={() => setRole("strategist")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "strategist" ? "var(--green-bg)" : "transparent", color: role === "strategist" ? "var(--green)" : "var(--text-muted)" }}>Strategist</button>
                     <button onClick={() => setRole("editor")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "editor" ? "var(--yellow-bg)" : "transparent", color: role === "editor" ? "var(--yellow)" : "var(--text-muted)" }}>Editor</button>
                   </div>
-                  {role === "editor" && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
+                  {(role === "editor" || role === "strategist") && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
                 </>}
 
                 {role === "founder" && <>
@@ -2230,7 +2234,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
 
         {/* ── RESEARCH PAGE ── */}
-        {page === "strategy" && <StrategyPage activeWorkspaceId={activeWorkspaceId} ads={ads} dispatch={dispatch} />}
+        {page === "strategy" && <StrategyPage activeWorkspaceId={activeWorkspaceId} ads={ads} dispatch={dispatch} role={role} />}
 
         {/* ── SPLIT TESTS PAGE ── */}
         {page === "splittests" && <SplitTestPage activeWorkspaceId={activeWorkspaceId} />}

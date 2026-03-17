@@ -433,7 +433,7 @@ function TeamSection({ activeWorkspaceId, workspaces }) {
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="section-title">Team</div>
       <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
-        Invite co-founders or editors to <strong style={{ color: "var(--text-secondary)" }}>{activeWs?.name || "this workspace"}</strong>.
+        Invite co-founders, strategists, or editors to <strong style={{ color: "var(--text-secondary)" }}>{activeWs?.name || "this workspace"}</strong>.
         They must have an Ad Lifeline account first.
       </p>
 
@@ -452,6 +452,7 @@ function TeamSection({ activeWorkspaceId, workspaces }) {
           <label className="label" style={{ marginTop: 0 }}>Role</label>
           <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} className="input" style={{ cursor: "pointer" }}>
             <option value="founder">Founder</option>
+            <option value="strategist">Creative Strategist</option>
             <option value="editor">Editor</option>
           </select>
         </div>

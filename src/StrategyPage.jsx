@@ -637,7 +637,8 @@ function AdsLabTab({ ads, dispatch, strategyData, editors }) {
 // MAIN STRATEGY PAGE
 // ════════════════════════════════════════════════
 
-export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
+export default function StrategyPage({ activeWorkspaceId, ads, dispatch, role }) {
+  const readOnly = role === "strategist" || role === "editor";
   const [tab, setTab] = useState("brand");
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState(null);
@@ -713,6 +714,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
     <div className="animate-fade">
       <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Creative Strategy</h2>
       <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 16px" }}>Your complete creative strategy sheet — avatars, research, angles, and ad lab.</p>
+      {readOnly && <div style={{ fontSize: 12, color: "var(--accent-light)", background: "var(--accent-bg)", border: "1px solid var(--accent-border)", borderRadius: "var(--radius-md)", padding: "8px 14px", marginBottom: 14 }}>View only — editing requires founder access.</div>}
 
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginBottom: 18, borderBottom: "1px solid var(--border-light)", paddingBottom: 8 }}>
@@ -733,7 +735,7 @@ export default function StrategyPage({ activeWorkspaceId, ads, dispatch }) {
       <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 100, display: "flex", alignItems: "center", gap: 8 }}>
         {saveStatus === "saved" && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 600 }}>Saved ✓</span>}
         {saveStatus === "error" && <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>Save failed ✗</span>}
-        {tab !== "adslab" && tab !== "ai" && (
+        {tab !== "adslab" && tab !== "ai" && !readOnly && (
           <button
             onClick={saveAll}
             disabled={saveStatus === "saving" || !dirtyRef.current.size}

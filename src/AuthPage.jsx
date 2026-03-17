@@ -4,6 +4,11 @@ import { supabase } from "./supabase.js";
 export default function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [role, setRole] = useState("founder");
+  const ROLES = [
+    { id: "founder", label: "Founder" },
+    { id: "strategist", label: "Creative Strategist" },
+    { id: "editor", label: "Editor" },
+  ];
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -138,9 +143,10 @@ export default function AuthPage({ onAuth }) {
           {isSignup && !isForgot && (
             <div style={{ marginBottom: 20 }}>
               <label className="label">Role</label>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
                   { id: "founder", label: "Founder", desc: "Full pipeline access", icon: "◆", color: "var(--accent)" },
+                  { id: "strategist", label: "Strategist", desc: "Pipeline + view strategy", icon: "◎", color: "var(--green)" },
                   { id: "editor", label: "Editor", desc: "Assigned ads only", icon: "⚙", color: "var(--yellow)" },
                 ].map(r => (
                   <div key={r.id} onClick={() => setRole(r.id)} style={{
