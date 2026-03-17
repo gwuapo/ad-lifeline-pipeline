@@ -351,6 +351,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [nl, setNl] = useState({ type: "hook_pattern", text: "" });
   const [vm, setVm] = useState(null);
   const [vf, setVf] = useState({ name: "", brief: "" });
+  const [eName, setEName] = useState(ad.name);
+  const [editingName, setEditingName] = useState(false);
   const [eb, setEb] = useState(ad.brief);
   const [en, setEn] = useState(ad.notes);
   const [ee, setEe] = useState(ad.editor || "");
@@ -459,7 +461,22 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 
   const addMetric = () => { const m = { date: nm.date, cpa: +nm.cpa, spend: +nm.spend, conv: +nm.conv, ctr: +nm.ctr, cpm: +nm.cpm }; if (!m.cpa || !m.spend) return; dispatch({ type: "ADD_METRIC", id: ad.id, metric: m }); setNm({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" }); };
   const addComment = () => { if (!nc.text.trim()) return; dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), ...nc, text: nc.text.trim() } }); setNc({ text: "", sentiment: "neutral", hidden: false }); };
-  const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } });
+  const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { name: eName.trim() || ad.name, brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } });
+  const saveName = () => {
+    const newName = eName.trim();
+    if (!newName || newName === ad.name) { setEditingName(false); setEName(ad.name); return; }
+    // Clear auto-matched IDs for channels so they re-match to the new name
+    const clearedIds = { ...eChIds };
+    const clearedNames = { ...(ad.channelMatchedNames || {}) };
+    for (const ch of Object.keys(clearedIds)) {
+      if ((ad.channelMatchedNames || {})[ch]) { clearedIds[ch] = ""; delete clearedNames[ch]; }
+    }
+    setEChIds(clearedIds);
+    dispatch({ type: "UPDATE", id: ad.id, data: { name: newName, channelIds: clearedIds, channelMatchedNames: clearedNames } });
+    setEditingName(false);
+    // Trigger a TW re-sync after a short delay to re-match with the new name
+    setTimeout(() => { if (window.__twResync) window.__twResync(); }, 500);
+  };
   const [memberNames, setMemberNames] = useState([]);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
@@ -608,8 +625,22 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* Header */}
       <div style={{ marginTop: -4, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)" }}>{ad.name}</div>
-          {role === "founder" && (
+          {editingName ? (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1, marginRight: 8 }}>
+              <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
+                className="input" autoFocus style={{ fontSize: 17, fontWeight: 700, padding: "4px 8px", flex: 1 }} />
+              <button onClick={saveName} className="btn btn-primary btn-xs">Save</button>
+              <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-xs">Cancel</button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)", cursor: role === "founder" ? "pointer" : "default", display: "flex", alignItems: "center", gap: 6 }}
+              onClick={() => { if (role === "founder") setEditingName(true); }}
+              title={role === "founder" ? "Click to rename" : ""}>
+              {ad.name}
+              {role === "founder" && <span style={{ fontSize: 12, color: "var(--text-muted)", opacity: 0.5 }}>✎</span>}
+            </div>
+          )}
+          {role === "founder" && !editingName && (
             <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 16, padding: "4px 6px" }} title="Delete ad">🗑️</button>
           )}
         </div>
@@ -1788,6 +1819,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
     setAutoSyncEnabled(next);
     localStorage.setItem("al_auto_sync", next ? "true" : "false");
   };
+
+  // Expose resync so ad rename can trigger it
+  useEffect(() => { window.__twResync = () => syncTripleWhale(false); return () => { delete window.__twResync; }; }, [ads]);
 
   // Sync a single ad to Supabase by reading current state
   const syncAdToDb = useCallback((adId, updatedAds) => {
