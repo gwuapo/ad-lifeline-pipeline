@@ -2302,7 +2302,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "learnings" && <LearningsPage ads={ads} workspaceLearnings={workspaceLearnings} th={th} />}
 
         {/* ── SETTINGS PAGE ── */}
-        {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />}
+        {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
 
         {/* Modals */}
         {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} />}
