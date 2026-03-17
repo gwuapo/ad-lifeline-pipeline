@@ -463,6 +463,64 @@ export async function getWorkspaceProductDetails(workspaceId) {
   return data?.product_details || {};
 }
 
+// ════════════════════════════════════════════════
+// WORKSPACE LEARNINGS (Intelligence Flywheel)
+// ════════════════════════════════════════════════
+
+export async function fetchWorkspaceLearnings(workspaceId) {
+  const { data, error } = await supabase
+    .from("workspace_learnings")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    // Table might not exist yet -- fall back to gathering from ads
+    if (error.code === "42P01" || error.message?.includes("does not exist")) return null;
+    console.error("fetchWorkspaceLearnings:", error);
+    return null;
+  }
+  return data || [];
+}
+
+export async function saveWorkspaceLearning(workspaceId, learning) {
+  const { error } = await supabase
+    .from("workspace_learnings")
+    .insert({
+      workspace_id: workspaceId,
+      ad_id: learning.adId || null,
+      ad_name: learning.adName || "",
+      type: learning.type || "general",
+      text: learning.text || "",
+      confidence: learning.confidence || "medium",
+      evidence: learning.evidence || "",
+      source: learning.source || "auto", // "auto" = flywheel, "manual" = user
+    });
+  if (error) {
+    // If table doesn't exist, silently fail -- learnings still live in ad data
+    if (error.code === "42P01" || error.message?.includes("does not exist")) return;
+    console.error("saveWorkspaceLearning:", error);
+  }
+}
+
+export async function saveWorkspaceLearningsBatch(workspaceId, learnings) {
+  if (!learnings.length) return;
+  const rows = learnings.map(l => ({
+    workspace_id: workspaceId,
+    ad_id: l.adId || null,
+    ad_name: l.adName || "",
+    type: l.type || "general",
+    text: l.text || "",
+    confidence: l.confidence || "medium",
+    evidence: l.evidence || "",
+    source: l.source || "auto",
+  }));
+  const { error } = await supabase.from("workspace_learnings").insert(rows);
+  if (error) {
+    if (error.code === "42P01" || error.message?.includes("does not exist")) return;
+    console.error("saveWorkspaceLearningsBatch:", error);
+  }
+}
+
 export async function resolveUserIdByName(name, workspaceId) {
   // Try workspace-scoped lookup first
   try {

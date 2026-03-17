@@ -1,4 +1,5 @@
 import { getApiKey, getSelectedModel, getResearchPrompt, getResearchModelAssignment } from "./apiKeys.js";
+import { formatLearningsForContext } from "./flywheel.js";
 
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 const CLAUDE_API = "https://api.anthropic.com/v1/messages";
@@ -102,7 +103,13 @@ export const RESEARCH_STEPS = [
   { id: "unified_document", label: "Unified Document", description: "Final knowledge base synthesis" },
 ];
 
-export async function runResearchStep(step, productDetails, previousOutputs, onStatus) {
+export async function runResearchStep(step, productDetails, previousOutputs, onStatus, workspaceLearnings = []) {
+  // Format flywheel learnings for injection
+  let learningsContext = "";
+  if (workspaceLearnings.length > 0) {
+    learningsContext = formatLearningsForContext(workspaceLearnings);
+  }
+
   const vars = {
     PRODUCT_NAME: productDetails.name || "",
     PRODUCT_DESCRIPTION: productDetails.description || "",
@@ -117,6 +124,7 @@ export async function runResearchStep(step, productDetails, previousOutputs, onS
     PSYCHO_CLAUDE: previousOutputs.psychographic_claude || "Not yet completed",
     PSYCHO_OPENAI: previousOutputs.psychographic_openai || "Not yet completed",
     PREV_PSYCHOGRAPHIC_SUMMARY: previousOutputs.psychographic_summary || "Not yet completed",
+    FLYWHEEL_LEARNINGS: learningsContext,
   };
 
   // Determine which prompt template and model to use
@@ -132,7 +140,11 @@ export async function runResearchStep(step, productDetails, previousOutputs, onS
     if (step === "psychographic_openai") service = "openai";
   }
 
-  const template = getResearchPrompt(promptKey);
+  let template = getResearchPrompt(promptKey);
+  // Append flywheel learnings to research prompts that benefit from live ad intelligence
+  if (learningsContext && ["psychographic_research", "psychographic_summary", "unified_document"].includes(promptKey)) {
+    template += "\n\n{FLYWHEEL_LEARNINGS}";
+  }
   const prompt = fillPromptVars(template, vars);
 
   if (onStatus) onStatus(`Running ${step} with ${service}...`);

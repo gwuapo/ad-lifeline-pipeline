@@ -4,6 +4,8 @@ import { isTripleWhaleConfigured, setTripleWhaleConfig, getTripleWhaleConfig, va
 import { getApiKey, isConfigured, getAnalysisPrompt, getSelectedModel, isProxyConfigured } from "./apiKeys.js";
 import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
 import { isTikTokConfigured, fetchAllAdComments, classifyCommentSentiment, startCommentAutoSync, stopCommentAutoSync } from "./tiktokComments.js";
+import { analyzeWinner, formatLearningsForContext } from "./flywheel.js";
+import { fetchWorkspaceLearnings, saveWorkspaceLearningsBatch } from "./supabaseData.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
@@ -1626,30 +1628,141 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
 // LEARNINGS PAGE
 // ════════════════════════════════════════════════
 
-function LearningsPage({ ads }) {
-  const allLearnings = ads.flatMap(a => a.learnings.map(l => ({ ...l, adName: a.name, adId: a.id })));
+function LearningsPage({ ads, workspaceLearnings, th }) {
+  const [filter, setFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  // Combine workspace learnings + ad-level learnings (deduped)
+  const adLearnings = ads.flatMap(a => (a.learnings || []).map(l => ({ ...l, adName: a.name, adId: a.id, source: l.source || "manual" })));
+  const wsTexts = new Set((workspaceLearnings || []).map(l => l.text));
+  const combined = [...(workspaceLearnings || []), ...adLearnings.filter(l => !wsTexts.has(l.text))];
+
+  // Apply filters
+  const filtered = combined.filter(l => {
+    if (filter !== "all" && l.type !== filter) return false;
+    if (sourceFilter === "auto" && l.source !== "auto") return false;
+    if (sourceFilter === "manual" && l.source === "auto") return false;
+    if (search && !l.text.toLowerCase().includes(search.toLowerCase()) && !(l.adName || "").toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  // Group by type
   const grouped = {};
-  allLearnings.forEach(l => { if (!grouped[l.type]) grouped[l.type] = []; grouped[l.type].push(l); });
+  filtered.forEach(l => { const t = l.type || "general"; if (!grouped[t]) grouped[t] = []; grouped[t].push(l); });
+  const types = Object.keys(grouped).sort();
+
+  // Stats
+  const totalAds = ads.filter(a => a.learnings?.length > 0).length;
+  const winners = ads.filter(a => {
+    const bc = bestChannel(a, th);
+    const la = bc ? bc.metric : lm(a);
+    return la?.cpa && CL(la.cpa, th) === "green";
+  });
+  const autoCount = combined.filter(l => l.source === "auto").length;
+  const manualCount = combined.filter(l => l.source !== "auto").length;
+
+  // Pattern detection: find the most common learning types
+  const typeCounts = {};
+  combined.forEach(l => { const t = l.type || "general"; typeCounts[t] = (typeCounts[t] || 0) + 1; });
+  const topPatterns = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  // High confidence learnings
+  const highConf = combined.filter(l => l.confidence === "high");
 
   return (
     <div className="animate-fade">
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Learnings Flywheel</h2>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Intelligence Flywheel</h2>
         <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
-          {allLearnings.length} learnings captured across all ads. These feed back into generators.
+          Every winning ad makes future ads smarter. Learnings are auto-injected into research and generation prompts.
         </p>
       </div>
-      {allLearnings.length === 0 && <div className="empty-state">No learnings captured yet. Run ads and capture insights from winners.</div>}
-      {Object.entries(grouped).map(([type, items]) => (
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+        {[
+          { label: "Total Learnings", value: combined.length, color: "var(--accent-light)" },
+          { label: "Auto-Captured", value: autoCount, color: "var(--green)" },
+          { label: "Manual", value: manualCount, color: "var(--text-secondary)" },
+          { label: "Active Winners", value: winners.length, color: "var(--green-light)" },
+        ].map(s => (
+          <div key={s.label} className="stat-box">
+            <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
+            <div className="stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Top patterns */}
+      {topPatterns.length > 0 && <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent-border)" }}>
+        <div className="section-title" style={{ marginBottom: 8 }}>Top Intelligence Patterns</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {topPatterns.map(([type, count]) => (
+            <div key={type} onClick={() => setFilter(type)} style={{ cursor: "pointer", padding: "6px 12px", borderRadius: "var(--radius-md)", background: filter === type ? "var(--accent-bg)" : "var(--bg-elevated)", border: `1px solid ${filter === type ? "var(--accent-border)" : "var(--border-light)"}` }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: filter === type ? "var(--accent-light)" : "var(--text-primary)" }}>{type.replace(/_/g, " ")}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>{count}</span>
+            </div>
+          ))}
+        </div>
+      </div>}
+
+      {/* High confidence insights */}
+      {highConf.length > 0 && <div className="card" style={{ marginBottom: 16, borderColor: "var(--green)" + "40" }}>
+        <div className="section-title" style={{ marginBottom: 8, color: "var(--green)" }}>High-Confidence Insights ({highConf.length})</div>
+        <div className="stagger">
+          {highConf.slice(0, 5).map((l, i) => (
+            <div key={i} className="card-flat" style={{ marginBottom: 6, borderColor: "var(--green)" + "20" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                <span className="badge badge-green">{(l.type || "general").replace(/_/g, " ")}</span>
+                {l.adName && <span className="badge">{l.adName}</span>}
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{l.text}</div>
+              {l.evidence && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>Evidence: {l.evidence}</div>}
+            </div>
+          ))}
+        </div>
+      </div>}
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} className="input" placeholder="Search learnings..." style={{ width: 200, fontSize: 12 }} />
+        <button onClick={() => setFilter("all")} className={`btn btn-xs ${filter === "all" ? "" : "btn-ghost"}`}
+          style={filter === "all" ? { background: "var(--accent-bg)", color: "var(--accent-light)" } : {}}>All Types</button>
+        {types.map(t => (
+          <button key={t} onClick={() => setFilter(t)} className={`btn btn-xs ${filter === t ? "" : "btn-ghost"}`}
+            style={filter === t ? { background: "var(--accent-bg)", color: "var(--accent-light)" } : {}}>
+            {t.replace(/_/g, " ")} ({grouped[t].length})
+          </button>
+        ))}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {[{ id: "all", l: "All" }, { id: "auto", l: "Auto" }, { id: "manual", l: "Manual" }].map(s => (
+            <button key={s.id} onClick={() => setSourceFilter(s.id)} className={`btn btn-xs ${sourceFilter === s.id ? "" : "btn-ghost"}`}
+              style={sourceFilter === s.id ? { background: s.id === "auto" ? "var(--green-bg)" : "var(--bg-elevated)", color: s.id === "auto" ? "var(--green)" : "var(--text-primary)", borderColor: s.id === "auto" ? "var(--green)" : "var(--border)" } : {}}>
+              {s.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Learnings list grouped by type */}
+      {combined.length === 0 && <div className="empty-state">No learnings captured yet. When ads hit green CPA, the flywheel automatically analyzes them and extracts learnings.</div>}
+      {filtered.length === 0 && combined.length > 0 && <div className="empty-state">No learnings match the current filters.</div>}
+      {types.map(type => (
         <div key={type} style={{ marginBottom: 18 }}>
-          <div className="section-title">{type.replace(/_/g, " ")} ({items.length})</div>
+          <div className="section-title">{type.replace(/_/g, " ")} ({grouped[type].length})</div>
           <div className="stagger">
-            {items.map(l => (
-              <div key={l.id + "-" + l.adId} className="card-flat" style={{ marginBottom: 6 }}>
+            {grouped[type].map((l, i) => (
+              <div key={(l.id || i) + "-" + (l.adId || "")} className="card-flat" style={{ marginBottom: 6, borderColor: l.source === "auto" ? "var(--green)" + "20" : "var(--border-light)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                  <span className="badge badge-accent">{l.adName}</span>
+                  <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                    {l.adName && <span className="badge badge-accent">{l.adName}</span>}
+                    {l.source === "auto" && <span className="badge badge-green" style={{ fontSize: 9 }}>auto-captured</span>}
+                    {l.confidence === "high" && <span style={{ fontSize: 9, color: "var(--green)", fontWeight: 600 }}>HIGH</span>}
+                  </div>
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{l.text}</div>
+                {l.evidence && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3, fontStyle: "italic" }}>Evidence: {l.evidence}</div>}
               </div>
             ))}
           </div>
@@ -1687,6 +1800,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [syncMsg, setSyncMsg] = useState(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(() => localStorage.getItem("al_auto_sync") !== "false");
   const [lastAutoSync, setLastAutoSync] = useState(null);
+  const [workspaceLearnings, setWorkspaceLearnings] = useState([]);
+  const [flywheelStatus, setFlywheelStatus] = useState(null);
+  const analyzedWinnersRef = useRef(new Set());
   const did = useRef(null);
 
   // Load ads + settings + editors from Supabase when workspace changes
@@ -1823,6 +1939,68 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   // Expose resync so ad rename can trigger it
   useEffect(() => { window.__twResync = () => syncTripleWhale(false); return () => { delete window.__twResync; }; }, [ads]);
 
+  // Load workspace learnings
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    fetchWorkspaceLearnings(activeWorkspaceId).then(data => {
+      if (data) setWorkspaceLearnings(data);
+      else {
+        // Fallback: gather learnings from ad data
+        const fromAds = ads.flatMap(a => (a.learnings || []).map(l => ({ ...l, adId: a.id, adName: a.name, source: "manual" })));
+        setWorkspaceLearnings(fromAds);
+      }
+    });
+  }, [activeWorkspaceId, ads.length]);
+
+  // Intelligence Flywheel: auto-analyze winners
+  useEffect(() => {
+    if (role !== "founder" || !activeWorkspaceId) return;
+    const winners = ads.filter(a => {
+      if (a.stage !== "live") return false;
+      const bc = bestChannel(a, th);
+      const la = bc ? bc.metric : lm(a);
+      if (!la?.cpa) return false;
+      return CL(la.cpa, th) === "green" && !analyzedWinnersRef.current.has(a.id);
+    });
+    if (winners.length === 0) return;
+
+    const geminiReady = !!getApiKey("gemini").trim();
+    const claudeReady = !!getApiKey("claude").trim();
+    if (!geminiReady && !claudeReady) return;
+
+    // Analyze one winner at a time to avoid rate limits
+    const winner = winners[0];
+    analyzedWinnersRef.current.add(winner.id);
+
+    // Check if already has flywheel analysis
+    const hasFlywheelAnalysis = (winner.analyses || []).some(a => a.flywheel);
+    if (hasFlywheelAnalysis) return;
+
+    setFlywheelStatus(`Analyzing winner: ${winner.name}...`);
+    const existingLearnings = ads.flatMap(a => (a.learnings || []).map(l => ({ type: l.type, text: l.text })));
+
+    analyzeWinner(winner, th, existingLearnings).then(result => {
+      if (!result) { setFlywheelStatus(null); return; }
+      // Save analysis to the ad
+      dispatch({ type: "ADD_ANALYSIS", id: winner.id, analysis: { id: uid(), ts: now(), engine: result.engine, mode: "flywheel", flywheel: true, ...result } });
+      // Extract and save learnings
+      if (result.learnings?.length) {
+        const newLearnings = result.learnings.map(l => ({
+          id: uid(), type: l.type, text: l.text, confidence: l.confidence, evidence: l.evidence,
+          adId: winner.id, adName: winner.name, source: "auto",
+        }));
+        newLearnings.forEach(l => dispatch({ type: "ADD_LEARNING", id: winner.id, learning: l }));
+        saveWorkspaceLearningsBatch(activeWorkspaceId, newLearnings.map(l => ({ ...l, adId: winner.id, adName: winner.name }))).catch(console.error);
+        setWorkspaceLearnings(prev => [...newLearnings, ...prev]);
+      }
+      setFlywheelStatus(`Captured ${result.learnings?.length || 0} learnings from "${winner.name}"`);
+      setTimeout(() => setFlywheelStatus(null), 5000);
+    }).catch(e => {
+      console.error("Flywheel analysis error:", e);
+      setFlywheelStatus(null);
+    });
+  }, [ads, th, role, activeWorkspaceId]);
+
   // Sync a single ad to Supabase by reading current state
   const syncAdToDb = useCallback((adId, updatedAds) => {
     if (!activeWorkspaceId) return;
@@ -1937,6 +2115,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {/* Toasts */}
         {gateMsg && <div className="toast toast-error">🚫 {gateMsg}</div>}
         {syncMsg && <div className={`toast ${syncMsg.ok ? "toast-success" : "toast-error"}`}>{syncMsg.ok ? "🐳" : "⚠"} {syncMsg.text}</div>}
+        {flywheelStatus && <div className="toast toast-success">🧠 {flywheelStatus}</div>}
 
         {/* ── PIPELINE PAGE ── */}
         {page === "pipeline" && (
@@ -2105,7 +2284,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         )}
 
         {/* ── LEARNINGS PAGE ── */}
-        {page === "learnings" && <LearningsPage ads={ads} />}
+        {page === "learnings" && <LearningsPage ads={ads} workspaceLearnings={workspaceLearnings} th={th} />}
 
         {/* ── SETTINGS PAGE ── */}
         {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} />}
