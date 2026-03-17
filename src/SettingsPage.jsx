@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTheme } from "./ThemeContext.jsx";
 import { getTripleWhaleConfig, setTripleWhaleConfig, validateApiKey } from "./tripleWhale.js";
 import { getTikTokConfig, setTikTokConfig, isTikTokConfigured } from "./tiktokComments.js";
+import { getMetaConfig, setMetaConfig, isMetaConfigured } from "./metaComments.js";
 import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, OPENAI_MODELS, getProxyUrl, setProxyUrl, getResearchModelAssignment, setResearchModelAssignment } from "./apiKeys.js";
 import { RESEARCH_STEPS } from "./researchEngine.js";
 import { supabase } from "./supabase.js";
@@ -25,6 +26,12 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
   const [ttToken, setTtToken] = useState(ttConf.accessToken);
   const [ttAdvId, setTtAdvId] = useState(ttConf.advertiserId);
   const [ttSaved, setTtSaved] = useState(false);
+
+  // Meta Graph API
+  const metaConf = getMetaConfig();
+  const [metaToken, setMetaToken] = useState(metaConf.accessToken);
+  const [metaAdAcct, setMetaAdAcct] = useState(metaConf.adAccountId);
+  const [metaSaved, setMetaSaved] = useState(false);
 
   // API Keys
   const [claudeKey, setClaudeKey] = useState(getApiKey("claude"));
@@ -271,6 +278,34 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
           <button onClick={() => { setTikTokConfig(ttToken.trim(), ttAdvId.trim()); setTtSaved(true); setTimeout(() => setTtSaved(false), 2000); }} className="btn btn-ghost btn-sm">Save</button>
           {ttSaved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+
+      {/* Meta Graph API */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div className="section-title" style={{ margin: 0 }}>Meta Graph API (FB/IG Ad Comments)</div>
+          <span className={`badge ${isMetaConfigured() ? "badge-green" : "badge-red"}`}>
+            {isMetaConfigured() ? "Connected" : "Not configured"}
+          </span>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+          Pulls comments from Facebook and Instagram ads, including hidden comments. 
+          Create an app at{" "}
+          <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>developers.facebook.com</a>{" "}
+          with <code style={{ background: "var(--bg-elevated)", padding: "1px 5px", borderRadius: 4, fontSize: 11, color: "var(--accent-light)" }}>ads_read</code> and{" "}
+          <code style={{ background: "var(--bg-elevated)", padding: "1px 5px", borderRadius: 4, fontSize: 11, color: "var(--accent-light)" }}>pages_read_engagement</code> permissions.
+          Use the{" "}
+          <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>Graph API Explorer</a>{" "}
+          to generate a token.
+        </p>
+        <label className="label" style={{ marginTop: 0 }}>Access Token</label>
+        <input type="password" value={metaToken} onChange={e => setMetaToken(e.target.value)} className="input" placeholder="Page or User access token with ads_read scope" />
+        <label className="label">Ad Account ID</label>
+        <input value={metaAdAcct} onChange={e => setMetaAdAcct(e.target.value)} className="input" placeholder="e.g. act_123456789" />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => { setMetaConfig(metaToken.trim(), metaAdAcct.trim()); setMetaSaved(true); setTimeout(() => setMetaSaved(false), 2000); }} className="btn btn-ghost btn-sm">Save</button>
+          {metaSaved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
         </div>
       </div>
 

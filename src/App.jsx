@@ -4,6 +4,7 @@ import { isTripleWhaleConfigured, setTripleWhaleConfig, getTripleWhaleConfig, va
 import { getApiKey, isConfigured, getAnalysisPrompt, getSelectedModel, isProxyConfigured } from "./apiKeys.js";
 import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
 import { isTikTokConfigured, fetchAllAdComments, classifyCommentSentiment, startCommentAutoSync, stopCommentAutoSync } from "./tiktokComments.js";
+import { isMetaConfigured, fetchAllMetaAdComments, classifyMetaCommentSentiment } from "./metaComments.js";
 import { analyzeWinner, formatLearningsForContext } from "./flywheel.js";
 import { fetchWorkspaceLearnings, saveWorkspaceLearningsBatch } from "./supabaseData.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
@@ -420,9 +421,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     try {
       let comments = [];
 
-      // Prefer TikTok Business API (includes hidden comments)
+      // TikTok Business API (includes hidden comments)
       if ((source === "auto" || source === "tiktok_api") && isTikTokConfigured()) {
-        // Use the TikTok ad ID from channelIds if available
         const ttAdId = (ad.channelIds || {}).tiktok?.trim();
         if (!ttAdId) { throw new Error("No TikTok ad set ID found -- sync from Triple Whale first or enter manually"); }
         const raw = await fetchAllAdComments(ttAdId, 500);
@@ -430,7 +430,16 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         const hiddenCount = comments.filter(c => c.hidden).length;
         dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Pulled ${comments.length} comments via TikTok API (${hiddenCount} hidden)` } });
       }
-      // Fallback to Apify (public comments only)
+      // Meta Graph API (includes hidden comments)
+      else if ((source === "auto" || source === "meta_api") && isMetaConfigured()) {
+        const metaAdId = (ad.channelIds || {}).meta?.trim();
+        if (!metaAdId) { throw new Error("No Meta ad set ID found -- sync from Triple Whale first or enter manually"); }
+        const raw = await fetchAllMetaAdComments(metaAdId, 500);
+        comments = await classifyMetaCommentSentiment(raw);
+        const hiddenCount = comments.filter(c => c.hidden).length;
+        dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Pulled ${comments.length} comments via Meta API (${hiddenCount} hidden)` } });
+      }
+      // Fallback to Apify (public TikTok comments only)
       else if ((source === "auto" || source === "apify") && isApifyConfigured()) {
         const url = tiktokUrl.trim() || ad.tiktokUrl;
         if (!url) { throw new Error("Add a TikTok URL first"); }
@@ -438,7 +447,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         comments = await scrapeTikTokComments(url, 100);
         dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Scraped ${comments.length} comments via Apify (public only)` } });
       } else {
-        throw new Error("Configure TikTok Business API or Apify in Settings");
+        throw new Error("Configure TikTok Business API, Meta Graph API, or Apify in Settings");
       }
 
       // Deduplicate against existing comments by text
@@ -446,7 +455,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       let added = 0;
       for (const c of comments) {
         if (!existingTexts.has(c.text.trim().toLowerCase())) {
-          dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), text: c.text, sentiment: c.sentiment, hidden: c.hidden || false } });
+          dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), text: c.text, sentiment: c.sentiment, hidden: c.hidden || false, platform: c.platform || "" } });
           added++;
         }
       }
@@ -979,30 +988,32 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           {/* Scrape controls */}
           {!isEditor && <div className="card-flat" style={{ marginBottom: 12 }}>
             <div className="section-title" style={{ margin: "0 0 8px" }}>Pull Ad Comments</div>
-            {isTikTokConfigured() ? (
-              <div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <button onClick={() => scrapeComments("tiktok_api")} disabled={scraping} className="btn btn-primary btn-sm" style={{ whiteSpace: "nowrap" }}>
-                    {scraping ? "Pulling..." : "Pull from TikTok API"}
-                  </button>
-                  <span style={{ fontSize: 10.5, color: "var(--green)" }}>● Includes hidden comments</span>
-                </div>
-                {!(ad.channelIds || {}).tiktok?.trim() && <div style={{ marginTop: 6, fontSize: 11, color: "var(--yellow)" }}>TikTok ad set ID needed -- will be auto-matched on next TW sync</div>}
-              </div>
-            ) : (
-              <div>
-                <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
-                  <div style={{ flex: 1 }}>
-                    <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." style={{ fontSize: 12 }} />
-                  </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              {isTikTokConfigured() && (
+                <button onClick={() => scrapeComments("tiktok_api")} disabled={scraping} className="btn btn-sm" style={{ whiteSpace: "nowrap", background: "#e2e8f020", border: "1px solid #e2e8f040", color: "#e2e8f0" }}>
+                  {scraping ? "Pulling..." : "TikTok"}
+                </button>
+              )}
+              {isMetaConfigured() && (
+                <button onClick={() => scrapeComments("meta_api")} disabled={scraping} className="btn btn-sm" style={{ whiteSpace: "nowrap", background: "#3b82f620", border: "1px solid #3b82f640", color: "#3b82f6" }}>
+                  {scraping ? "Pulling..." : "Meta / IG"}
+                </button>
+              )}
+              {!isTikTokConfigured() && !isMetaConfigured() && isApifyConfigured() && (
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-end", flex: 1 }}>
+                  <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." style={{ fontSize: 12, flex: 1 }} />
                   <button onClick={() => scrapeComments("apify")} disabled={scraping || !tiktokUrl.trim()} className="btn btn-primary btn-sm" style={{ whiteSpace: "nowrap" }}>
-                    {scraping ? "Scraping..." : "Scrape Comments"}
+                    {scraping ? "Scraping..." : "Scrape"}
                   </button>
                 </div>
-                <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
-                  {isApifyConfigured() ? "Using Apify (public comments only) -- " : ""}
-                  <span style={{ color: "var(--accent-light)" }}>Configure TikTok Business API in Settings for hidden comments</span>
-                </div>
+              )}
+              {(isTikTokConfigured() || isMetaConfigured()) && <span style={{ fontSize: 10.5, color: "var(--green)" }}>● Includes hidden comments</span>}
+            </div>
+            {isTikTokConfigured() && !(ad.channelIds || {}).tiktok?.trim() && <div style={{ marginTop: 6, fontSize: 11, color: "var(--yellow)" }}>TikTok: ad set ID needed -- auto-matched on next TW sync</div>}
+            {isMetaConfigured() && !(ad.channelIds || {}).meta?.trim() && <div style={{ marginTop: 6, fontSize: 11, color: "var(--yellow)" }}>Meta: ad set ID needed -- auto-matched on next TW sync</div>}
+            {!isTikTokConfigured() && !isMetaConfigured() && !isApifyConfigured() && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                <span style={{ color: "var(--accent-light)" }}>Configure TikTok or Meta API in Settings to pull comments</span>
               </div>
             )}
             {scrapeErr && <div style={{ marginTop: 6, fontSize: 12, color: scrapeErr.includes("new comments") ? "var(--green-light)" : "var(--red-light)" }}>{scrapeErr}</div>}
