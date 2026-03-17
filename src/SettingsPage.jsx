@@ -349,8 +349,43 @@ function IntegrationsTab() {
   const [openaiModel, setOpenaiModel] = useState(getSelectedModel("openai"));
   const [proxyUrl, setProxyUrlState] = useState(getProxyUrl());
 
+  const [geminiStatus, setGeminiStatus] = useState(null);
+  const [geminiTesting, setGeminiTesting] = useState(false);
+
   const saveKey = (service, value) => { setApiKey(service, value.trim()); setKeySaved(service); setTimeout(() => setKeySaved(null), 2000); };
   const keyStatus = (service) => isConfigured(service);
+
+  const saveAndTestGemini = async () => {
+    const key = geminiKey.trim();
+    setApiKey("gemini", key);
+    setGeminiStatus(null);
+    if (!key) return;
+    setGeminiTesting(true);
+    try {
+      const model = getSelectedModel("gemini");
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: "Say OK" }] }], generationConfig: { maxOutputTokens: 5 } }),
+      });
+      if (res.status === 400) {
+        const body = await res.json().catch(() => ({}));
+        const msg = body?.error?.message || "";
+        if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid")) {
+          setGeminiStatus({ ok: false, msg: "API key is invalid. Double-check it at aistudio.google.com/apikey" });
+        } else {
+          setGeminiStatus({ ok: false, msg: msg || `Error ${res.status}` });
+        }
+      } else if (res.status === 401 || res.status === 403) {
+        setGeminiStatus({ ok: false, msg: "API key unauthorized. Make sure the key has Generative Language API enabled." });
+      } else if (res.ok) {
+        setGeminiStatus({ ok: true, msg: "Connected" });
+      } else {
+        const body = await res.text().catch(() => "");
+        setGeminiStatus({ ok: false, msg: `Error ${res.status}: ${body.slice(0, 100)}` });
+      }
+    } catch (e) { setGeminiStatus({ ok: false, msg: e.message }); }
+    setGeminiTesting(false);
+  };
 
   const saveTw = async () => {
     setTripleWhaleConfig(twKey.trim(), twShop.trim()); setTwStatus(null);
@@ -383,16 +418,14 @@ function IntegrationsTab() {
         <button onClick={saveTw} disabled={twLoading} className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>{twLoading ? "Validating..." : "Save & Test"}</button>
       </IntCard>
 
-      <IntCard title="Gemini (Google AI)" statusOk={keyStatus("gemini")} status={keyStatus("gemini") ? "Connected" : "Not configured"}>
+      <IntCard title="Gemini (Google AI)" statusOk={geminiStatus?.ok || keyStatus("gemini")} status={geminiStatus?.ok ? "Connected" : keyStatus("gemini") ? "Saved" : "Not configured"}>
         <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Multimodal video analysis. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>Get key</a></p>
         <label className="label" style={{ marginTop: 0 }}>API Key</label>
         <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} className="input" placeholder="AIza..." />
         <label className="label">Model</label>
         <select value={geminiModel} onChange={e => { setGeminiModel(e.target.value); setSelectedModel("gemini", e.target.value); }} className="input" style={{ cursor: "pointer" }}>{GEMINI_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <button onClick={() => saveKey("gemini", geminiKey)} className="btn btn-ghost btn-sm">Save Key</button>
-          {keySaved === "gemini" && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
-        </div>
+        {geminiStatus && <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", marginTop: 10, fontSize: 12.5, background: geminiStatus.ok ? "var(--green-bg)" : "var(--red-bg)", border: `1px solid ${geminiStatus.ok ? "var(--green-border)" : "var(--red-border)"}`, color: geminiStatus.ok ? "var(--green-light)" : "var(--red-light)" }}>{geminiStatus.ok ? "✓" : "✕"} {geminiStatus.msg}</div>}
+        <button onClick={saveAndTestGemini} disabled={geminiTesting} className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>{geminiTesting ? "Testing..." : "Save & Test Connection"}</button>
         <div style={{ borderTop: "1px solid var(--border-light)", marginTop: 14, paddingTop: 14 }}>
           <label className="label" style={{ marginTop: 0 }}>Upload Proxy URL <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-muted)" }}>(videos over 20MB)</span></label>
           <input value={proxyUrl} onChange={e => { setProxyUrlState(e.target.value); setProxyUrl(e.target.value.trim()); }} className="input" placeholder="https://gemini-upload-proxy.workers.dev" />
