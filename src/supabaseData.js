@@ -141,6 +141,7 @@ function adToRow(ad, workspaceId) {
       notifications: rest.notifications || [],
       channelIds: rest.channelIds || {},
       channelMetrics: rest.channelMetrics || {},
+      channelMatchedNames: rest.channelMatchedNames || {},
       tiktokUrl: rest.tiktokUrl || "",
       // Strategy / Ads Lab fields
       strategy: rest.strategy || {},
@@ -177,6 +178,7 @@ function rowToAd(row) {
     notifications: d.notifications || [],
     channelIds: d.channelIds || {},
     channelMetrics: d.channelMetrics || {},
+    channelMatchedNames: d.channelMatchedNames || {},
     tiktokUrl: d.tiktokUrl || "",
     strategy: d.strategy || {},
   };

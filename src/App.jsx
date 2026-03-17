@@ -356,6 +356,18 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [ee, setEe] = useState(ad.editor || "");
   const [eDl, setEDl] = useState(ad.deadline || "");
   const [eChIds, setEChIds] = useState(ad.channelIds || emptyChIds());
+  // Keep eChIds in sync when auto-match fills in IDs
+  useEffect(() => {
+    const ids = ad.channelIds || {};
+    setEChIds(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const ch of Object.keys(ids)) {
+        if (ids[ch]?.trim() && !prev[ch]?.trim()) { next[ch] = ids[ch]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [ad.channelIds]);
   const [revText, setRevText] = useState("");
   const [draftName, setDraftName] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
@@ -687,16 +699,22 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               {CHANNELS.map(ch => {
                 const hasId = eChIds[ch.id]?.trim();
                 const chm = (ad.channelMetrics || {})[ch.id] || [];
-                const status = hasId ? (chm.length > 0 ? "synced" : "linked") : (chm.length > 0 ? "auto" : null);
+                const matchedName = (ad.channelMatchedNames || {})[ch.id];
+                const wasAutoMatched = hasId && matchedName;
+                const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
                 return (
                   <div key={ch.id}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
                       <span style={{ fontSize: 10.5, color: ch.color, fontWeight: 600 }}>{ch.label}</span>
                       {status === "synced" && <span style={{ fontSize: 9, color: "var(--green)" }}>● synced</span>}
+                      {status === "auto_synced" && <span style={{ fontSize: 9, color: "var(--green)" }}>● auto-matched</span>}
                       {status === "auto" && <span style={{ fontSize: 9, color: "var(--green)" }}>● auto-matched</span>}
                       {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>● no data yet</span>}
                     </div>
                     <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched by name" />
+                    {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                      Matched to: <span style={{ color: "var(--accent-light)", fontWeight: 600 }}>{matchedName}</span>
+                    </div>}
                   </div>
                 );
               })}
@@ -1728,12 +1746,16 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             dispatch({ type: "SET_CH_METRICS", id: m.adId, channel: ch, metrics: data.metrics });
             synced += data.metrics.length; chCount++;
           }
-          // Auto-save matched adset IDs so future syncs are instant
+          // Auto-save matched adset IDs + names so future syncs are instant
           if (data.matchType === "auto" && data.matchedAdsetId) {
             const ad = ads.find(a => a.id === m.adId);
             const currentIds = ad?.channelIds || {};
             if (!currentIds[ch]?.trim()) {
-              dispatch({ type: "UPDATE", id: m.adId, data: { channelIds: { ...currentIds, [ch]: data.matchedAdsetId } } });
+              const currentNames = ad?.channelMatchedNames || {};
+              dispatch({ type: "UPDATE", id: m.adId, data: {
+                channelIds: { ...currentIds, [ch]: data.matchedAdsetId },
+                channelMatchedNames: { ...currentNames, [ch]: data.matchedAdsetName || "" },
+              }});
               autoMatched++;
             }
           }
