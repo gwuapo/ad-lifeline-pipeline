@@ -56,6 +56,8 @@ export async function fetchAdSetMetrics(startDate, endDate) {
   const { apiKey, shopDomain } = getConfig();
   if (!apiKey || !shopDomain) throw new Error("Triple Whale not configured — add API key and shop domain in Settings");
 
+  // use_click_date makes event_date = ad click date (not purchase date)
+  // This matches the TW Attribution dashboard view
   const query = `
     SELECT
       event_date,
@@ -67,7 +69,7 @@ export async function fetchAdSetMetrics(startDate, endDate) {
       SUM(order_revenue) as pixel_revenue,
       SUM(clicks) as clicks,
       SUM(impressions) as impressions
-    FROM pixel_joined_tvf
+    FROM pixel_joined_tvf(use_click_date = true)
     WHERE event_date BETWEEN @startDate AND @endDate
     GROUP BY event_date, adset_id, adset_name, channel
     ORDER BY event_date DESC
