@@ -3,6 +3,8 @@ const KEYS = {
   gemini: { storage: "al_gemini_key", env: "VITE_GEMINI_API_KEY" },
   openai: { storage: "al_openai_key", env: "VITE_OPENAI_API_KEY" },
   apify: { storage: "al_apify_key", env: "VITE_APIFY_API_KEY" },
+  tiktok_access_token: { storage: "al_tiktok_access_token", env: "VITE_TIKTOK_ACCESS_TOKEN" },
+  tiktok_advertiser_id: { storage: "al_tiktok_advertiser_id", env: "VITE_TIKTOK_ADVERTISER_ID" },
 };
 
 export function getApiKey(service) {

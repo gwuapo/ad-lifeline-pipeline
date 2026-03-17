@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTheme } from "./ThemeContext.jsx";
 import { getTripleWhaleConfig, setTripleWhaleConfig, validateApiKey } from "./tripleWhale.js";
+import { getTikTokConfig, setTikTokConfig, isTikTokConfigured } from "./tiktokComments.js";
 import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, OPENAI_MODELS, getProxyUrl, setProxyUrl, getResearchModelAssignment, setResearchModelAssignment } from "./apiKeys.js";
 import { RESEARCH_STEPS } from "./researchEngine.js";
 import { supabase } from "./supabase.js";
@@ -18,6 +19,12 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
   const [twShop, setTwShop] = useState(twConf.shopDomain);
   const [twStatus, setTwStatus] = useState(null);
   const [twLoading, setTwLoading] = useState(false);
+
+  // TikTok Business API
+  const ttConf = getTikTokConfig();
+  const [ttToken, setTtToken] = useState(ttConf.accessToken);
+  const [ttAdvId, setTtAdvId] = useState(ttConf.advertiserId);
+  const [ttSaved, setTtSaved] = useState(false);
 
   // API Keys
   const [claudeKey, setClaudeKey] = useState(getApiKey("claude"));
@@ -243,19 +250,40 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
         </div>
       </div>
 
-      {/* Apify */}
+      {/* TikTok Business API */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div className="section-title" style={{ margin: 0 }}>Apify (Comment Scraping)</div>
+          <div className="section-title" style={{ margin: 0 }}>TikTok Business API (Ad Comments)</div>
+          <span className={`badge ${isTikTokConfigured() ? "badge-green" : "badge-red"}`}>
+            {isTikTokConfigured() ? "Connected" : "Not configured"}
+          </span>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
+          Pulls ad comments directly from TikTok Ads Manager, including hidden and auto-filtered comments. 
+          Register a developer app at{" "}
+          <a href="https://business-api.tiktok.com/portal" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>business-api.tiktok.com</a>{" "}
+          and authorize your ad account to get an access token. Requires <code style={{ background: "var(--bg-elevated)", padding: "1px 5px", borderRadius: 4, fontSize: 11, color: "var(--accent-light)" }}>comment_manage</code> scope.
+        </p>
+        <label className="label" style={{ marginTop: 0 }}>Access Token</label>
+        <input type="password" value={ttToken} onChange={e => setTtToken(e.target.value)} className="input" placeholder="Long-lived access token from TikTok dev portal" />
+        <label className="label">Advertiser ID</label>
+        <input value={ttAdvId} onChange={e => setTtAdvId(e.target.value)} className="input" placeholder="e.g. 7123456789012345678" />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => { setTikTokConfig(ttToken.trim(), ttAdvId.trim()); setTtSaved(true); setTimeout(() => setTtSaved(false), 2000); }} className="btn btn-ghost btn-sm">Save</button>
+          {ttSaved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+
+      {/* Apify (Legacy) */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div className="section-title" style={{ margin: 0 }}>Apify <span style={{ fontWeight: 400, fontSize: 11, color: "var(--text-muted)" }}>(legacy fallback)</span></div>
           <span className={`badge ${keyStatus("apify") ? "badge-green" : "badge-red"}`}>
             {keyStatus("apify") ? "Connected" : "Not configured"}
           </span>
         </div>
         <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-          Scrapes TikTok comments from your ad videos using the{" "}
-          <a href="https://apify.com/clockworks/tiktok-comments-scraper" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>TikTok Comments Scraper</a>.
-          Get your API token from{" "}
-          <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>console.apify.com</a>.
+          Fallback scraper for public TikTok comments. Does not include hidden/deleted comments. Use TikTok Business API above for full access.
         </p>
         <label className="label" style={{ marginTop: 0 }}>API Token</label>
         <input type="password" value={apifyKey} onChange={e => setApifyKey(e.target.value)} className="input" placeholder="apify_api_..." />

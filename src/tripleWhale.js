@@ -131,6 +131,31 @@ function buildMetricsFromRows(rows) {
     }));
 }
 
+// Normalize a name for fuzzy matching: lowercase, strip common suffixes/prefixes, collapse whitespace
+function normalizeName(name) {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[\-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Score how well two names match (0 = no match, higher = better)
+function nameMatchScore(adName, twName) {
+  const a = normalizeName(adName);
+  const t = normalizeName(twName);
+  if (!a || !t) return 0;
+  if (a === t) return 100; // exact
+  if (t.includes(a) || a.includes(t)) return 80; // substring
+  // Token overlap: count shared words
+  const aTokens = a.split(" ");
+  const tTokens = t.split(" ");
+  const shared = aTokens.filter(w => w.length > 2 && tTokens.includes(w)).length;
+  const maxTokens = Math.max(aTokens.length, tTokens.length);
+  if (shared === 0) return 0;
+  return Math.round((shared / maxTokens) * 60);
+}
+
 export function matchMetricsToAds(twRows, ads) {
   const matches = [];
 
@@ -139,6 +164,7 @@ export function matchMetricsToAds(twRows, ads) {
     const chIds = ad.channelIds || {};
     const channelResults = {};
 
+    // Phase 1: Match by explicit adset ID if provided
     for (const [localCh, twCh] of Object.entries(TW_CHANNEL_MAP)) {
       const adSetId = (chIds[localCh] || "").trim();
       if (!adSetId) continue;
@@ -150,30 +176,43 @@ export function matchMetricsToAds(twRows, ads) {
       if (matched.length > 0) {
         channelResults[localCh] = { metrics: buildMetricsFromRows(matched), matchType: "id" };
       } else {
-        // ID was provided but no data found — mark as empty so UI shows N/A
         channelResults[localCh] = { metrics: [], matchType: "id_no_data" };
       }
     }
 
-    // Fallback: name match for channels without an ID
-    const hasAnyId = Object.values(chIds).some((v) => v?.trim());
-    if (!hasAnyId) {
-      const adNameLower = ad.name.toLowerCase();
-      const matched = twRows.filter((row) => {
-        const twName = (row.adset_name || "").toLowerCase();
-        return twName && adNameLower && (twName.includes(adNameLower) || adNameLower.includes(twName));
-      });
+    // Phase 2: Auto-match by name for channels without an explicit ID
+    for (const [localCh, twCh] of Object.entries(TW_CHANNEL_MAP)) {
+      if (channelResults[localCh]) continue; // already matched by ID
 
-      if (matched.length > 0) {
-        const byChannel = {};
-        for (const row of matched) {
-          const local = twChannelToLocal(row.channel);
-          if (!local) continue;
-          if (!byChannel[local]) byChannel[local] = [];
-          byChannel[local].push(row);
-        }
-        for (const [ch, rows] of Object.entries(byChannel)) {
-          channelResults[ch] = { metrics: buildMetricsFromRows(rows), matchType: "name" };
+      const channelRows = twRows.filter((row) => row.channel === twCh);
+      if (channelRows.length === 0) continue;
+
+      // Find the best name match among all adset_names in this channel
+      let bestScore = 0;
+      let bestAdsetId = null;
+      const seenAdsets = new Map(); // adset_id -> adset_name
+      for (const row of channelRows) {
+        if (seenAdsets.has(row.adset_id)) continue;
+        seenAdsets.set(row.adset_id, row.adset_name);
+      }
+
+      for (const [asId, asName] of seenAdsets) {
+        const score = nameMatchScore(ad.name, asName);
+        if (score > bestScore) { bestScore = score; bestAdsetId = asId; }
+      }
+
+      // Require a minimum match score to avoid false positives
+      if (bestScore >= 50 && bestAdsetId) {
+        const matched = channelRows.filter((row) => String(row.adset_id) === bestAdsetId);
+        if (matched.length > 0) {
+          const matchedName = seenAdsets.get(bestAdsetId);
+          channelResults[localCh] = {
+            metrics: buildMetricsFromRows(matched),
+            matchType: "auto",
+            matchedAdsetId: bestAdsetId,
+            matchedAdsetName: matchedName,
+            matchScore: bestScore,
+          };
         }
       }
     }
@@ -184,4 +223,29 @@ export function matchMetricsToAds(twRows, ads) {
   }
 
   return matches;
+}
+
+// Auto-sync interval management
+let _autoSyncInterval = null;
+const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+export function startAutoSync(syncFn) {
+  stopAutoSync();
+  syncFn(); // run immediately on start
+  _autoSyncInterval = setInterval(syncFn, AUTO_SYNC_INTERVAL_MS);
+}
+
+export function stopAutoSync() {
+  if (_autoSyncInterval) {
+    clearInterval(_autoSyncInterval);
+    _autoSyncInterval = null;
+  }
+}
+
+export function isAutoSyncRunning() {
+  return _autoSyncInterval !== null;
+}
+
+export function getAutoSyncIntervalMinutes() {
+  return AUTO_SYNC_INTERVAL_MS / 60000;
 }

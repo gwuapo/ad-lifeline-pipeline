@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
-import { isTripleWhaleConfigured, setTripleWhaleConfig, getTripleWhaleConfig, validateApiKey, fetchAdSetMetrics, matchMetricsToAds } from "./tripleWhale.js";
+import { isTripleWhaleConfigured, setTripleWhaleConfig, getTripleWhaleConfig, validateApiKey, fetchAdSetMetrics, matchMetricsToAds, startAutoSync, stopAutoSync, isAutoSyncRunning, getAutoSyncIntervalMinutes } from "./tripleWhale.js";
 import { getApiKey, isConfigured, getAnalysisPrompt, getSelectedModel, isProxyConfigured } from "./apiKeys.js";
 import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
+import { isTikTokConfigured, fetchAllAdComments, classifyCommentSentiment, startCommentAutoSync, stopCommentAutoSync } from "./tiktokComments.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
@@ -301,15 +302,19 @@ function NewAdForm({ onClose, dispatch, editors }) {
         </div>
       </div>
 
-      <label className="label">Ad Set IDs <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-tertiary)" }}>(Triple Whale -- per channel)</span></label>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-        {CHANNELS.map(ch => (
-          <div key={ch.id}>
-            <div style={{ fontSize: 10, color: ch.color, fontWeight: 600, marginBottom: 2 }}>{ch.label}</div>
-            <input value={f.channelIds[ch.id]} onChange={e => setChId(ch.id, e.target.value)} className="input" placeholder="Ad Set ID" />
-          </div>
-        ))}
-      </div>
+      <details style={{ marginBottom: 6 }}>
+        <summary style={{ cursor: "pointer", fontSize: 11.5, color: "var(--text-muted)", fontWeight: 600 }}>
+          Ad Set IDs <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>(optional -- auto-matched by name if blank)</span>
+        </summary>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+          {CHANNELS.map(ch => (
+            <div key={ch.id}>
+              <div style={{ fontSize: 10, color: ch.color, fontWeight: 600, marginBottom: 2 }}>{ch.label}</div>
+              <input value={f.channelIds[ch.id]} onChange={e => setChId(ch.id, e.target.value)} className="input" placeholder="Auto-matched by name" />
+            </div>
+          ))}
+        </div>
+      </details>
 
       <label className="label">Brief</label>
       <textarea value={f.brief} onChange={e => set("brief", e.target.value)} rows={3} className="input" placeholder="Look/feel, hooks, pacing, references..." />
@@ -394,17 +399,45 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     setTab("analysis");
   };
 
-  const scrapeComments = async () => {
-    const url = tiktokUrl.trim() || ad.tiktokUrl;
-    if (!url) { setScrapeErr("Add a TikTok URL first"); setTimeout(() => setScrapeErr(null), 3000); return; }
-    if (!isApifyConfigured()) { setScrapeErr("Configure Apify API key in Settings"); setTimeout(() => setScrapeErr(null), 3000); return; }
+  const scrapeComments = async (source = "auto") => {
     setScraping(true); setScrapeErr(null);
     try {
-      // Save the TikTok URL to the ad
-      if (tiktokUrl.trim()) dispatch({ type: "UPDATE", id: ad.id, data: { tiktokUrl: tiktokUrl.trim() } });
-      const comments = await scrapeTikTokComments(url, 100);
-      comments.forEach(c => dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), text: c.text, sentiment: c.sentiment, hidden: c.hidden } }));
-      dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Scraped ${comments.length} comments from TikTok` } });
+      let comments = [];
+
+      // Prefer TikTok Business API (includes hidden comments)
+      if ((source === "auto" || source === "tiktok_api") && isTikTokConfigured()) {
+        // Use the TikTok ad ID from channelIds if available
+        const ttAdId = (ad.channelIds || {}).tiktok?.trim();
+        if (!ttAdId) { throw new Error("No TikTok ad set ID found -- sync from Triple Whale first or enter manually"); }
+        const raw = await fetchAllAdComments(ttAdId, 500);
+        comments = await classifyCommentSentiment(raw);
+        const hiddenCount = comments.filter(c => c.hidden).length;
+        dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Pulled ${comments.length} comments via TikTok API (${hiddenCount} hidden)` } });
+      }
+      // Fallback to Apify (public comments only)
+      else if ((source === "auto" || source === "apify") && isApifyConfigured()) {
+        const url = tiktokUrl.trim() || ad.tiktokUrl;
+        if (!url) { throw new Error("Add a TikTok URL first"); }
+        if (tiktokUrl.trim()) dispatch({ type: "UPDATE", id: ad.id, data: { tiktokUrl: tiktokUrl.trim() } });
+        comments = await scrapeTikTokComments(url, 100);
+        dispatch({ type: "ADD_NOTIF", id: ad.id, notif: { ts: now(), text: `Scraped ${comments.length} comments via Apify (public only)` } });
+      } else {
+        throw new Error("Configure TikTok Business API or Apify in Settings");
+      }
+
+      // Deduplicate against existing comments by text
+      const existingTexts = new Set(ad.comments.map(c => c.text.trim().toLowerCase()));
+      let added = 0;
+      for (const c of comments) {
+        if (!existingTexts.has(c.text.trim().toLowerCase())) {
+          dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), text: c.text, sentiment: c.sentiment, hidden: c.hidden || false } });
+          added++;
+        }
+      }
+      if (added < comments.length) {
+        setScrapeErr(`Added ${added} new comments (${comments.length - added} duplicates skipped)`);
+        setTimeout(() => setScrapeErr(null), 4000);
+      }
     } catch (e) {
       setScrapeErr(e.message);
       setTimeout(() => setScrapeErr(null), 5000);
@@ -649,20 +682,21 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           </div>
 
           {!isEditor && <div style={{ marginBottom: 14 }}>
-            <label className="label">Ad Set IDs <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-tertiary)" }}>(Triple Whale -- per channel)</span></label>
+            <label className="label">Ad Set IDs <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-tertiary)" }}>(auto-matched by name, or set manually)</span></label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               {CHANNELS.map(ch => {
                 const hasId = eChIds[ch.id]?.trim();
                 const chm = (ad.channelMetrics || {})[ch.id] || [];
-                const status = hasId ? (chm.length > 0 ? "synced" : "linked") : null;
+                const status = hasId ? (chm.length > 0 ? "synced" : "linked") : (chm.length > 0 ? "auto" : null);
                 return (
                   <div key={ch.id}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
                       <span style={{ fontSize: 10.5, color: ch.color, fontWeight: 600 }}>{ch.label}</span>
                       {status === "synced" && <span style={{ fontSize: 9, color: "var(--green)" }}>● synced</span>}
+                      {status === "auto" && <span style={{ fontSize: 9, color: "var(--green)" }}>● auto-matched</span>}
                       {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>● no data yet</span>}
                     </div>
-                    <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Ad Set ID" />
+                    <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched by name" />
                   </div>
                 );
               })}
@@ -818,7 +852,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             const chLast = chm.length ? chm[chm.length - 1] : null;
             const chCl = chLast ? CL(chLast.cpa, th) : "none";
             const chCs = CS[chCl];
-            if (!chId && !chmRaw.length) return null;
+            if (!chId?.trim() && !chmRaw.length) return null;
             return (
               <div key={ch.id} className="card" style={{ marginBottom: 10, borderColor: chm.length ? ch.color + "30" : "var(--border-light)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -893,17 +927,34 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         <div className="animate-fade">
           {/* Scrape controls */}
           {!isEditor && <div className="card-flat" style={{ marginBottom: 12 }}>
-            <div className="section-title" style={{ margin: "0 0 8px" }}>Scrape from TikTok</div>
-            <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
-              <div style={{ flex: 1 }}>
-                <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." style={{ fontSize: 12 }} />
+            <div className="section-title" style={{ margin: "0 0 8px" }}>Pull Ad Comments</div>
+            {isTikTokConfigured() ? (
+              <div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={() => scrapeComments("tiktok_api")} disabled={scraping} className="btn btn-primary btn-sm" style={{ whiteSpace: "nowrap" }}>
+                    {scraping ? "Pulling..." : "Pull from TikTok API"}
+                  </button>
+                  <span style={{ fontSize: 10.5, color: "var(--green)" }}>● Includes hidden comments</span>
+                </div>
+                {!(ad.channelIds || {}).tiktok?.trim() && <div style={{ marginTop: 6, fontSize: 11, color: "var(--yellow)" }}>TikTok ad set ID needed -- will be auto-matched on next TW sync</div>}
               </div>
-              <button onClick={scrapeComments} disabled={scraping || !tiktokUrl.trim()} className="btn btn-primary btn-sm" style={{ whiteSpace: "nowrap" }}>
-                {scraping ? "Scraping..." : "Scrape Comments"}
-              </button>
-            </div>
-            {scrapeErr && <div style={{ marginTop: 6, fontSize: 12, color: "var(--red-light)" }}>{scrapeErr}</div>}
-            {!isApifyConfigured() && <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>Requires Apify API key -- configure in Settings</div>}
+            ) : (
+              <div>
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+                  <div style={{ flex: 1 }}>
+                    <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." style={{ fontSize: 12 }} />
+                  </div>
+                  <button onClick={() => scrapeComments("apify")} disabled={scraping || !tiktokUrl.trim()} className="btn btn-primary btn-sm" style={{ whiteSpace: "nowrap" }}>
+                    {scraping ? "Scraping..." : "Scrape Comments"}
+                  </button>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                  {isApifyConfigured() ? "Using Apify (public comments only) -- " : ""}
+                  <span style={{ color: "var(--accent-light)" }}>Configure TikTok Business API in Settings for hidden comments</span>
+                </div>
+              </div>
+            )}
+            {scrapeErr && <div style={{ marginTop: 6, fontSize: 12, color: scrapeErr.includes("new comments") ? "var(--green-light)" : "var(--red-light)" }}>{scrapeErr}</div>}
           </div>}
 
           {/* Sentiment filters */}
@@ -1099,7 +1150,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
   const unresolvedRevs = ad.revisionRequests?.filter(r => !r.resolved).length || 0;
   const hasIds = hasAnyChId(ad.channelIds);
   const hasChData = ad.channelMetrics && Object.values(ad.channelMetrics).some(m => m?.length > 0);
-  const idsButNoData = hasIds && !hasChData && ad.stage === "live";
+  const noDataYet = !hasChData && ad.stage === "live";
 
   return (
     <div className="pipeline-card" onClick={() => onClick(ad)}>
@@ -1127,7 +1178,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
         <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
       </div>}
 
-      {idsButNoData && <div style={{ fontSize: 10.5, color: "var(--yellow)", background: "var(--yellow-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Sync to pull data</div>}
+      {noDataYet && <div style={{ fontSize: 10.5, color: "var(--yellow)", background: "var(--yellow-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Awaiting sync</div>}
       {ad.stage === "live" && cl === "green" && <div style={{ fontSize: 10.5, color: "var(--green-light)", background: "var(--green-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Scale</div>}
       {ad.stage === "live" && cl === "red" && <div style={{ fontSize: 10.5, color: "var(--red-light)", background: "var(--red-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Iter {ad.iterations}/{ad.maxIter}</div>}
 
@@ -1585,6 +1636,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [gateMsg, setGateMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(() => localStorage.getItem("al_auto_sync") !== "false");
+  const [lastAutoSync, setLastAutoSync] = useState(null);
   const did = useRef(null);
 
   // Load ads + settings + editors from Supabase when workspace changes
@@ -1660,28 +1713,58 @@ export default function App({ session, userRole, userName, workspaces, activeWor
     }
   };
 
-  const syncTripleWhale = async () => {
-    if (!isTripleWhaleConfigured()) { setSyncMsg({ ok: false, text: "Configure Triple Whale in Settings first" }); setTimeout(() => setSyncMsg(null), 3000); return; }
-    setSyncing(true); setSyncMsg(null);
+  const syncTripleWhale = async (silent = false) => {
+    if (!isTripleWhaleConfigured()) { if (!silent) { setSyncMsg({ ok: false, text: "Configure Triple Whale in Settings first" }); setTimeout(() => setSyncMsg(null), 3000); } return; }
+    setSyncing(true); if (!silent) setSyncMsg(null);
     try {
       const end = new Date().toISOString().slice(0, 10);
       const start = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const rows = await fetchAdSetMetrics(start, end);
       const matches = matchMetricsToAds(rows, ads);
-      let synced = 0, chCount = 0;
+      let synced = 0, chCount = 0, autoMatched = 0;
       for (const m of matches) {
         for (const [ch, data] of Object.entries(m.channels)) {
-          if (data.metrics.length > 0) { dispatch({ type: "SET_CH_METRICS", id: m.adId, channel: ch, metrics: data.metrics }); synced += data.metrics.length; chCount++; }
+          if (data.metrics.length > 0) {
+            dispatch({ type: "SET_CH_METRICS", id: m.adId, channel: ch, metrics: data.metrics });
+            synced += data.metrics.length; chCount++;
+          }
+          // Auto-save matched adset IDs so future syncs are instant
+          if (data.matchType === "auto" && data.matchedAdsetId) {
+            const ad = ads.find(a => a.id === m.adId);
+            const currentIds = ad?.channelIds || {};
+            if (!currentIds[ch]?.trim()) {
+              dispatch({ type: "UPDATE", id: m.adId, data: { channelIds: { ...currentIds, [ch]: data.matchedAdsetId } } });
+              autoMatched++;
+            }
+          }
         }
       }
-      const adsWithIds = ads.filter(a => hasAnyChId(a.channelIds) && a.stage !== "killed").length;
-      const noDataAds = adsWithIds - matches.length;
-      let msg = `Synced ${synced} data points across ${chCount} channel(s) for ${matches.length} ad(s)`;
-      if (noDataAds > 0) msg += ` · ${noDataAds} ad(s) had IDs but no data found`;
-      setSyncMsg({ ok: synced > 0, text: msg });
-    } catch (e) { setSyncMsg({ ok: false, text: e.message }); }
+      setLastAutoSync(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+      const liveAds = ads.filter(a => a.stage !== "killed").length;
+      let msg = `Synced ${synced} data points across ${chCount} channel(s) for ${matches.length}/${liveAds} ad(s)`;
+      if (autoMatched > 0) msg += ` · Auto-matched ${autoMatched} new ad set(s)`;
+      if (!silent) { setSyncMsg({ ok: synced > 0, text: msg }); }
+    } catch (e) { if (!silent) setSyncMsg({ ok: false, text: e.message }); }
     setSyncing(false);
-    setTimeout(() => setSyncMsg(null), 4000);
+    if (!silent) setTimeout(() => setSyncMsg(null), 5000);
+  };
+
+  // Auto-sync lifecycle: start/stop 30-min polling when TW is configured
+  const syncRef = useRef(syncTripleWhale);
+  syncRef.current = syncTripleWhale;
+  useEffect(() => {
+    if (autoSyncEnabled && isTripleWhaleConfigured() && ads.length > 0 && role === "founder") {
+      startAutoSync(() => syncRef.current(true));
+      return () => stopAutoSync();
+    } else {
+      stopAutoSync();
+    }
+  }, [autoSyncEnabled, activeWorkspaceId, ads.length, role]);
+
+  const toggleAutoSync = () => {
+    const next = !autoSyncEnabled;
+    setAutoSyncEnabled(next);
+    localStorage.setItem("al_auto_sync", next ? "true" : "false");
   };
 
   // Sync a single ad to Supabase by reading current state
@@ -1824,9 +1907,17 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </>}
 
                 {role === "founder" && <>
-                  <button onClick={syncTripleWhale} disabled={syncing} className={`btn btn-sm ${isTripleWhaleConfigured() ? "btn-success" : "btn-ghost"}`}>
-                    {syncing ? "Syncing..." : "Sync TW"}
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button onClick={() => syncTripleWhale(false)} disabled={syncing} className={`btn btn-sm ${isTripleWhaleConfigured() ? "btn-success" : "btn-ghost"}`}>
+                      {syncing ? "Syncing..." : "Sync TW"}
+                    </button>
+                    {isTripleWhaleConfigured() && <button onClick={toggleAutoSync} className={`btn btn-xs ${autoSyncEnabled ? "" : "btn-ghost"}`}
+                      style={autoSyncEnabled ? { background: "var(--green-bg)", color: "var(--green)", border: "1px solid var(--green)", fontSize: 10 } : { fontSize: 10 }}
+                      title={`Auto-sync every ${getAutoSyncIntervalMinutes()} min`}>
+                      {autoSyncEnabled ? "Auto" : "Manual"}
+                    </button>}
+                    {lastAutoSync && autoSyncEnabled && <span style={{ fontSize: 9.5, color: "var(--text-muted)" }}>Last: {lastAutoSync}</span>}
+                  </div>
                   <button onClick={() => setNewOpen(true)} className="btn btn-primary btn-sm">+ New Ad</button>
                 </>}
               </div>
