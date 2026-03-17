@@ -15,8 +15,20 @@ function Root() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
   const [editorOnboarded, setEditorOnboarded] = useState(null); // null = loading, true/false
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
+    // Handle auth error redirects (e.g. expired invite links)
+    const hash = window.location.hash;
+    if (hash.includes("error=")) {
+      const params = new URLSearchParams(hash.replace("#", ""));
+      const errDesc = params.get("error_description");
+      if (errDesc) {
+        setAuthError(errDesc.replace(/\+/g, " "));
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -82,7 +94,7 @@ function Root() {
   }
 
   if (!session) {
-    return <AuthPage onAuth={setSession} />;
+    return <AuthPage onAuth={setSession} authError={authError} />;
   }
 
   const userMeta = session.user?.user_metadata || {};

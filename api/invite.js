@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     // User doesn't exist -- send Supabase invite email
     const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(email, {
       data: { role, display_name: email.split("@")[0] },
-      redirectTo: `${req.headers.origin || process.env.VITE_APP_URL || "https://adlifeline.co"}`,
+      redirectTo: `${req.headers.origin || process.env.APP_URL || "https://ads.nexusholdings.io"}`,
     });
 
     if (inviteErr) {

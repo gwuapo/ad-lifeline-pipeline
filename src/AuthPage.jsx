@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { supabase } from "./supabase.js";
 
-export default function AuthPage({ onAuth }) {
-  const [mode, setMode] = useState("login");
+export default function AuthPage({ onAuth, authError }) {
+  const [mode, setMode] = useState(authError ? "signup" : "login");
   const [role, setRole] = useState("founder");
   const ROLES = [
     { id: "founder", label: "Founder" },
@@ -13,7 +13,7 @@ export default function AuthPage({ onAuth }) {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(authError ? `${authError}. Please sign up with your email and password below.` : null);
   const [success, setSuccess] = useState(null);
 
   const isSignup = mode === "signup";
