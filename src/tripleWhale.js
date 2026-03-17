@@ -63,8 +63,6 @@ export async function fetchAdSetMetrics(startDate, endDate) {
       adset_name,
       channel,
       SUM(spend) as spend,
-      SUM(channel_reported_conversions) as channel_purchases,
-      SUM(channel_reported_conversion_value) as channel_revenue,
       SUM(orders_quantity) as pixel_purchases,
       SUM(order_revenue) as pixel_revenue,
       SUM(clicks) as clicks,
@@ -111,37 +109,40 @@ function buildMetricsFromRows(rows) {
   const byDate = {};
   for (const row of rows) {
     const d = row.event_date;
-    if (!byDate[d]) byDate[d] = { spend: 0, chPurchases: 0, chRevenue: 0, pxPurchases: 0, pxRevenue: 0, clicks: 0, impressions: 0 };
+    if (!byDate[d]) byDate[d] = { spend: 0, purchases: 0, revenue: 0, clicks: 0, impressions: 0 };
     byDate[d].spend += Number(row.spend) || 0;
-    byDate[d].chPurchases += Number(row.channel_purchases) || 0;
-    byDate[d].chRevenue += Number(row.channel_revenue) || 0;
-    byDate[d].pxPurchases += Number(row.pixel_purchases) || 0;
-    byDate[d].pxRevenue += Number(row.pixel_revenue) || 0;
+    // TW pixel purchases can be fractional due to attribution model -- keep raw value
+    byDate[d].purchases += Number(row.pixel_purchases) || 0;
+    byDate[d].revenue += Number(row.pixel_revenue) || 0;
     byDate[d].clicks += Number(row.clicks) || 0;
     byDate[d].impressions += Number(row.impressions) || 0;
   }
 
-  return Object.entries(byDate)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, m]) => {
-      // Use channel-reported data as primary (matches TW dashboard / ad platform numbers)
-      // Fall back to pixel data if channel data is 0
-      const purchases = m.chPurchases > 0 ? m.chPurchases : m.pxPurchases;
-      const revenue = m.chRevenue > 0 ? m.chRevenue : m.pxRevenue;
-      return {
-        date,
-        cpa: purchases > 0 ? +(m.spend / purchases).toFixed(2) : 0,
-        spend: +m.spend.toFixed(2),
-        conv: Math.round(purchases),
-        ctr: m.impressions > 0 ? +((m.clicks / m.impressions) * 100).toFixed(1) : 0,
-        cpm: m.impressions > 0 ? +((m.spend / m.impressions) * 1000).toFixed(2) : 0,
-        roas: m.spend > 0 ? +(revenue / m.spend).toFixed(2) : 0,
-        revenue: +revenue.toFixed(2),
-        // Keep both for transparency
-        pixelConv: Math.round(m.pxPurchases),
-        channelConv: Math.round(m.chPurchases),
-      };
-    });
+  // Sort dates and compute running totals for accurate rounding
+  const sorted = Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b));
+  let runningPurchases = 0;
+  let prevRounded = 0;
+
+  return sorted.map(([date, m]) => {
+    // Accumulate fractional purchases and round the running total
+    // This ensures e.g. 0.8 + 0.8 + 0.8 + 0.6 = 3.0 -> shows 3, not 0+1+1+1=3
+    runningPurchases += m.purchases;
+    const roundedTotal = Math.round(runningPurchases);
+    const dayConv = roundedTotal - prevRounded;
+    prevRounded = roundedTotal;
+
+    return {
+      date,
+      cpa: m.purchases > 0 ? +(m.spend / m.purchases).toFixed(2) : 0,
+      spend: +m.spend.toFixed(2),
+      conv: dayConv,
+      rawConv: +m.purchases.toFixed(2),
+      ctr: m.impressions > 0 ? +((m.clicks / m.impressions) * 100).toFixed(1) : 0,
+      cpm: m.impressions > 0 ? +((m.spend / m.impressions) * 1000).toFixed(2) : 0,
+      roas: m.spend > 0 ? +(m.revenue / m.spend).toFixed(2) : 0,
+      revenue: +m.revenue.toFixed(2),
+    };
+  });
 }
 
 // Normalize a name for fuzzy matching: lowercase, strip common suffixes/prefixes, collapse whitespace
