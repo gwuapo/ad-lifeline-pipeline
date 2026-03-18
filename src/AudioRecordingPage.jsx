@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import WaveSurfer from "wavesurfer.js";
-import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js";
+
 import { supabase } from "./supabase.js";
 import { getApiKey, getSelectedModel } from "./apiKeys.js";
 
@@ -761,402 +761,442 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
 
 function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis, onNext }) {
   const waveformRef = useRef(null);
+  const previewWaveformRef = useRef(null);
   const wsRef = useRef(null);
+  const previewWsRef = useRef(null);
+  const timelineRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [selectedClip, setSelectedClip] = useState(null); // index into clips
   const [selectedSection, setSelectedSection] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
+  const [dragging, setDragging] = useState(null); // { clipIdx, edge: "left"|"right", startX, origStart, origEnd }
+  const [snap, setSnap] = useState(true);
+  const [viewMode, setViewMode] = useState("edit"); // "edit" | "preview"
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const playIntervalRef = useRef(null);
+  const SNAP_THRESHOLD = 0.15; // seconds
+  const PX_PER_SEC = 12; // pixels per second in clip timeline
 
-  // Initialize WaveSurfer
+  const sectionMappings = analysis?.section_mappings || [];
+  const formatTs = (s) => s != null ? `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}` : "0:00.0";
+
+  // Build clips: ordered selected takes
+  const clips = useMemo(() => {
+    const c = [];
+    sectionMappings.forEach((sm, si) => {
+      const sel = sm.takes?.find(t => t.is_selected);
+      if (sel) c.push({ ...sel, sectionIdx: si, sectionLabel: sm.section_label || sections[si]?.label || `Section ${si + 1}` });
+    });
+    return c;
+  }, [analysis, sectionMappings, sections]);
+
+  // Build skip regions (fillers + pauses marked for removal)
+  const skipRegions = useMemo(() => {
+    const regions = [];
+    (analysis.filler_words || []).forEach(f => { if (f.removed !== false) regions.push({ start: f.start, end: f.end, type: "filler", word: f.word }); });
+    (analysis.pauses || []).forEach(p => { if (p.removed !== false) regions.push({ start: p.start, end: p.end, type: "pause" }); });
+    (analysis.off_script_segments || []).forEach(s => regions.push({ start: s.start, end: s.end, type: "off_script" }));
+    return regions.sort((a, b) => a.start - b.start);
+  }, [analysis]);
+
+  // Init WaveSurfer
   useEffect(() => {
     if (!waveformRef.current || !recording?.url) return;
-
     const ws = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: "rgba(99, 102, 241, 0.4)",
-      progressColor: "rgba(99, 102, 241, 0.8)",
-      cursorColor: "var(--accent-light)",
-      cursorWidth: 2,
-      height: 128,
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
-      normalize: true,
-      backend: "WebAudio",
-      plugins: [RegionsPlugin.create()],
+      container: waveformRef.current, waveColor: "rgba(99,102,241,0.3)", progressColor: "rgba(99,102,241,0.7)",
+      cursorColor: "#fff", cursorWidth: 2, height: 64, barWidth: 2, barGap: 1, barRadius: 1, normalize: true,
     });
-
     ws.load(recording.url);
     ws.on("ready", () => setDuration(ws.getDuration()));
     ws.on("audioprocess", () => setCurrentTime(ws.getCurrentTime()));
     ws.on("seeking", () => setCurrentTime(ws.getCurrentTime()));
     ws.on("play", () => setIsPlaying(true));
     ws.on("pause", () => setIsPlaying(false));
-
     wsRef.current = ws;
     return () => ws.destroy();
   }, [recording?.url]);
 
-  // Add regions for takes, fillers, pauses
+  // Undo
+  const pushUndo = () => setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+  const undo = () => { if (!undoStack.length) return; setAnalysis(undoStack[undoStack.length - 1]); setUndoStack(prev => prev.slice(0, -1)); };
+
+  // Trim handles (drag left/right edge of a clip)
+  const handleTrimStart = (e, clipIdx, edge) => {
+    e.preventDefault();
+    const clip = clips[clipIdx];
+    setDragging({ clipIdx, edge, startX: e.clientX, origStart: clip.start, origEnd: clip.end });
+    pushUndo();
+  };
+
   useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws || !analysis?.section_mappings) return;
-    ws.on("ready", () => addRegions(ws));
-    if (ws.getDuration() > 0) addRegions(ws);
-  }, [analysis]);
+    if (!dragging) return;
+    const onMove = (e) => {
+      const dx = e.clientX - dragging.startX;
+      const dt = dx / PX_PER_SEC;
+      const next = JSON.parse(JSON.stringify(analysis));
+      const clip = clips[dragging.clipIdx];
+      const sm = next.section_mappings[clip.sectionIdx];
+      const take = sm.takes.find(t => t.take_number === clip.take_number);
+      if (!take) return;
 
-  const addRegions = (ws) => {
-    const regionsPlugin = ws.plugins?.[0];
-    if (!regionsPlugin) return;
-    regionsPlugin.clearRegions();
-
-    const colors = ["rgba(99,102,241,0.15)", "rgba(16,185,129,0.15)", "rgba(245,158,11,0.15)", "rgba(239,68,68,0.15)", "rgba(139,92,246,0.15)"];
-
-    analysis.section_mappings?.forEach((sm, si) => {
-      sm.takes?.forEach(take => {
-        if (take.is_selected) {
-          regionsPlugin.addRegion({
-            start: take.start,
-            end: take.end,
-            color: colors[si % colors.length],
-            drag: false,
-            resize: true,
-            id: `take_${sm.section_id}_${take.take_number}`,
-          });
-        }
-      });
-    });
-
-    analysis.filler_words?.forEach((f, i) => {
-      if (f.removed !== false) {
-        regionsPlugin.addRegion({
-          start: f.start, end: f.end,
-          color: "rgba(239, 68, 68, 0.3)",
-          drag: false, resize: false,
-          id: `filler_${i}`,
-        });
+      if (dragging.edge === "left") {
+        let newStart = dragging.origStart + dt;
+        if (snap) newStart = snapToNearby(newStart, dragging.clipIdx, "start");
+        take.start = parseFloat(Math.max(0, Math.min(newStart, take.end - 0.1)).toFixed(2));
+      } else {
+        let newEnd = dragging.origEnd + dt;
+        if (snap) newEnd = snapToNearby(newEnd, dragging.clipIdx, "end");
+        take.end = parseFloat(Math.max(take.start + 0.1, Math.min(newEnd, duration)).toFixed(2));
       }
-    });
-  };
+      take.is_selected = true;
+      setAnalysis(next);
+    };
+    const onUp = () => setDragging(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [dragging]);
 
-  const toggleTake = (sectionIdx, takeNum) => {
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
-    const next = { ...analysis };
-    next.section_mappings[sectionIdx].takes = next.section_mappings[sectionIdx].takes.map(t => ({
-      ...t, is_selected: t.take_number === takeNum,
-    }));
-    setAnalysis(next);
-  };
-
-  const toggleFiller = (idx) => {
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
-    const next = { ...analysis };
-    next.filler_words[idx].removed = !next.filler_words[idx].removed;
-    setAnalysis(next);
-  };
-
-  const togglePause = (idx) => {
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
-    const next = { ...analysis };
-    next.pauses[idx].removed = !next.pauses[idx].removed;
-    setAnalysis(next);
-  };
-
-  // Manual trim: adjust start/end of selected take to current cursor
-  const trimStart = () => {
-    const ws = wsRef.current;
-    if (!ws || !sectionMappings[selectedSection]) return;
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
-    const next = JSON.parse(JSON.stringify(analysis));
-    const takes = next.section_mappings[selectedSection].takes;
-    const sel = takes.find(t => t.is_selected);
-    if (sel && currentTime > sel.start && currentTime < sel.end) {
-      sel.start = parseFloat(currentTime.toFixed(2));
+  // Snap: find nearby clip edges to snap to
+  const snapToNearby = (time, excludeIdx, edge) => {
+    for (let i = 0; i < clips.length; i++) {
+      if (i === excludeIdx) continue;
+      if (Math.abs(clips[i].end - time) < SNAP_THRESHOLD) return clips[i].end;
+      if (Math.abs(clips[i].start - time) < SNAP_THRESHOLD) return clips[i].start;
     }
-    setAnalysis(next);
+    return time;
   };
 
-  const trimEnd = () => {
-    const ws = wsRef.current;
-    if (!ws || !sectionMappings[selectedSection]) return;
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
-    const next = JSON.parse(JSON.stringify(analysis));
-    const takes = next.section_mappings[selectedSection].takes;
-    const sel = takes.find(t => t.is_selected);
-    if (sel && currentTime > sel.start && currentTime < sel.end) {
-      sel.end = parseFloat(currentTime.toFixed(2));
-    }
-    setAnalysis(next);
-  };
-
-  // Split at cursor: creates a manual cut point (adds a pause region to remove)
+  // Split clip at cursor
   const splitAtCursor = () => {
-    if (!currentTime || currentTime <= 0) return;
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+    if (selectedClip == null) return;
+    const clip = clips[selectedClip];
+    if (currentTime <= clip.start || currentTime >= clip.end) return;
+    pushUndo();
     const next = JSON.parse(JSON.stringify(analysis));
-    const cutDuration = 0.15; // remove 150ms around the split point
-    if (!next.pauses) next.pauses = [];
-    next.pauses.push({
-      start: parseFloat((currentTime - cutDuration / 2).toFixed(2)),
-      end: parseFloat((currentTime + cutDuration / 2).toFixed(2)),
-      duration: cutDuration,
-      removed: true,
-      manual: true,
-    });
+    const sm = next.section_mappings[clip.sectionIdx];
+    const takeIdx = sm.takes.findIndex(t => t.take_number === clip.take_number);
+    const take = sm.takes[takeIdx];
+    const newTake = { ...take, take_number: sm.takes.length + 1, start: parseFloat(currentTime.toFixed(2)), is_selected: true };
+    take.end = parseFloat(currentTime.toFixed(2));
+    sm.takes.push(newTake);
     setAnalysis(next);
   };
 
-  // Delete: remove the selected take entirely (mark it as not selected, no replacement)
-  const deleteSelectedTake = () => {
-    if (!sectionMappings[selectedSection]) return;
-    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+  // Delete clip
+  const deleteClip = () => {
+    if (selectedClip == null) return;
+    pushUndo();
+    const clip = clips[selectedClip];
     const next = JSON.parse(JSON.stringify(analysis));
-    const takes = next.section_mappings[selectedSection].takes;
-    const selIdx = takes.findIndex(t => t.is_selected);
-    if (selIdx !== -1) {
-      takes[selIdx].is_selected = false;
-      // Auto-select next best if available
-      const nextBest = takes.filter((_, i) => i !== selIdx).sort((a, b) => (a.rank || 99) - (b.rank || 99))[0];
-      if (nextBest) nextBest.is_selected = true;
-    }
+    const sm = next.section_mappings[clip.sectionIdx];
+    const take = sm.takes.find(t => t.take_number === clip.take_number);
+    if (take) take.is_selected = false;
+    setSelectedClip(null);
     setAnalysis(next);
   };
 
-  const undo = () => {
-    if (undoStack.length === 0) return;
-    setAnalysis(undoStack[undoStack.length - 1]);
-    setUndoStack(prev => prev.slice(0, -1));
+  // Toggle take for section
+  const toggleTake = (sectionIdx, takeNum) => {
+    pushUndo();
+    const next = JSON.parse(JSON.stringify(analysis));
+    next.section_mappings[sectionIdx].takes.forEach(t => { t.is_selected = t.take_number === takeNum; });
+    setAnalysis(next);
   };
 
-  const playSection = (sectionIdx) => {
+  // Play only good takes (preview mode)
+  const playPreview = () => {
     const ws = wsRef.current;
-    if (!ws) return;
-    const sm = analysis.section_mappings?.[sectionIdx];
-    const selected = sm?.takes?.find(t => t.is_selected);
-    if (selected) {
-      ws.seekTo(selected.start / ws.getDuration());
+    if (!ws || clips.length === 0) return;
+    if (previewPlaying) { ws.pause(); setPreviewPlaying(false); clearInterval(playIntervalRef.current); return; }
+
+    let clipQueue = clips.map(c => ({ start: c.start, end: c.end }));
+    // Remove skip regions within each clip
+    const keepRegions = [];
+    for (const clip of clipQueue) {
+      const overlaps = skipRegions.filter(r => r.start < clip.end && r.end > clip.start);
+      let cursor = clip.start;
+      for (const r of overlaps) {
+        if (r.start > cursor) keepRegions.push({ start: cursor, end: r.start });
+        cursor = Math.max(cursor, r.end);
+      }
+      if (cursor < clip.end) keepRegions.push({ start: cursor, end: clip.end });
+    }
+    if (keepRegions.length === 0) return;
+
+    let regionIdx = 0;
+    const playNext = () => {
+      if (regionIdx >= keepRegions.length) { setPreviewPlaying(false); ws.pause(); return; }
+      const r = keepRegions[regionIdx];
+      ws.seekTo(r.start / ws.getDuration());
       ws.play();
-      // Auto-pause at end of take
-      const checkEnd = setInterval(() => {
-        if (ws.getCurrentTime() >= selected.end) { ws.pause(); clearInterval(checkEnd); }
-      }, 100);
-    }
+      playIntervalRef.current = setInterval(() => {
+        if (ws.getCurrentTime() >= r.end - 0.05) {
+          clearInterval(playIntervalRef.current);
+          ws.pause();
+          regionIdx++;
+          setTimeout(playNext, 30);
+        }
+      }, 50);
+    };
+    setPreviewPlaying(true);
+    playNext();
   };
 
-  const playAll = () => {
+  useEffect(() => () => clearInterval(playIntervalRef.current), []);
+
+  // Seek on timeline click
+  const handleTimelineClick = (e) => {
     const ws = wsRef.current;
-    if (!ws) return;
-    ws.seekTo(0);
-    ws.play();
+    if (!ws || !timelineRef.current || dragging) return;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left + timelineRef.current.scrollLeft;
+    const time = x / PX_PER_SEC;
+    ws.seekTo(Math.min(time / ws.getDuration(), 1));
   };
 
-  const formatTs = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
-
-  const sectionMappings = analysis?.section_mappings || [];
-  const currentMapping = sectionMappings[selectedSection];
+  const SECTION_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
+  const totalWidth = duration * PX_PER_SEC;
 
   return (
     <div>
-      {/* Waveform */}
-      <div className="card" style={{ marginBottom: 16, padding: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={() => { const ws = wsRef.current; if (ws) { isPlaying ? ws.pause() : ws.play(); } }}
-              className="btn btn-primary btn-sm" style={{ borderRadius: "var(--radius-full)", width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {isPlaying ? "⏸" : "▶"}
-            </button>
-            <span style={{ fontSize: 12, fontFamily: "var(--fm)", color: "var(--text-secondary)" }}>
-              {formatTs(currentTime)} / {formatTs(duration)}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={playAll} className="btn btn-ghost btn-xs">Play All</button>
-            <button onClick={undo} disabled={undoStack.length === 0} className="btn btn-ghost btn-xs">Undo</button>
-          </div>
-        </div>
-        {/* Edit toolbar */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-          <button onClick={trimStart} className="btn btn-ghost btn-xs" title="Set the start of the selected take to the current cursor position">Trim Start ◁|</button>
-          <button onClick={trimEnd} className="btn btn-ghost btn-xs" title="Set the end of the selected take to the current cursor position">|▷ Trim End</button>
-          <button onClick={splitAtCursor} className="btn btn-ghost btn-xs" title="Add a cut at the current cursor position">✂ Split at Cursor</button>
-          <button onClick={deleteSelectedTake} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }} title="Remove this take and auto-select the next best">✕ Delete Take</button>
-          <span style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", marginLeft: 8 }}>
-            Cursor: {formatTs(currentTime)}
-          </span>
-        </div>
-        <div ref={waveformRef} style={{ borderRadius: "var(--radius-md)", overflow: "hidden" }} />
-        <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 10, color: "var(--text-muted)" }}>
-          <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "rgba(99,102,241,0.4)", marginRight: 4 }} />Selected takes</span>
-          <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "rgba(239,68,68,0.3)", marginRight: 4 }} />Fillers to remove</span>
-        </div>
+      {/* Mode toggle */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 12, borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)", width: "fit-content" }}>
+        <button onClick={() => setViewMode("edit")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: viewMode === "edit" ? "var(--accent-bg)" : "transparent", color: viewMode === "edit" ? "var(--accent-light)" : "var(--text-muted)" }}>Edit Timeline</button>
+        <button onClick={() => setViewMode("preview")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: viewMode === "preview" ? "var(--green-bg)" : "transparent", color: viewMode === "preview" ? "var(--green-light)" : "var(--text-muted)" }}>Final Preview</button>
       </div>
 
-      {/* Section selector + takes */}
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16 }}>
-        {/* Section list */}
+      {/* Waveform + controls */}
+      <div className="card" style={{ marginBottom: 12, padding: "12px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {viewMode === "edit" ? (
+              <button onClick={() => { const ws = wsRef.current; if (ws) { isPlaying ? ws.pause() : ws.play(); } }}
+                className="btn btn-primary btn-sm" style={{ borderRadius: "var(--radius-full)", width: 32, height: 32, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>
+                {isPlaying ? "⏸" : "▶"}
+              </button>
+            ) : (
+              <button onClick={playPreview}
+                className="btn btn-success btn-sm" style={{ borderRadius: "var(--radius-full)", width: 32, height: 32, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>
+                {previewPlaying ? "⏸" : "▶"}
+              </button>
+            )}
+            <span style={{ fontSize: 12, fontFamily: "var(--fm)", color: "var(--text-secondary)" }}>{formatTs(currentTime)} / {formatTs(duration)}</span>
+            {viewMode === "preview" && <span style={{ fontSize: 10, color: "var(--green-light)", fontWeight: 600 }}>Plays only good takes, skips bad parts</span>}
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {viewMode === "edit" && <>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--text-muted)", cursor: "pointer" }}>
+                <input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} /> Snap
+              </label>
+              <button onClick={undo} disabled={!undoStack.length} className="btn btn-ghost btn-xs">Undo</button>
+            </>}
+          </div>
+        </div>
+        <div ref={waveformRef} style={{ borderRadius: "var(--radius-sm)", overflow: "hidden" }} />
+      </div>
+
+      {/* Clip timeline (CapCut-style) */}
+      {viewMode === "edit" && (
+        <div className="card" style={{ marginBottom: 12, padding: "12px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div className="section-title" style={{ margin: 0, fontSize: 11 }}>Clip Timeline</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={splitAtCursor} disabled={selectedClip == null} className="btn btn-ghost btn-xs">✂ Split</button>
+              <button onClick={deleteClip} disabled={selectedClip == null} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }}>✕ Delete</button>
+            </div>
+          </div>
+
+          {/* Timecode ruler */}
+          <div ref={timelineRef} onClick={handleTimelineClick} style={{ overflowX: "auto", position: "relative", cursor: "crosshair" }}>
+            <div style={{ width: totalWidth, minHeight: 80, position: "relative" }}>
+              {/* Ruler marks */}
+              <div style={{ height: 18, position: "relative", borderBottom: "1px solid var(--border-light)" }}>
+                {Array.from({ length: Math.ceil(duration / 5) + 1 }, (_, i) => (
+                  <span key={i} style={{ position: "absolute", left: i * 5 * PX_PER_SEC, fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)", top: 2 }}>
+                    {Math.floor(i * 5 / 60)}:{((i * 5) % 60).toString().padStart(2, "0")}
+                  </span>
+                ))}
+              </div>
+
+              {/* Skip regions (dimmed background) */}
+              {skipRegions.map((r, i) => (
+                <div key={`skip_${i}`} style={{
+                  position: "absolute", top: 18, left: r.start * PX_PER_SEC, width: (r.end - r.start) * PX_PER_SEC,
+                  height: 56, background: r.type === "filler" ? "rgba(239,68,68,0.15)" : r.type === "pause" ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)",
+                  borderLeft: `1px dashed ${r.type === "filler" ? "var(--red-border)" : "var(--yellow-border)"}`,
+                  pointerEvents: "none",
+                }} />
+              ))}
+
+              {/* Clips */}
+              {clips.map((clip, ci) => {
+                const color = SECTION_COLORS[clip.sectionIdx % SECTION_COLORS.length];
+                const isSelected = selectedClip === ci;
+                const w = (clip.end - clip.start) * PX_PER_SEC;
+                return (
+                  <div key={ci} onClick={(e) => { e.stopPropagation(); setSelectedClip(ci); setSelectedSection(clip.sectionIdx); }}
+                    style={{
+                      position: "absolute", top: 22, left: clip.start * PX_PER_SEC, width: w, height: 48,
+                      background: `${color}22`, border: `2px solid ${isSelected ? "#fff" : color}`,
+                      borderRadius: 6, cursor: "pointer", overflow: "hidden", transition: "border-color 0.1s",
+                      boxShadow: isSelected ? `0 0 0 1px ${color}, 0 2px 8px rgba(0,0,0,0.3)` : "none",
+                    }}>
+                    {/* Left trim handle */}
+                    <div onMouseDown={(e) => handleTrimStart(e, ci, "left")}
+                      style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 8, cursor: "ew-resize", background: `${color}88`, borderRadius: "6px 0 0 6px" }}>
+                      <div style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", width: 2, height: 16, background: "#fff", borderRadius: 1, opacity: 0.7 }} />
+                    </div>
+                    {/* Right trim handle */}
+                    <div onMouseDown={(e) => handleTrimStart(e, ci, "right")}
+                      style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 8, cursor: "ew-resize", background: `${color}88`, borderRadius: "0 6px 6px 0" }}>
+                      <div style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", width: 2, height: 16, background: "#fff", borderRadius: 1, opacity: 0.7 }} />
+                    </div>
+                    {/* Label */}
+                    <div style={{ padding: "4px 12px", fontSize: 10, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {clip.sectionLabel}
+                    </div>
+                    <div style={{ padding: "0 12px", fontSize: 9, color: "rgba(255,255,255,0.6)", fontFamily: "var(--fm)" }}>
+                      {formatTs(clip.start)} - {formatTs(clip.end)}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Playhead */}
+              <div style={{ position: "absolute", top: 0, left: currentTime * PX_PER_SEC, width: 2, height: "100%", background: "#fff", zIndex: 10, pointerEvents: "none" }}>
+                <div style={{ width: 8, height: 8, background: "#fff", borderRadius: "50%", position: "absolute", top: 0, left: -3 }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 10, color: "var(--text-muted)" }}>
+            <span>Drag clip edges to trim</span>
+            <span style={{ color: "var(--red-light)" }}>Red = fillers</span>
+            <span style={{ color: "var(--yellow)" }}>Yellow = pauses</span>
+          </div>
+        </div>
+      )}
+
+      {/* Final Preview timeline */}
+      {viewMode === "preview" && (
+        <div className="card" style={{ marginBottom: 12, padding: "12px 16px" }}>
+          <div className="section-title" style={{ margin: "0 0 8px", fontSize: 11 }}>Final Audio Preview</div>
+          <div style={{ overflowX: "auto", position: "relative" }}>
+            <div style={{ width: totalWidth, minHeight: 60, position: "relative" }}>
+              {/* Full audio background (dimmed) */}
+              <div style={{ position: "absolute", top: 0, left: 0, width: totalWidth, height: 48, background: "var(--bg-elevated)", borderRadius: 6, opacity: 0.3 }} />
+              {/* Good regions (bright) */}
+              {clips.map((clip, ci) => {
+                const color = SECTION_COLORS[clip.sectionIdx % SECTION_COLORS.length];
+                // Build keep-regions within this clip
+                const overlaps = skipRegions.filter(r => r.start < clip.end && r.end > clip.start);
+                const keepParts = [];
+                let cursor = clip.start;
+                for (const r of overlaps) {
+                  if (r.start > cursor) keepParts.push({ start: cursor, end: r.start });
+                  cursor = Math.max(cursor, r.end);
+                }
+                if (cursor < clip.end) keepParts.push({ start: cursor, end: clip.end });
+
+                return keepParts.map((kp, ki) => (
+                  <div key={`keep_${ci}_${ki}`} style={{
+                    position: "absolute", top: 4, left: kp.start * PX_PER_SEC, width: (kp.end - kp.start) * PX_PER_SEC,
+                    height: 40, background: `${color}44`, border: `1px solid ${color}`, borderRadius: 4,
+                  }}>
+                    {ki === 0 && <div style={{ padding: "2px 6px", fontSize: 9, color: "#fff", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden" }}>{clip.sectionLabel}</div>}
+                  </div>
+                ));
+              })}
+              {/* Skip regions (red/yellow strikethrough) */}
+              {skipRegions.map((r, i) => {
+                const inClip = clips.some(c => r.start < c.end && r.end > c.start);
+                if (!inClip) return null;
+                return (
+                  <div key={`ps_${i}`} style={{
+                    position: "absolute", top: 22, left: r.start * PX_PER_SEC, width: Math.max((r.end - r.start) * PX_PER_SEC, 2),
+                    height: 4, background: r.type === "filler" ? "var(--red)" : "var(--yellow)", borderRadius: 2, opacity: 0.8,
+                  }} />
+                );
+              })}
+              {/* Playhead */}
+              <div style={{ position: "absolute", top: 0, left: currentTime * PX_PER_SEC, width: 2, height: 48, background: "var(--green)", zIndex: 10, pointerEvents: "none" }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
+            Bright regions = what plays in the final export. Dim/striped regions = skipped (bad takes, fillers, pauses).
+          </div>
+        </div>
+      )}
+
+      {/* Section sidebar + take picker */}
+      <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 12 }}>
         <div>
           <div className="section-title" style={{ fontSize: 11, marginBottom: 8 }}>Sections</div>
           {sectionMappings.map((sm, i) => {
-            const selectedTake = sm.takes?.find(t => t.is_selected);
+            const sel = sm.takes?.find(t => t.is_selected);
             return (
-              <div key={i} onClick={() => setSelectedSection(i)}
-                className="card" style={{
-                  marginBottom: 6, padding: "10px 12px", cursor: "pointer",
+              <div key={i} onClick={() => { setSelectedSection(i); const ci = clips.findIndex(c => c.sectionIdx === i); if (ci >= 0) setSelectedClip(ci); }}
+                className="card" style={{ marginBottom: 6, padding: "8px 10px", cursor: "pointer",
                   borderColor: selectedSection === i ? "var(--accent-border)" : "var(--border-light)",
-                  background: selectedSection === i ? "var(--accent-bg)" : undefined,
-                }}>
+                  background: selectedSection === i ? "var(--accent-bg)" : undefined }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-                    {sm.section_label || sections[i]?.label || `Section ${i + 1}`}
-                  </span>
-                  <button onClick={(e) => { e.stopPropagation(); playSection(i); }} className="btn btn-ghost btn-xs" style={{ fontSize: 14, padding: "2px 6px" }}>▶</button>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>{sm.section_label || sections[i]?.label || `Section ${i + 1}`}</span>
+                  <button onClick={(e) => { e.stopPropagation(); const ws = wsRef.current; if (ws && sel) { ws.seekTo(sel.start / ws.getDuration()); ws.play(); } }} className="btn btn-ghost btn-xs" style={{ fontSize: 12, padding: "2px 6px" }}>▶</button>
                 </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                  {sm.takes?.length || 0} take{(sm.takes?.length || 0) !== 1 ? "s" : ""} -- using #{selectedTake?.take_number || "?"}
-                  {selectedTake?.completeness_score != null && <span> -- {(selectedTake.completeness_score * 100).toFixed(0)}% match</span>}
+                <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
+                  {sm.takes?.length || 0} takes -- #{sel?.take_number || "none"}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Take details */}
+        {/* Takes for selected section */}
         <div>
-          {currentMapping && (
+          {sectionMappings[selectedSection] && (
             <div>
-              <div className="section-title" style={{ fontSize: 11, marginBottom: 8 }}>
-                Takes for: {currentMapping.section_label || sections[selectedSection]?.label}
-              </div>
-              <div dir="auto" style={{ fontSize: 13, color: "var(--text-tertiary)", marginBottom: 12, padding: "8px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)", lineHeight: 1.6 }}>
+              <div dir="auto" style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 10, padding: "6px 10px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)", lineHeight: 1.5 }}>
                 {sections[selectedSection]?.script_text}
               </div>
-              {currentMapping.takes?.map(take => (
+              {sectionMappings[selectedSection].takes?.map(take => (
                 <div key={take.take_number} className="card" style={{
-                  marginBottom: 8, padding: "12px 14px",
+                  marginBottom: 6, padding: "10px 12px",
                   borderColor: take.is_selected ? "var(--green-border)" : "var(--border-light)",
-                  background: take.is_selected ? "var(--green-bg)" : undefined,
-                }}>
+                  background: take.is_selected ? "var(--green-bg)" : undefined }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: take.is_selected ? "var(--green-light)" : "var(--text-secondary)" }}>
-                        Take {take.take_number}
-                      </span>
-                      {(take.rank === 1 || take.overall_rank === 1) && <span className="badge badge-green" style={{ fontSize: 9 }}>Best</span>}
-                      {take.is_selected && <span className="badge badge-accent" style={{ fontSize: 9 }}>Selected</span>}
-                      {take.mess_ups?.length > 0 && <span className="badge badge-red" style={{ fontSize: 9 }}>{take.mess_ups.length} issue{take.mess_ups.length > 1 ? "s" : ""}</span>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: take.is_selected ? "var(--green-light)" : "var(--text-secondary)" }}>Take {take.take_number}</span>
+                      {(take.rank === 1 || take.overall_rank === 1) && <span className="badge badge-green" style={{ fontSize: 8 }}>Best</span>}
+                      {take.is_selected && <span className="badge badge-accent" style={{ fontSize: 8 }}>Using</span>}
+                      {take.mess_ups?.length > 0 && <span className="badge badge-red" style={{ fontSize: 8 }}>{take.mess_ups.length} issues</span>}
                     </div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>
-                        {formatTs(take.start)} - {formatTs(take.end)}
-                      </span>
-                      <button onClick={() => {
-                        const ws = wsRef.current; if (ws) { ws.seekTo(take.start / ws.getDuration()); ws.play(); }
-                      }} className="btn btn-ghost btn-xs">▶</button>
-                      <button onClick={() => toggleTake(selectedSection, take.take_number)}
-                        className={`btn btn-xs ${take.is_selected ? "btn-success" : "btn-ghost"}`}>
-                        {take.is_selected ? "✓ Using" : "Use This"}
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{formatTs(take.start)}-{formatTs(take.end)}</span>
+                      <button onClick={() => { const ws = wsRef.current; if (ws) { ws.seekTo(take.start / ws.getDuration()); ws.play(); } }} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>▶</button>
+                      <button onClick={() => toggleTake(selectedSection, take.take_number)} className={`btn btn-xs ${take.is_selected ? "btn-success" : "btn-ghost"}`} style={{ fontSize: 10 }}>
+                        {take.is_selected ? "✓" : "Use"}
                       </button>
                     </div>
                   </div>
-                  {/* Scores */}
                   {(take.completeness_score != null || take.cleanliness_score != null || take.flow_score != null) && (
-                    <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 10 }}>
-                      {take.completeness_score != null && <span style={{ color: "var(--text-muted)" }}>Completeness: <strong style={{ color: take.completeness_score >= 0.9 ? "var(--green-light)" : take.completeness_score >= 0.7 ? "var(--yellow)" : "var(--red-light)" }}>{(take.completeness_score * 100).toFixed(0)}%</strong></span>}
-                      {take.cleanliness_score != null && <span style={{ color: "var(--text-muted)" }}>Clean: <strong style={{ color: take.cleanliness_score >= 0.9 ? "var(--green-light)" : take.cleanliness_score >= 0.7 ? "var(--yellow)" : "var(--red-light)" }}>{(take.cleanliness_score * 100).toFixed(0)}%</strong></span>}
-                      {take.flow_score != null && <span style={{ color: "var(--text-muted)" }}>Flow: <strong style={{ color: take.flow_score >= 0.9 ? "var(--green-light)" : take.flow_score >= 0.7 ? "var(--yellow)" : "var(--red-light)" }}>{(take.flow_score * 100).toFixed(0)}%</strong></span>}
+                    <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 9 }}>
+                      {take.completeness_score != null && <span style={{ color: "var(--text-muted)" }}>Complete: <strong style={{ color: take.completeness_score >= 0.9 ? "var(--green-light)" : "var(--yellow)" }}>{(take.completeness_score * 100).toFixed(0)}%</strong></span>}
+                      {take.cleanliness_score != null && <span style={{ color: "var(--text-muted)" }}>Clean: <strong style={{ color: take.cleanliness_score >= 0.9 ? "var(--green-light)" : "var(--yellow)" }}>{(take.cleanliness_score * 100).toFixed(0)}%</strong></span>}
+                      {take.flow_score != null && <span style={{ color: "var(--text-muted)" }}>Flow: <strong style={{ color: take.flow_score >= 0.9 ? "var(--green-light)" : "var(--yellow)" }}>{(take.flow_score * 100).toFixed(0)}%</strong></span>}
                     </div>
                   )}
-                  {/* Mess-ups */}
-                  {take.mess_ups?.length > 0 && (
-                    <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {take.mess_ups.map((m, mi) => (
-                        <span key={mi} style={{
-                          fontSize: 10, padding: "2px 6px", borderRadius: "var(--radius-sm)",
-                          background: m.type === "false_start" ? "var(--red-bg)" : m.type === "off_script" ? "var(--yellow-bg)" : "var(--bg-elevated)",
-                          color: m.type === "false_start" ? "var(--red-light)" : m.type === "off_script" ? "var(--yellow)" : "var(--text-muted)",
-                          border: `1px solid ${m.type === "false_start" ? "var(--red-border)" : m.type === "off_script" ? "var(--yellow-border)" : "var(--border)"}`,
-                        }}>
-                          {m.type.replace("_", " ")}{m.transcript_text ? `: "${m.transcript_text.slice(0, 30)}"` : ""}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {take.clarity_notes && !take.mess_ups?.length && <div style={{ fontSize: 11, color: "var(--green-light)", marginTop: 4 }}>{take.clarity_notes}</div>}
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Fillers & Pauses */}
-          {(analysis.filler_words?.length > 0 || analysis.pauses?.length > 0) && (
-            <div style={{ marginTop: 16 }}>
-              <div className="section-title" style={{ fontSize: 11, marginBottom: 8 }}>Auto-Detected Cuts</div>
-              {analysis.filler_words?.length > 0 && (
-                <div className="card" style={{ marginBottom: 8, padding: "10px 14px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-                    Filler Words ({analysis.filler_words.filter(f => f.removed !== false).length}/{analysis.filler_words.length} removed)
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {analysis.filler_words.map((f, i) => (
-                      <button key={i} onClick={() => toggleFiller(i)}
-                        className="btn btn-xs" style={{
-                          background: f.removed !== false ? "var(--red-bg)" : "var(--bg-elevated)",
-                          color: f.removed !== false ? "var(--red-light)" : "var(--text-muted)",
-                          border: `1px solid ${f.removed !== false ? "var(--red-border)" : "var(--border)"}`,
-                          textDecoration: f.removed !== false ? "line-through" : "none",
-                        }}>
-                        "{f.word}" {formatTs(f.start)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {analysis.pauses?.length > 0 && (
-                <div className="card" style={{ padding: "10px 14px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-                    Pauses ({analysis.pauses.filter(p => p.removed !== false).length}/{analysis.pauses.length} removed)
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {analysis.pauses.map((p, i) => (
-                      <button key={i} onClick={() => togglePause(i)}
-                        className="btn btn-xs" style={{
-                          background: p.removed !== false ? "var(--yellow-bg)" : "var(--bg-elevated)",
-                          color: p.removed !== false ? "var(--yellow)" : "var(--text-muted)",
-                          border: `1px solid ${p.removed !== false ? "var(--yellow-border)" : "var(--border)"}`,
-                        }}>
-                        {p.duration?.toFixed(1)}s pause @ {formatTs(p.start)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Off-script segments */}
-          {analysis.off_script_segments?.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div className="section-title" style={{ fontSize: 11, marginBottom: 8 }}>Off-Script Segments (auto-removed)</div>
-              <div className="card" style={{ padding: "10px 14px" }}>
-                {analysis.off_script_segments.map((seg, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < analysis.off_script_segments.length - 1 ? "1px solid var(--border-light)" : "none" }}>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      <span style={{ color: "var(--red-light)", fontWeight: 600 }}>"{seg.transcript_text?.slice(0, 50)}"</span>
-                      <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.7 }}>{seg.context}</span>
-                    </div>
-                    <span style={{ fontSize: 10, fontFamily: "var(--fm)", color: "var(--text-muted)" }}>{formatTs(seg.start)}</span>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
       </div>
 
-      <button onClick={onNext} className="btn btn-primary" style={{ marginTop: 24, width: "100%" }}>
-        Continue to Export →
-      </button>
+      <button onClick={onNext} className="btn btn-primary" style={{ marginTop: 20, width: "100%" }}>Continue to Export →</button>
     </div>
   );
 }
