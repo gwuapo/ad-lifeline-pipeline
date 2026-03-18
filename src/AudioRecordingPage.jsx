@@ -929,15 +929,34 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     });
   };
 
-  // Zoom with Ctrl+scroll -- zooms toward playhead
+  // Keep refs fresh for the wheel handler (avoids stale closure)
+  const zoomRef = useRef(zoom);
+  const currentTimeRef = useRef(currentTime);
+  const pxPerSecRef = useRef(pxPerSec);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
+  useEffect(() => { pxPerSecRef.current = pxPerSec; }, [pxPerSec]);
+
+  // Zoom with Ctrl+scroll / trackpad pinch -- zooms toward playhead
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
     const handler = (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        const factor = e.deltaY < 0 ? 1.15 : 0.87;
-        applyZoom(zoom * factor);
+        // deltaY from trackpad pinch is small (~1-5), mouse wheel is larger (~100)
+        // Use a smooth exponential factor based on actual deltaY magnitude
+        const sensitivity = 0.008;
+        const factor = Math.exp(-e.deltaY * sensitivity);
+        const curZoom = zoomRef.current;
+        const minZ = getMinZoom();
+        const newZoom = Math.max(minZ, Math.min(6, curZoom * factor));
+        const newPPS = BASE_PX_PER_SEC * newZoom;
+        const playheadViewX = currentTimeRef.current * pxPerSecRef.current - el.scrollLeft;
+        setZoom(newZoom);
+        requestAnimationFrame(() => {
+          el.scrollLeft = currentTimeRef.current * newPPS - playheadViewX;
+        });
       }
     };
     el.addEventListener("wheel", handler, { passive: false });
