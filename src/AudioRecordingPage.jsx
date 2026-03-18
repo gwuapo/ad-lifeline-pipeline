@@ -818,18 +818,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
   const formatTs = (s) => s != null ? `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}` : "0:00.0";
 
-  // Build clips from selected takes, sorted by start time
-  const clips = useMemo(() => {
-    const c = [];
-    sectionMappings.forEach((sm, si) => {
-      sm.takes?.forEach(t => {
-        if (t.is_selected) c.push({ ...t, sectionIdx: si, sectionLabel: sm.section_label || sections[si]?.label || `Section ${si + 1}` });
-      });
-    });
-    return c.sort((a, b) => a.start - b.start);
-  }, [analysis, sectionMappings, sections]);
-
-  // Build skip regions
+  // Build skip regions (needed before clips)
   const skipRegions = useMemo(() => {
     const r = [];
     (analysis.filler_words || []).forEach(f => { if (f.removed !== false) r.push({ start: f.start, end: f.end, type: "filler" }); });
@@ -837,6 +826,39 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     (analysis.off_script_segments || []).forEach(s => r.push({ start: s.start, end: s.end, type: "off_script" }));
     return r.sort((a, b) => a.start - b.start);
   }, [analysis]);
+
+  // Build clips: split selected takes around skip regions so each audio piece is its own clip
+  const clips = useMemo(() => {
+    const rawTakes = [];
+    sectionMappings.forEach((sm, si) => {
+      sm.takes?.forEach(t => {
+        if (t.is_selected) rawTakes.push({ ...t, sectionIdx: si, sectionLabel: sm.section_label || sections[si]?.label || `Section ${si + 1}` });
+      });
+    });
+    rawTakes.sort((a, b) => a.start - b.start);
+
+    // Split each take around skip regions
+    const c = [];
+    for (const take of rawTakes) {
+      const overlaps = skipRegions.filter(r => r.start < take.end && r.end > take.start);
+      if (overlaps.length === 0) {
+        c.push(take);
+        continue;
+      }
+      let cursor = take.start;
+      let pieceNum = 1;
+      for (const r of overlaps) {
+        if (r.start > cursor + 0.02) {
+          c.push({ ...take, start: cursor, end: r.start, _piece: pieceNum++ });
+        }
+        cursor = Math.max(cursor, r.end);
+      }
+      if (cursor < take.end - 0.02) {
+        c.push({ ...take, start: cursor, end: take.end, _piece: pieceNum });
+      }
+    }
+    return c;
+  }, [analysis, sectionMappings, sections, skipRegions]);
 
   // Build "keep regions" for preview
   const keepRegions = useMemo(() => {
@@ -1468,37 +1490,55 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
         }
       }
 
-      // Trim silence/breaths from each segment edges
-      setProgress("Trimming silence and breaths...");
+      // Precision silence trimming using RMS energy windows
+      setProgress("Precision-trimming silence...");
       const sampleRate = audioBuffer.sampleRate;
       const channels = audioBuffer.numberOfChannels;
       const rawAudio = audioBuffer.getChannelData(0);
-      const SILENCE_THRESHOLD = 0.015; // amplitude below this = silence
-      const MIN_SILENCE_MS = 80; // trim silence longer than 80ms from edges
-      const minSilenceSamples = Math.floor((MIN_SILENCE_MS / 1000) * sampleRate);
 
-      // Trim leading and trailing silence from each cut segment
+      // RMS energy over a window (returns energy level 0-1)
+      const rmsAt = (center, windowMs) => {
+        const half = Math.floor((windowMs / 1000) * sampleRate / 2);
+        let sum = 0, count = 0;
+        for (let i = Math.max(0, center - half); i < Math.min(rawAudio.length, center + half); i++) {
+          sum += rawAudio[i] * rawAudio[i];
+          count++;
+        }
+        return count > 0 ? Math.sqrt(sum / count) : 0;
+      };
+
+      const RMS_THRESHOLD = 0.008; // very conservative -- only trim true silence
+      const WINDOW_MS = 20; // 20ms RMS window for energy detection
+      const STEP = Math.floor(sampleRate * 0.005); // check every 5ms
+      const SAFETY_MS = 40; // 40ms safety buffer so we never clip into speech
+
       for (let i = 0; i < cutSegments.length; i++) {
         const seg = cutSegments[i];
-        let startSamp = Math.floor(seg.start * sampleRate);
-        let endSamp = Math.floor(seg.end * sampleRate);
+        const origStart = Math.floor(seg.start * sampleRate);
+        const origEnd = Math.floor(seg.end * sampleRate);
+        const safetyBuf = Math.floor((SAFETY_MS / 1000) * sampleRate);
 
-        // Trim leading silence/breaths
-        let trimStart = startSamp;
-        while (trimStart < endSamp - minSilenceSamples && Math.abs(rawAudio[trimStart] || 0) < SILENCE_THRESHOLD) trimStart++;
-        // Step back a tiny bit to avoid cutting into speech onset
-        trimStart = Math.max(startSamp, trimStart - Math.floor(sampleRate * 0.01));
+        // Find first voice from the left
+        let speechStart = origStart;
+        for (let s = origStart; s < origEnd - safetyBuf; s += STEP) {
+          if (rmsAt(s, WINDOW_MS) > RMS_THRESHOLD) { speechStart = s; break; }
+        }
+        // Back up by safety buffer
+        speechStart = Math.max(origStart, speechStart - safetyBuf);
 
-        // Trim trailing silence/breaths
-        let trimEnd = endSamp;
-        while (trimEnd > trimStart + minSilenceSamples && Math.abs(rawAudio[trimEnd - 1] || 0) < SILENCE_THRESHOLD) trimEnd--;
-        trimEnd = Math.min(endSamp, trimEnd + Math.floor(sampleRate * 0.01));
+        // Find last voice from the right
+        let speechEnd = origEnd;
+        for (let s = origEnd; s > speechStart + safetyBuf; s -= STEP) {
+          if (rmsAt(s, WINDOW_MS) > RMS_THRESHOLD) { speechEnd = s; break; }
+        }
+        // Extend by safety buffer
+        speechEnd = Math.min(origEnd, speechEnd + safetyBuf);
 
-        seg.start = trimStart / sampleRate;
-        seg.end = trimEnd / sampleRate;
+        seg.start = speechStart / sampleRate;
+        seg.end = speechEnd / sampleRate;
       }
 
-      // Remove any segments that became too short after trimming
+      // Remove any segments that became too short
       const trimmedSegments = cutSegments.filter(s => s.end - s.start > 0.03);
       totalDuration = trimmedSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
 
