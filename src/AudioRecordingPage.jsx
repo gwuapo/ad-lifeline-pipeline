@@ -770,16 +770,17 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const [selectedClip, setSelectedClip] = useState(null);
   const [selectedSection, setSelectedSection] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
-  const [dragging, setDragging] = useState(null);
+  const [dragging, setDragging] = useState(null); // { type: "trim"|"playhead", ... }
   const [snap, setSnap] = useState(true);
   const [previewPlaying, setPreviewPlaying] = useState(false);
-  const [waveformData, setWaveformData] = useState(null); // Float32Array of peaks
+  const [waveformData, setWaveformData] = useState(null);
+  const [zoom, setZoom] = useState(1); // 1x = default, range 0.5 - 6
   const playIntervalRef = useRef(null);
-  const animFrameRef = useRef(null);
   const SNAP_PX = 6;
-  const PX_PER_SEC = 14;
+  const BASE_PX_PER_SEC = 14;
+  const pxPerSec = BASE_PX_PER_SEC * zoom;
   const CLIP_H = 64;
-  const RULER_H = 20;
+  const RULER_H = 22;
   const HANDLE_W = 10;
 
   const sectionMappings = analysis?.section_mappings || [];
@@ -806,7 +807,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     return r.sort((a, b) => a.start - b.start);
   }, [analysis]);
 
-  // Build "keep regions" for preview (clips minus skip regions)
+  // Build "keep regions" for preview
   const keepRegions = useMemo(() => {
     const regions = [];
     for (const clip of clips) {
@@ -824,78 +825,111 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   // Load audio + extract waveform peaks
   useEffect(() => {
     if (!recording?.url) return;
-    // Hidden WaveSurfer for playback
     if (!hiddenWaveRef.current) {
       const div = document.createElement("div");
       div.style.display = "none";
       document.body.appendChild(div);
       hiddenWaveRef.current = div;
     }
-    const ws = WaveSurfer.create({
-      container: hiddenWaveRef.current, height: 0, interact: false,
-    });
+    const ws = WaveSurfer.create({ container: hiddenWaveRef.current, height: 0, interact: false });
     ws.load(recording.url);
     ws.on("ready", () => {
       setDuration(ws.getDuration());
-      // Extract peaks for drawing waveform on clips
       try {
-        const peaks = ws.getDecodedData()?.getChannelData(0);
-        if (peaks) {
-          const samples = 2000;
-          const step = Math.floor(peaks.length / samples);
-          const condensed = new Float32Array(samples);
+        const raw = ws.getDecodedData()?.getChannelData(0);
+        if (raw) {
+          const samples = 4000;
+          const step = Math.floor(raw.length / samples);
+          const peaks = new Float32Array(samples);
           for (let i = 0; i < samples; i++) {
-            let max = 0;
-            for (let j = i * step; j < (i + 1) * step && j < peaks.length; j++) {
-              max = Math.max(max, Math.abs(peaks[j]));
-            }
-            condensed[i] = max;
+            let mx = 0;
+            for (let j = i * step; j < (i + 1) * step && j < raw.length; j++) mx = Math.max(mx, Math.abs(raw[j]));
+            peaks[i] = mx;
           }
-          setWaveformData(condensed);
+          setWaveformData(peaks);
         }
-      } catch (e) { /* peaks extraction optional */ }
+      } catch (e) {}
     });
     ws.on("audioprocess", () => setCurrentTime(ws.getCurrentTime()));
     ws.on("seeking", () => setCurrentTime(ws.getCurrentTime()));
     ws.on("play", () => setIsPlaying(true));
     ws.on("pause", () => setIsPlaying(false));
     wsRef.current = ws;
-    return () => { ws.destroy(); };
+    return () => ws.destroy();
   }, [recording?.url]);
 
-  // Draw waveform on clip canvas
-  const drawClipWaveform = useCallback((canvas, clip, color) => {
+  // Draw full-width waveform canvas (entire audio, fixed position)
+  useEffect(() => {
+    const canvas = waveCanvasRef.current;
     if (!canvas || !waveformData || !duration) return;
+    const w = Math.max(duration * pxPerSec, 200);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = CLIP_H * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${CLIP_H}px`;
     const ctx = canvas.getContext("2d");
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, CLIP_H);
 
-    const samplesPerSec = waveformData.length / duration;
-    const startSample = Math.floor(clip.start * samplesPerSec);
-    const endSample = Math.floor(clip.end * samplesPerSec);
-    const totalSamples = endSample - startSample;
-    if (totalSamples <= 0) return;
-
-    ctx.fillStyle = color;
-    const barW = Math.max(1, w / totalSamples);
-    for (let i = 0; i < totalSamples; i++) {
-      const sample = waveformData[startSample + i] || 0;
-      const barH = sample * h * 0.85;
-      const x = (i / totalSamples) * w;
-      ctx.fillRect(x, (h - barH) / 2, Math.max(barW - 0.5, 0.5), barH || 1);
+    const samplesPerPx = waveformData.length / w;
+    for (let x = 0; x < w; x++) {
+      const si = Math.floor(x * samplesPerPx);
+      const sample = waveformData[si] || 0;
+      const barH = sample * CLIP_H * 0.8;
+      // Check if this pixel's time falls inside a clip
+      const t = x / pxPerSec;
+      const inClip = clips.find(c => t >= c.start && t < c.end);
+      const inSkip = skipRegions.some(r => t >= r.start && t < r.end);
+      if (inClip && !inSkip) {
+        const color = COLORS[inClip.sectionIdx % COLORS.length];
+        ctx.fillStyle = color + "cc";
+      } else if (inClip && inSkip) {
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+      } else {
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+      }
+      ctx.fillRect(x, (CLIP_H - barH) / 2, 1, barH || 0.5);
     }
-  }, [waveformData, duration]);
+  }, [waveformData, duration, clips, skipRegions, zoom, pxPerSec]);
+
+  // Spacebar play/pause
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.code === "Space" && !["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) {
+        e.preventDefault();
+        const ws = wsRef.current;
+        if (ws) ws.isPlaying() ? ws.pause() : ws.play();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // Zoom with Ctrl+scroll
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    const handler = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoom(prev => {
+          const next = prev * (e.deltaY < 0 ? 1.15 : 0.87);
+          return Math.max(0.5, Math.min(6, next));
+        });
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   // Undo
   const pushUndo = () => setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
   const undo = () => { if (!undoStack.length) return; setAnalysis(undoStack[undoStack.length - 1]); setUndoStack(prev => prev.slice(0, -1)); };
 
-  // Find hard boundaries for a clip to prevent overlap
+  // Hard boundaries for clip overlap prevention
   const getClipBounds = (clipIdx) => {
-    let minStart = 0;
-    let maxEnd = duration;
-    // Find the clip to the left (closest clip ending before this one starts)
+    let minStart = 0, maxEnd = duration;
     const clip = clips[clipIdx];
     for (let i = 0; i < clips.length; i++) {
       if (i === clipIdx) continue;
@@ -905,23 +939,41 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     return { minStart, maxEnd };
   };
 
-  // Trim handle drag
+  // Trim handle mouse down
   const handleTrimDown = (e, clipIdx, edge) => {
     e.preventDefault();
     e.stopPropagation();
     const clip = clips[clipIdx];
     const bounds = getClipBounds(clipIdx);
-    setDragging({ clipIdx, edge, startX: e.clientX, origStart: clip.start, origEnd: clip.end, bounds });
+    setDragging({ type: "trim", clipIdx, edge, startX: e.clientX, origStart: clip.start, origEnd: clip.end, bounds });
     pushUndo();
     setSelectedClip(clipIdx);
     setSelectedSection(clip.sectionIdx);
   };
 
+  // Playhead drag
+  const handlePlayheadDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging({ type: "playhead", startX: e.clientX, origTime: currentTime });
+  };
+
+  // Unified drag handler
   useEffect(() => {
     if (!dragging) return;
     const onMove = (e) => {
+      if (dragging.type === "playhead") {
+        const dx = e.clientX - dragging.startX;
+        const dt = dx / pxPerSec;
+        let t = dragging.origTime + dt;
+        t = Math.max(0, Math.min(t, duration));
+        const ws = wsRef.current;
+        if (ws) ws.seekTo(t / duration);
+        return;
+      }
+      // Trim drag
       const dx = e.clientX - dragging.startX;
-      const dt = dx / PX_PER_SEC;
+      const dt = dx / pxPerSec;
       const next = JSON.parse(JSON.stringify(analysis));
       const clip = clips[dragging.clipIdx];
       const sm = next.section_mappings[clip.sectionIdx];
@@ -930,29 +982,25 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
       const { minStart, maxEnd } = dragging.bounds;
 
       if (dragging.edge === "left") {
-        let newVal = dragging.origStart + dt;
-        // Snap to nearby edges
+        let v = dragging.origStart + dt;
         if (snap) {
           for (let i = 0; i < clips.length; i++) {
             if (i === dragging.clipIdx) continue;
-            if (Math.abs((newVal - clips[i].end) * PX_PER_SEC) < SNAP_PX) { newVal = clips[i].end; break; }
-            if (Math.abs((newVal - clips[i].start) * PX_PER_SEC) < SNAP_PX) { newVal = clips[i].start; break; }
+            if (Math.abs((v - clips[i].end) * pxPerSec) < SNAP_PX) { v = clips[i].end; break; }
+            if (Math.abs((v - clips[i].start) * pxPerSec) < SNAP_PX) { v = clips[i].start; break; }
           }
         }
-        // Enforce hard boundaries
-        newVal = Math.max(minStart, Math.min(newVal, take.end - 0.05));
-        take.start = parseFloat(newVal.toFixed(3));
+        take.start = parseFloat(Math.max(minStart, Math.min(v, take.end - 0.05)).toFixed(3));
       } else {
-        let newVal = dragging.origEnd + dt;
+        let v = dragging.origEnd + dt;
         if (snap) {
           for (let i = 0; i < clips.length; i++) {
             if (i === dragging.clipIdx) continue;
-            if (Math.abs((newVal - clips[i].start) * PX_PER_SEC) < SNAP_PX) { newVal = clips[i].start; break; }
-            if (Math.abs((newVal - clips[i].end) * PX_PER_SEC) < SNAP_PX) { newVal = clips[i].end; break; }
+            if (Math.abs((v - clips[i].start) * pxPerSec) < SNAP_PX) { v = clips[i].start; break; }
+            if (Math.abs((v - clips[i].end) * pxPerSec) < SNAP_PX) { v = clips[i].end; break; }
           }
         }
-        newVal = Math.min(maxEnd, Math.max(newVal, take.start + 0.05));
-        take.end = parseFloat(newVal.toFixed(3));
+        take.end = parseFloat(Math.min(maxEnd, Math.max(v, take.start + 0.05)).toFixed(3));
       }
       setAnalysis(next);
     };
@@ -960,9 +1008,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [dragging, clips, snap, analysis]);
+  }, [dragging, clips, snap, analysis, pxPerSec, duration]);
 
-  // Split selected clip at playhead
+  // Split / Delete / Toggle
   const splitAtCursor = () => {
     if (selectedClip == null) return;
     const clip = clips[selectedClip];
@@ -972,14 +1020,12 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     const sm = next.section_mappings[clip.sectionIdx];
     const take = sm.takes.find(t => t.take_number === clip.take_number && t.is_selected);
     if (!take) return;
-    const splitTime = parseFloat(currentTime.toFixed(3));
-    const newTake = { ...JSON.parse(JSON.stringify(take)), take_number: sm.takes.length + 1, start: splitTime, is_selected: true };
-    take.end = splitTime;
-    sm.takes.push(newTake);
+    const st = parseFloat(currentTime.toFixed(3));
+    sm.takes.push({ ...JSON.parse(JSON.stringify(take)), take_number: sm.takes.length + 1, start: st, is_selected: true });
+    take.end = st;
     setAnalysis(next);
   };
 
-  // Delete selected clip
   const deleteClip = () => {
     if (selectedClip == null) return;
     pushUndo();
@@ -992,7 +1038,6 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     setAnalysis(next);
   };
 
-  // Toggle take
   const toggleTake = (sectionIdx, takeNum) => {
     pushUndo();
     const next = JSON.parse(JSON.stringify(analysis));
@@ -1000,19 +1045,12 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     setAnalysis(next);
   };
 
-  // Play full audio
-  const playPause = () => {
-    const ws = wsRef.current;
-    if (!ws) return;
-    isPlaying ? ws.pause() : ws.play();
-  };
+  const playPause = () => { const ws = wsRef.current; if (ws) ws.isPlaying() ? ws.pause() : ws.play(); };
 
-  // Play result: only keep regions in sequence
   const playResult = () => {
     const ws = wsRef.current;
     if (!ws || keepRegions.length === 0) return;
     if (previewPlaying) { ws.pause(); setPreviewPlaying(false); clearInterval(playIntervalRef.current); return; }
-
     let idx = 0;
     setPreviewPlaying(true);
     const playNext = () => {
@@ -1032,31 +1070,28 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     playNext();
   };
 
-  useEffect(() => () => { clearInterval(playIntervalRef.current); cancelAnimationFrame(animFrameRef.current); }, []);
+  useEffect(() => () => clearInterval(playIntervalRef.current), []);
 
-  // Seek on timeline click
+  // Click on timeline to seek (only if not clicking a clip or handle)
   const seekOnClick = (e) => {
     const ws = wsRef.current;
     if (!ws || !timelineRef.current || dragging) return;
     const rect = timelineRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + timelineRef.current.scrollLeft;
-    const t = x / PX_PER_SEC;
+    const t = x / pxPerSec;
     if (t >= 0 && t <= duration) ws.seekTo(t / duration);
   };
 
-  const totalWidth = Math.max(duration * PX_PER_SEC, 200);
+  const totalWidth = Math.max(duration * pxPerSec, 200);
 
-  // Waveform clip component
-  const ClipWaveform = ({ clip, color, width, height }) => {
-    const ref = useRef(null);
-    useEffect(() => { drawClipWaveform(ref.current, clip, color); }, [clip.start, clip.end, waveformData, width]);
-    return <canvas ref={ref} width={Math.max(width - HANDLE_W * 2, 1)} height={height} style={{ position: "absolute", left: HANDLE_W, top: 0, width: Math.max(width - HANDLE_W * 2, 0), height }} />;
-  };
+  // Ruler interval based on zoom
+  const rulerInterval = zoom >= 3 ? 1 : zoom >= 1.5 ? 2 : 5;
+  const rulerCount = Math.ceil(duration / rulerInterval) + 1;
 
   return (
     <div>
       {/* Transport bar */}
-      <div className="card" style={{ marginBottom: 10, padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="card" style={{ marginBottom: 10, padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={playPause} className="btn btn-primary btn-sm"
             style={{ borderRadius: "var(--radius-full)", width: 32, height: 32, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
@@ -1068,139 +1103,114 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
             style={{ fontSize: 11, gap: 4, display: "flex", alignItems: "center" }}>
             {previewPlaying ? "⏸ Stop" : "▶ Play Result"}
           </button>
-          {previewPlaying && <span style={{ fontSize: 10, color: "var(--green-light)", fontWeight: 600 }}>Playing final version...</span>}
+          {previewPlaying && <span style={{ fontSize: 10, color: "var(--green-light)", fontWeight: 600 }}>Playing final...</span>}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button onClick={splitAtCursor} disabled={selectedClip == null} className="btn btn-ghost btn-xs" title="Split clip at playhead">✂ Split</button>
-          <button onClick={deleteClip} disabled={selectedClip == null} className="btn btn-ghost btn-xs" style={{ color: "var(--red-light)" }} title="Delete selected clip">✕ Delete</button>
+          <button onClick={splitAtCursor} disabled={selectedClip == null} className="btn btn-ghost btn-xs">✂ Split</button>
+          <button onClick={deleteClip} disabled={selectedClip == null} className="btn btn-ghost btn-xs" style={{ color: "var(--red-light)" }}>✕ Delete</button>
           <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
           <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: snap ? "var(--accent-light)" : "var(--text-muted)", cursor: "pointer" }}>
             <input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Snap
           </label>
           <button onClick={undo} disabled={!undoStack.length} className="btn btn-ghost btn-xs">Undo</button>
+          <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
+          {/* Zoom slider */}
+          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>Zoom</span>
+          <input type="range" min="0.5" max="6" step="0.1" value={zoom}
+            onChange={e => setZoom(parseFloat(e.target.value))}
+            style={{ width: 70, accentColor: "var(--accent)" }} />
+          <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)", minWidth: 24 }}>{zoom.toFixed(1)}x</span>
         </div>
       </div>
 
       {/* Timeline */}
-      <div className="card" style={{ marginBottom: 12, padding: "8px 0 8px 0", background: "#0d0d0d" }}>
+      <div className="card" style={{ marginBottom: 12, padding: "8px 0", background: "#0a0a0a" }}>
         <div ref={timelineRef} onClick={seekOnClick}
           style={{ overflowX: "auto", position: "relative", cursor: "crosshair", padding: "0 12px" }}>
           <div style={{ width: totalWidth, height: RULER_H + CLIP_H + 8, position: "relative", minWidth: "100%" }}>
 
             {/* Ruler */}
             <div style={{ height: RULER_H, position: "relative", borderBottom: "1px solid #222" }}>
-              {duration > 0 && Array.from({ length: Math.ceil(duration) + 1 }, (_, i) => {
-                const isMajor = i % 5 === 0;
+              {duration > 0 && Array.from({ length: rulerCount }, (_, i) => {
+                const sec = i * rulerInterval;
+                if (sec > duration) return null;
+                const isMajor = sec % 5 === 0 || rulerInterval <= 2;
                 return (
                   <React.Fragment key={i}>
-                    <div style={{ position: "absolute", left: i * PX_PER_SEC, top: isMajor ? 0 : 10, width: 1, height: isMajor ? RULER_H : 6, background: isMajor ? "#444" : "#2a2a2a" }} />
-                    {isMajor && <span style={{ position: "absolute", left: i * PX_PER_SEC + 3, top: 2, fontSize: 9, color: "#666", fontFamily: "var(--fm)", userSelect: "none" }}>
-                      {Math.floor(i / 60)}:{(i % 60).toString().padStart(2, "0")}
+                    <div style={{ position: "absolute", left: sec * pxPerSec, top: isMajor ? 2 : 12, width: 1, height: isMajor ? RULER_H - 2 : 6, background: isMajor ? "#444" : "#2a2a2a" }} />
+                    {isMajor && <span style={{ position: "absolute", left: sec * pxPerSec + 3, top: 3, fontSize: 9, color: "#555", fontFamily: "var(--fm)", userSelect: "none" }}>
+                      {Math.floor(sec / 60)}:{(sec % 60).toString().padStart(2, "0")}
                     </span>}
                   </React.Fragment>
                 );
               })}
             </div>
 
-            {/* Clip track */}
+            {/* Track area */}
             <div style={{ position: "relative", height: CLIP_H + 4, marginTop: 4 }}>
-              {/* Gap regions (between clips) shown as dotted */}
-              {clips.map((clip, ci) => {
-                if (ci === 0) return null;
-                const prev = clips[ci - 1];
-                const gapStart = prev.end;
-                const gapEnd = clip.start;
-                if (gapEnd - gapStart < 0.01) return null;
-                return (
-                  <div key={`gap_${ci}`} style={{
-                    position: "absolute", left: gapStart * PX_PER_SEC, width: (gapEnd - gapStart) * PX_PER_SEC,
-                    top: 0, height: CLIP_H, background: "repeating-linear-gradient(90deg, transparent, transparent 3px, #1a1a1a 3px, #1a1a1a 6px)",
-                    borderRadius: 2, opacity: 0.5,
-                  }} />
-                );
-              })}
+              {/* Full waveform background (entire audio) */}
+              <canvas ref={waveCanvasRef} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }} />
 
-              {/* Clips */}
+              {/* Clip borders + handles (rendered on top of waveform) */}
               {clips.map((clip, ci) => {
                 const color = COLORS[clip.sectionIdx % COLORS.length];
                 const isSel = selectedClip === ci;
-                const w = Math.max((clip.end - clip.start) * PX_PER_SEC, 4);
-                const isSkipped = (time) => skipRegions.some(r => time >= r.start && time < r.end);
-
+                const left = clip.start * pxPerSec;
+                const w = Math.max((clip.end - clip.start) * pxPerSec, 6);
                 return (
                   <div key={`clip_${ci}_${clip.take_number}`}
                     onClick={(e) => { e.stopPropagation(); setSelectedClip(ci); setSelectedSection(clip.sectionIdx); }}
                     style={{
-                      position: "absolute", left: clip.start * PX_PER_SEC, width: w, top: 0, height: CLIP_H,
-                      background: `linear-gradient(180deg, ${color}33 0%, ${color}11 100%)`,
-                      border: `2px solid ${isSel ? "#fff" : color}`,
-                      borderRadius: 4, cursor: "pointer", overflow: "hidden",
-                      boxShadow: isSel ? `0 0 0 1px ${color}88, 0 0 12px ${color}44` : "none",
-                      transition: "box-shadow 0.15s",
+                      position: "absolute", left, width: w, top: 0, height: CLIP_H,
+                      border: `2px solid ${isSel ? "#fff" : color + "88"}`,
+                      borderRadius: 4, cursor: "pointer",
+                      boxShadow: isSel ? `0 0 0 1px ${color}, 0 0 12px ${color}44` : "none",
+                      transition: "box-shadow 0.15s, border-color 0.15s",
                     }}>
-                    {/* Waveform canvas */}
-                    <ClipWaveform clip={clip} color={`${color}99`} width={w} height={CLIP_H} />
-
                     {/* Left trim handle */}
                     <div onMouseDown={(e) => handleTrimDown(e, ci, "left")}
-                      style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: "ew-resize",
-                        background: `linear-gradient(90deg, ${color}cc, ${color}44)`, borderRadius: "4px 0 0 4px", zIndex: 2 }}>
-                      <div style={{ position: "absolute", left: 3, top: "50%", transform: "translateY(-50%)", width: 2, height: 20, background: "#fff", borderRadius: 1, opacity: 0.6 }} />
+                      style={{ position: "absolute", left: -1, top: 0, bottom: 0, width: HANDLE_W, cursor: "ew-resize",
+                        background: `linear-gradient(90deg, ${color}dd, transparent)`, borderRadius: "4px 0 0 4px", zIndex: 2 }}>
+                      <div style={{ position: "absolute", left: 3, top: "50%", transform: "translateY(-50%)", width: 2, height: 18, background: "#fff", borderRadius: 1, opacity: 0.7 }} />
                     </div>
-
                     {/* Right trim handle */}
                     <div onMouseDown={(e) => handleTrimDown(e, ci, "right")}
-                      style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: "ew-resize",
-                        background: `linear-gradient(270deg, ${color}cc, ${color}44)`, borderRadius: "0 4px 4px 0", zIndex: 2 }}>
-                      <div style={{ position: "absolute", right: 3, top: "50%", transform: "translateY(-50%)", width: 2, height: 20, background: "#fff", borderRadius: 1, opacity: 0.6 }} />
+                      style={{ position: "absolute", right: -1, top: 0, bottom: 0, width: HANDLE_W, cursor: "ew-resize",
+                        background: `linear-gradient(270deg, ${color}dd, transparent)`, borderRadius: "0 4px 4px 0", zIndex: 2 }}>
+                      <div style={{ position: "absolute", right: 3, top: "50%", transform: "translateY(-50%)", width: 2, height: 18, background: "#fff", borderRadius: 1, opacity: 0.7 }} />
                     </div>
-
-                    {/* Skip region overlays inside clip */}
-                    {skipRegions.filter(r => r.start < clip.end && r.end > clip.start).map((r, ri) => {
-                      const rStart = Math.max(r.start, clip.start);
-                      const rEnd = Math.min(r.end, clip.end);
-                      const leftPx = (rStart - clip.start) * PX_PER_SEC;
-                      const widthPx = (rEnd - rStart) * PX_PER_SEC;
-                      return (
-                        <div key={`sr_${ri}`} style={{
-                          position: "absolute", left: leftPx, top: 0, width: widthPx, height: CLIP_H,
-                          background: r.type === "filler" ? "rgba(239,68,68,0.25)" : r.type === "pause" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)",
-                          pointerEvents: "none", zIndex: 1,
-                        }} />
-                      );
-                    })}
-
-                    {/* Label overlay */}
-                    <div style={{ position: "absolute", left: HANDLE_W + 4, top: 4, zIndex: 3, pointerEvents: "none" }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.8)", lineHeight: 1 }}>
-                        {clip.sectionLabel}
-                      </div>
-                      <div style={{ fontSize: 8, color: "rgba(255,255,255,0.5)", fontFamily: "var(--fm)", marginTop: 2 }}>
-                        {formatTs(clip.start)} - {formatTs(clip.end)}
-                      </div>
-                    </div>
+                    {/* Label */}
+                    {w > 40 && <div style={{ position: "absolute", left: HANDLE_W + 2, top: 3, zIndex: 3, pointerEvents: "none" }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#fff", textShadow: "0 1px 4px #000", lineHeight: 1 }}>{clip.sectionLabel}</div>
+                      <div style={{ fontSize: 7, color: "rgba(255,255,255,0.4)", fontFamily: "var(--fm)", marginTop: 1 }}>{formatTs(clip.start)} - {formatTs(clip.end)}</div>
+                    </div>}
                   </div>
                 );
               })}
 
-              {/* Playhead */}
-              <div style={{
-                position: "absolute", left: currentTime * PX_PER_SEC - 1, top: -RULER_H - 4, width: 2,
-                height: RULER_H + CLIP_H + 8, background: previewPlaying ? "#10b981" : "#fff",
-                zIndex: 20, pointerEvents: "none", transition: "background 0.2s",
-              }}>
-                <div style={{ width: 10, height: 10, background: previewPlaying ? "#10b981" : "#fff",
-                  borderRadius: "50%", position: "absolute", top: 0, left: -4 }} />
+              {/* Playhead (draggable) */}
+              <div onMouseDown={handlePlayheadDown}
+                style={{
+                  position: "absolute", left: currentTime * pxPerSec - 6, top: -RULER_H - 4,
+                  width: 12, height: RULER_H + CLIP_H + 8,
+                  cursor: "ew-resize", zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center",
+                }}>
+                {/* Head */}
+                <div style={{ width: 12, height: 12, background: previewPlaying ? "#10b981" : "#fff", borderRadius: "50%", flexShrink: 0, boxShadow: "0 0 6px rgba(0,0,0,0.5)" }} />
+                {/* Line */}
+                <div style={{ width: 2, flex: 1, background: previewPlaying ? "#10b981" : "#fff" }} />
               </div>
             </div>
           </div>
         </div>
 
         {/* Legend */}
-        <div style={{ display: "flex", gap: 14, padding: "6px 16px 0", fontSize: 9, color: "#555" }}>
+        <div style={{ display: "flex", gap: 14, padding: "6px 16px 0", fontSize: 9, color: "#444" }}>
           <span>Drag edges to trim</span>
-          <span>Click timeline to seek</span>
-          <span style={{ color: "#ef4444" }}>Red overlay = fillers/off-script</span>
+          <span>Drag playhead to scrub</span>
+          <span>Ctrl+Scroll to zoom</span>
+          <span>Space = play/pause</span>
+          <span style={{ color: "#ef4444" }}>Red = skipped</span>
           <span style={{ color: "#f59e0b" }}>Yellow = pauses</span>
         </div>
       </div>
