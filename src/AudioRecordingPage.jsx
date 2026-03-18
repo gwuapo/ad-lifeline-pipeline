@@ -771,6 +771,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const [selectedClip, setSelectedClip] = useState(null);
   const [selectedSection, setSelectedSection] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
   const [dragging, setDragging] = useState(null); // { type: "trim"|"playhead", ... }
   const [snap, setSnap] = useState(true);
   const [previewPlaying, setPreviewPlaying] = useState(false);
@@ -894,14 +895,29 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     }
   }, [waveformData, duration, clips, skipRegions, zoom, pxPerSec]);
 
-  // Spacebar play/pause
+  // Keyboard shortcuts
+  const splitRef = useRef(splitAtCursor);
+  const deleteRef = useRef(deleteClip);
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+  useEffect(() => { splitRef.current = splitAtCursor; }, [splitAtCursor]);
+  useEffect(() => { deleteRef.current = deleteClip; }, [deleteClip]);
+  useEffect(() => { undoRef.current = undo; }, [undo]);
+  useEffect(() => { redoRef.current = redo; }, [redo]);
+
   useEffect(() => {
     const handler = (e) => {
-      if (e.code === "Space" && !["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) {
-        e.preventDefault();
-        const ws = wsRef.current;
-        if (ws) ws.isPlaying() ? ws.pause() : ws.play();
-      }
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+      // Space = play/pause
+      if (e.code === "Space") { e.preventDefault(); const ws = wsRef.current; if (ws) ws.isPlaying() ? ws.pause() : ws.play(); return; }
+      // C = split at playhead
+      if (e.code === "KeyC" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); splitRef.current(); return; }
+      // X = delete selected clip
+      if (e.code === "KeyX" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); deleteRef.current(); return; }
+      // Cmd/Ctrl+Shift+Z = redo
+      if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && e.shiftKey) { e.preventDefault(); redoRef.current(); return; }
+      // Cmd/Ctrl+Z = undo
+      if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undoRef.current(); return; }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -964,8 +980,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   }, []);
 
   // Undo
-  const pushUndo = () => setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
-  const undo = () => { if (!undoStack.length) return; setAnalysis(undoStack[undoStack.length - 1]); setUndoStack(prev => prev.slice(0, -1)); };
+  const pushUndo = () => { setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]); setRedoStack([]); };
+  const undo = () => { if (!undoStack.length) return; setRedoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]); setAnalysis(undoStack[undoStack.length - 1]); setUndoStack(prev => prev.slice(0, -1)); };
+  const redo = () => { if (!redoStack.length) return; setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]); setAnalysis(redoStack[redoStack.length - 1]); setRedoStack(prev => prev.slice(0, -1)); };
 
   // Hard boundaries for clip overlap prevention
   const getClipBounds = (clipIdx) => {
@@ -1158,6 +1175,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
             <input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Snap
           </label>
           <button onClick={undo} disabled={!undoStack.length} className="btn btn-ghost btn-xs">Undo</button>
+          <button onClick={redo} disabled={!redoStack.length} className="btn btn-ghost btn-xs">Redo</button>
           <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
           {/* Zoom slider */}
           <span style={{ fontSize: 9, color: "var(--text-muted)" }}>Zoom</span>
@@ -1251,12 +1269,12 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
 
         {/* Legend */}
         <div style={{ display: "flex", gap: 14, padding: "6px 16px 0", fontSize: 9, color: "#444" }}>
-          <span>Drag edges to trim</span>
-          <span>Drag playhead to scrub</span>
-          <span>Ctrl+Scroll to zoom</span>
           <span>Space = play/pause</span>
-          <span style={{ color: "#ef4444" }}>Red = skipped</span>
-          <span style={{ color: "#f59e0b" }}>Yellow = pauses</span>
+          <span>C = split</span>
+          <span>X = delete</span>
+          <span>Cmd/Ctrl+Z = undo</span>
+          <span>Cmd/Ctrl+Shift+Z = redo</span>
+          <span>Pinch/Ctrl+Scroll = zoom</span>
         </div>
       </div>
 
