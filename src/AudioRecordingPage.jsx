@@ -850,23 +850,31 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     rawTakes.sort((a, b) => a.start - b.start);
 
     // Split each take around skip regions
+    const overrides = analysis._clip_overrides || {};
     const c = [];
     for (const take of rawTakes) {
       const overlaps = skipRegions.filter(r => r.start < take.end && r.end > take.start);
       if (overlaps.length === 0) {
-        c.push(take);
+        const key = `${take.sectionIdx}_${take.take_number}_0`;
+        const ov = overrides[key];
+        c.push(ov ? { ...take, start: ov.start, end: ov.end, _piece: 0 } : take);
         continue;
       }
       let cursor = take.start;
       let pieceNum = 1;
       for (const r of overlaps) {
         if (r.start > cursor + 0.02) {
-          c.push({ ...take, start: cursor, end: r.start, _piece: pieceNum++ });
+          const key = `${take.sectionIdx}_${take.take_number}_${pieceNum}`;
+          const ov = overrides[key];
+          c.push({ ...take, start: ov?.start ?? cursor, end: ov?.end ?? r.start, _piece: pieceNum });
+          pieceNum++;
         }
         cursor = Math.max(cursor, r.end);
       }
       if (cursor < take.end - 0.02) {
-        c.push({ ...take, start: cursor, end: take.end, _piece: pieceNum });
+        const key = `${take.sectionIdx}_${take.take_number}_${pieceNum}`;
+        const ov = overrides[key];
+        c.push({ ...take, start: ov?.start ?? cursor, end: ov?.end ?? take.end, _piece: pieceNum });
       }
     }
     return c;
@@ -1107,12 +1115,16 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
         if (ws && duration > 0) ws.seekTo(t / duration);
         return;
       }
-      // Trim drag
+      // Trim drag -- use clip_overrides to store direct boundaries per clip piece
       const dx = e.clientX - dragging.startX;
       const dt = dx / pxPerSec;
       const next = JSON.parse(JSON.stringify(analysis));
       const clip = clips[dragging.clipIdx];
       const { minStart, maxEnd } = dragging.bounds;
+
+      // Initialize overrides map if needed
+      if (!next._clip_overrides) next._clip_overrides = {};
+      const clipKey = `${clip.sectionIdx}_${clip.take_number}_${clip._piece || 0}`;
 
       if (dragging.edge === "left") {
         let v = dragging.origStart + dt;
@@ -1124,19 +1136,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
           }
         }
         v = parseFloat(Math.max(minStart, Math.min(v, dragging.origEnd - 0.05)).toFixed(3));
+        next._clip_overrides[clipKey] = { ...(next._clip_overrides[clipKey] || {}), start: v, end: dragging.origEnd };
 
-        // Restore any filler/pause that we're extending into (dragging left = reclaiming)
-        if (v < dragging.origStart) {
-          (next.filler_words || []).forEach(f => { if (f.removed !== false && f.end > v && f.start < dragging.origStart) f.removed = false; });
-          (next.pauses || []).forEach(p => { if (p.removed !== false && p.end > v && p.start < dragging.origStart) p.removed = false; });
-        }
-        // Shrink into a filler/pause region (dragging right = creating skip)
-        if (v > dragging.origStart) {
-          (next.filler_words || []).forEach(f => { if (f.removed === false && f.start >= dragging.origStart && f.end <= v) f.removed = true; });
-          (next.pauses || []).forEach(p => { if (p.removed === false && p.start >= dragging.origStart && p.end <= v) p.removed = true; });
-        }
-
-        // Also adjust the underlying take boundary if needed
+        // Extend the underlying take if the override goes beyond it
         const sm = next.section_mappings[clip.sectionIdx];
         const take = sm.takes.find(t => t.take_number === clip.take_number && t.is_selected);
         if (take && v < take.start) take.start = v;
@@ -1150,17 +1152,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
           }
         }
         v = parseFloat(Math.min(maxEnd, Math.max(v, dragging.origStart + 0.05)).toFixed(3));
-
-        // Restore fillers/pauses when extending right
-        if (v > dragging.origEnd) {
-          (next.filler_words || []).forEach(f => { if (f.removed !== false && f.start < v && f.end > dragging.origEnd) f.removed = false; });
-          (next.pauses || []).forEach(p => { if (p.removed !== false && p.start < v && p.end > dragging.origEnd) p.removed = false; });
-        }
-        // Mark fillers/pauses as removed when shrinking
-        if (v < dragging.origEnd) {
-          (next.filler_words || []).forEach(f => { if (f.removed === false && f.start >= v && f.end <= dragging.origEnd) f.removed = true; });
-          (next.pauses || []).forEach(p => { if (p.removed === false && p.start >= v && p.end <= dragging.origEnd) p.removed = true; });
-        }
+        next._clip_overrides[clipKey] = { ...(next._clip_overrides[clipKey] || {}), start: dragging.origStart, end: v };
 
         const sm = next.section_mappings[clip.sectionIdx];
         const take = sm.takes.find(t => t.take_number === clip.take_number && t.is_selected);
