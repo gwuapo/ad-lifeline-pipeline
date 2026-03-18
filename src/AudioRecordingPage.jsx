@@ -127,7 +127,6 @@ export default function AudioRecordingPage({ activeWorkspaceId, session }) {
 // ════════════════════════════════════════════════
 
 function ProjectEditor({ project, onBack, onUpdate, session }) {
-  const [step, setStep] = useState(project.status === "editing" ? "editor" : "script");
   const [sections, setSections] = useState(project.script_sections || []);
   const [projectName, setProjectName] = useState(project.name);
   const [recording, setRecording] = useState(null); // { blob, url, duration }
@@ -136,6 +135,70 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
   const [processing, setProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState("");
   const [error, setError] = useState(null);
+  const [loadingState, setLoadingState] = useState(true);
+
+  // Determine initial step after loading saved state
+  const [step, setStep] = useState("script");
+
+  // Load saved recordings + analyses on mount
+  useEffect(() => {
+    const loadSavedState = async () => {
+      try {
+        // Load latest recording
+        const { data: recordings } = await supabase
+          .from("audio_recordings")
+          .select("*")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (recordings?.length > 0) {
+          const rec = recordings[0];
+          setRecording({ url: rec.file_url, duration: rec.duration_seconds, savedId: rec.id });
+
+          // Load latest analysis for this recording
+          const { data: analyses } = await supabase
+            .from("audio_analyses")
+            .select("*")
+            .eq("recording_id", rec.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (analyses?.length > 0) {
+            setTranscript(analyses[0].transcript);
+            setAnalysis(analyses[0].analysis);
+            setStep("editor");
+          } else if (project.script_sections?.length > 0) {
+            setStep("record");
+          }
+        } else if (project.status === "editing") {
+          // Fallback: load any analysis for the project
+          const { data: analyses } = await supabase
+            .from("audio_analyses")
+            .select("*")
+            .eq("project_id", project.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          if (analyses?.length > 0) {
+            setTranscript(analyses[0].transcript);
+            setAnalysis(analyses[0].analysis);
+            setStep("editor");
+          }
+        }
+
+        // Set initial step based on project state
+        if (!recordings?.length && project.script_sections?.length > 0) {
+          setStep("record");
+        } else if (!recordings?.length) {
+          setStep("script");
+        }
+      } catch (e) {
+        console.error("Load saved state:", e);
+      }
+      setLoadingState(false);
+    };
+    loadSavedState();
+  }, [project.id]);
 
   const saveProject = async (updates) => {
     const { data } = await supabase
@@ -146,6 +209,15 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
       .single();
     if (data) onUpdate(data);
   };
+
+  if (loadingState) {
+    return (
+      <div className="animate-fade" style={{ maxWidth: 1000, textAlign: "center", padding: 60 }}>
+        <div className="loading-dot" style={{ margin: "0 auto 16px" }} />
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading project...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade" style={{ maxWidth: 1000 }}>
@@ -201,22 +273,31 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
       )}
       {step === "record" && (
         <RecordStep sections={sections} recording={recording} setRecording={setRecording}
+          onSaveRecording={async (blob, duration) => {
+            const filePath = `${project.id}/${Date.now()}.webm`;
+            const { error: upErr } = await supabase.storage.from("audio").upload(filePath, blob, { contentType: "audio/webm" });
+            if (upErr) throw new Error("Upload failed: " + upErr.message);
+            const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
+            const { data: rec } = await supabase.from("audio_recordings").insert({
+              project_id: project.id, file_url: urlData.publicUrl, file_path: filePath,
+              duration_seconds: duration, file_size_bytes: blob.size,
+            }).select().single();
+            await saveProject({ status: "recording" });
+            setRecording(prev => ({ ...prev, savedId: rec?.id, url: urlData.publicUrl }));
+          }}
           onNext={async () => {
-            if (!recording?.blob) return;
+            if (!recording?.url) return;
             setStep("processing");
             setProcessing(true);
             setError(null);
             try {
-              setProcessingStatus("Uploading audio...");
-              const filePath = `${project.id}/${Date.now()}.wav`;
-              const { error: upErr } = await supabase.storage.from("audio").upload(filePath, recording.blob, { contentType: "audio/wav" });
-              if (upErr) throw new Error("Upload failed: " + upErr.message);
-              const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
-
-              await supabase.from("audio_recordings").insert({
-                project_id: project.id, file_url: urlData.publicUrl, file_path: filePath,
-                duration_seconds: recording.duration, file_size_bytes: recording.blob.size,
-              });
+              // Fetch audio blob if we only have a URL (restored from Supabase)
+              let audioBlob = recording.blob;
+              if (!audioBlob && recording.url) {
+                setProcessingStatus("Loading audio...");
+                const res = await fetch(recording.url);
+                audioBlob = await res.blob();
+              }
 
               // ── STEP 1: Whisper Transcription ──
               setProcessingStatus("Transcribing with Whisper...");
@@ -224,7 +305,7 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
               if (!openaiKey) throw new Error("OpenAI API key required for Whisper transcription. Set it in Settings > Integrations.");
 
               const whisperFd = new FormData();
-              whisperFd.append("file", recording.blob, "recording.webm");
+              whisperFd.append("file", audioBlob, "recording.webm");
               whisperFd.append("model", "whisper-1");
               whisperFd.append("response_format", "verbose_json");
               whisperFd.append("timestamp_granularities[]", "word");
@@ -379,12 +460,16 @@ Return ONLY the JSON object (no explanation, no markdown, no preamble):
               }
               setAnalysis(analysisData);
 
-              await supabase.from("audio_analyses").insert({
-                project_id: project.id,
-                recording_id: (await supabase.from("audio_recordings").select("id").eq("project_id", project.id).order("created_at", { ascending: false }).limit(1).single()).data?.id,
-                transcript: whisperData,
-                analysis: analysisData,
-              });
+              const recordingId = recording.savedId ||
+                (await supabase.from("audio_recordings").select("id").eq("project_id", project.id).order("created_at", { ascending: false }).limit(1).single()).data?.id;
+              if (recordingId) {
+                await supabase.from("audio_analyses").insert({
+                  project_id: project.id,
+                  recording_id: recordingId,
+                  transcript: whisperData,
+                  analysis: analysisData,
+                });
+              }
 
               await saveProject({ status: "editing" });
               setProcessingStatus("Done!");
@@ -509,8 +594,9 @@ function ScriptStep({ sections, setSections, onNext }) {
 // STEP 2: RECORD
 // ════════════════════════════════════════════════
 
-function RecordStep({ sections, recording, setRecording, onNext }) {
+function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [audioUrl, setAudioUrl] = useState(recording?.url || null);
   const mediaRecorderRef = useRef(null);
@@ -528,12 +614,18 @@ function RecordStep({ sections, recording, setRecording, onNext }) {
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
         setRecording({ blob, url, duration: elapsed });
         stream.getTracks().forEach(t => t.stop());
+        // Auto-save to Supabase
+        if (onSaveRecording) {
+          setSaving(true);
+          try { await onSaveRecording(blob, elapsed); } catch (e) { console.error("Auto-save recording:", e); }
+          setSaving(false);
+        }
       };
 
       mediaRecorder.start(250);
@@ -622,11 +714,15 @@ function RecordStep({ sections, recording, setRecording, onNext }) {
       {/* Preview + proceed */}
       {audioUrl && !isRecording && (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="section-title">Recording Preview</div>
-          <audio src={audioUrl} controls style={{ width: "100%", marginBottom: 12 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="section-title" style={{ margin: 0 }}>Recording Preview</div>
+            {saving && <span style={{ fontSize: 11, color: "var(--accent-light)" }}>Saving...</span>}
+            {!saving && recording?.savedId && <span style={{ fontSize: 11, color: "var(--green-light)" }}>Saved</span>}
+          </div>
+          <audio src={audioUrl} controls style={{ width: "100%", margin: "10px 0 12px" }} />
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onNext} className="btn btn-primary" style={{ flex: 1 }}>
-              Process Recording -- AI will clean it up →
+            <button onClick={onNext} disabled={saving} className="btn btn-primary" style={{ flex: 1 }}>
+              {saving ? "Saving recording..." : "Process Recording -- AI will clean it up →"}
             </button>
             <button onClick={() => { setAudioUrl(null); setRecording(null); }} className="btn btn-ghost btn-sm">
               Re-record
