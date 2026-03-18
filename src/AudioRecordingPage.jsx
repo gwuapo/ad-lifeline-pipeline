@@ -479,13 +479,13 @@ function ScriptStep({ sections, setSections, onNext }) {
 
 function RecordStep({ sections, recording, setRecording, onNext }) {
   const [isRecording, setIsRecording] = useState(false);
-  const [currentSection, setCurrentSection] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [audioUrl, setAudioUrl] = useState(recording?.url || null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const streamRef = useRef(null);
+  const scriptRef = useRef(null);
 
   const startRecording = async () => {
     try {
@@ -530,85 +530,60 @@ function RecordStep({ sections, recording, setRecording, onNext }) {
 
   return (
     <div>
-      {/* Teleprompter */}
+      {/* Full script teleprompter */}
       <div className="card" style={{ marginBottom: 16, padding: "20px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div className="section-title" style={{ margin: 0 }}>
-            Section {currentSection + 1} of {sections.length}: {sections[currentSection]?.label}
-          </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button onClick={() => setCurrentSection(Math.max(0, currentSection - 1))} disabled={currentSection === 0}
-              className="btn btn-ghost btn-xs">← Prev</button>
-            <button onClick={() => setCurrentSection(Math.min(sections.length - 1, currentSection + 1))} disabled={currentSection === sections.length - 1}
-              className="btn btn-ghost btn-xs">Next →</button>
-          </div>
+          <div className="section-title" style={{ margin: 0 }}>Full Script</div>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sections.length} sections</span>
         </div>
-
-        {/* Section progress */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-          {sections.map((_, i) => (
-            <div key={i} onClick={() => setCurrentSection(i)} style={{
-              flex: 1, height: 4, borderRadius: 2, cursor: "pointer",
-              background: i === currentSection ? "var(--accent-light)" : i < currentSection ? "var(--green)" : "var(--border)",
-            }} />
-          ))}
-        </div>
-
-        {/* Script text */}
-        <div style={{
-          fontSize: 22, lineHeight: 1.8, color: "var(--text-primary)", fontWeight: 500,
-          textAlign: "center", padding: "24px 16px",
-          background: "var(--bg-elevated)", borderRadius: "var(--radius-lg)",
-          direction: "rtl", minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center",
+        <div ref={scriptRef} style={{
+          maxHeight: 340, overflowY: "auto", direction: "rtl",
+          background: "var(--bg-elevated)", borderRadius: "var(--radius-lg)", padding: "20px 20px",
         }}>
-          {sections[currentSection]?.script_text}
-        </div>
-
-        {/* Surrounding sections (dimmed) */}
-        <div style={{ display: "flex", gap: 12, marginTop: 12, fontSize: 12, color: "var(--text-muted)", direction: "rtl" }}>
-          {currentSection > 0 && (
-            <div style={{ flex: 1, opacity: 0.5, padding: "8px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)" }}>
-              <span style={{ fontWeight: 600 }}>← {sections[currentSection - 1]?.label}:</span> {sections[currentSection - 1]?.script_text?.slice(0, 60)}...
+          {sections.map((s, i) => (
+            <div key={s.id} style={{ marginBottom: i < sections.length - 1 ? 16 : 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-light)", marginBottom: 4, direction: "ltr", textAlign: "left" }}>
+                {i + 1}. {s.label}
+              </div>
+              <div style={{ fontSize: 20, lineHeight: 1.8, color: "var(--text-primary)", fontWeight: 500 }}>
+                {s.script_text}
+              </div>
+              {i < sections.length - 1 && <div style={{ borderBottom: "1px dashed var(--border-light)", marginTop: 12 }} />}
             </div>
-          )}
-          {currentSection < sections.length - 1 && (
-            <div style={{ flex: 1, opacity: 0.5, padding: "8px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)" }}>
-              <span style={{ fontWeight: 600 }}>{sections[currentSection + 1]?.label} →:</span> {sections[currentSection + 1]?.script_text?.slice(0, 60)}...
-            </div>
-          )}
+          ))}
         </div>
       </div>
 
       {/* Recording controls */}
-      <div className="card" style={{ textAlign: "center", padding: "24px" }}>
-        <div style={{ fontSize: 36, fontFamily: "var(--fm)", fontWeight: 700, color: isRecording ? "var(--red)" : "var(--text-primary)", marginBottom: 16 }}>
+      <div className="card" style={{ textAlign: "center", padding: "28px 24px" }}>
+        <div style={{ fontSize: 42, fontFamily: "var(--fm)", fontWeight: 700, color: isRecording ? "var(--red)" : "var(--text-primary)", marginBottom: 16, letterSpacing: 2 }}>
           {formatTime(elapsed)}
         </div>
         {isRecording && (
           <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 16 }}>
-            {[...Array(12)].map((_, i) => (
+            {[...Array(16)].map((_, i) => (
               <div key={i} style={{
-                width: 4, borderRadius: 2, background: "var(--red)",
-                height: 8 + Math.random() * 24, transition: "height 0.15s",
+                width: 3, borderRadius: 2, background: "var(--red)",
+                height: 8 + Math.random() * 28, transition: "height 0.15s",
                 animation: "pulse 0.6s infinite alternate",
-                animationDelay: `${i * 0.05}s`,
+                animationDelay: `${i * 0.04}s`,
               }} />
             ))}
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
           {!isRecording ? (
-            <button onClick={startRecording} className="btn btn-danger" style={{ padding: "14px 32px", fontSize: 15, borderRadius: "var(--radius-full)" }}>
+            <button onClick={startRecording} className="btn btn-danger" style={{ padding: "16px 40px", fontSize: 16, borderRadius: "var(--radius-full)" }}>
               ● Record
             </button>
           ) : (
-            <button onClick={stopRecording} className="btn btn-ghost" style={{ padding: "14px 32px", fontSize: 15, borderRadius: "var(--radius-full)", border: "2px solid var(--red)", color: "var(--red)" }}>
-              ■ Stop
+            <button onClick={stopRecording} className="btn btn-ghost" style={{ padding: "16px 40px", fontSize: 16, borderRadius: "var(--radius-full)", border: "2px solid var(--red)", color: "var(--red)" }}>
+              ■ Stop Recording
             </button>
           )}
         </div>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>
-          Record all sections in one go. Do multiple takes per section -- just keep going. The AI will sort it all out.
+        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 14, maxWidth: 420, margin: "14px auto 0" }}>
+          Just hit record and read through the full script. Redo any section as many times as you want -- the AI will find the best take for each part and clean everything up.
         </p>
       </div>
 
@@ -619,7 +594,7 @@ function RecordStep({ sections, recording, setRecording, onNext }) {
           <audio src={audioUrl} controls style={{ width: "100%", marginBottom: 12 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onNext} className="btn btn-primary" style={{ flex: 1 }}>
-              Process Recording →
+              Process Recording -- AI will clean it up →
             </button>
             <button onClick={() => { setAudioUrl(null); setRecording(null); }} className="btn btn-ghost btn-sm">
               Re-record
