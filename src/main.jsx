@@ -7,6 +7,7 @@ import EditorOnboarding from "./EditorOnboarding.jsx";
 import WorkspaceSetup from "./WorkspaceSetup.jsx";
 import App from "./App.jsx";
 import { fetchWorkspaces, createWorkspace, fetchEditorProfile, acceptPendingInvites } from "./supabaseData.js";
+import { loadWorkspaceKeys } from "./apiKeys.js";
 import "./styles.css";
 
 function Root() {
@@ -52,10 +53,15 @@ function Root() {
 
         // Restore last active workspace from localStorage or pick first
         const savedWsId = localStorage.getItem("al_active_workspace");
+        let wsId;
         if (savedWsId && ws.find(w => w.id === savedWsId)) {
-          setActiveWorkspaceId(savedWsId);
+          wsId = savedWsId;
         } else if (ws.length > 0) {
-          setActiveWorkspaceId(ws[0].id);
+          wsId = ws[0].id;
+        }
+        if (wsId) {
+          setActiveWorkspaceId(wsId);
+          loadWorkspaceKeys(wsId);
         }
 
         // Check editor onboarding
@@ -135,6 +141,7 @@ function Root() {
           const ws = await createWorkspace(name);
           setWorkspaces([ws]);
           setActiveWorkspaceId(ws.id);
+          loadWorkspaceKeys(ws.id);
           localStorage.setItem("al_active_workspace", ws.id);
         } catch (e) {
           console.error("Workspace creation failed:", e);
@@ -174,6 +181,7 @@ function Root() {
 
   const handleSelectWorkspace = (wsId) => {
     setActiveWorkspaceId(wsId);
+    loadWorkspaceKeys(wsId);
     localStorage.setItem("al_active_workspace", wsId);
   };
 
@@ -181,6 +189,7 @@ function Root() {
     const ws = await createWorkspace(name);
     setWorkspaces(prev => [...prev, ws]);
     setActiveWorkspaceId(ws.id);
+    loadWorkspaceKeys(ws.id);
     localStorage.setItem("al_active_workspace", ws.id);
   };
 

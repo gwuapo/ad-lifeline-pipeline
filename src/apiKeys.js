@@ -1,3 +1,5 @@
+import { supabase } from "./supabase.js";
+
 const KEYS = {
   claude: { storage: "al_claude_key", env: "VITE_CLAUDE_API_KEY" },
   gemini: { storage: "al_gemini_key", env: "VITE_GEMINI_API_KEY" },
@@ -7,16 +9,61 @@ const KEYS = {
   tiktok_advertiser_id: { storage: "al_tiktok_advertiser_id", env: "VITE_TIKTOK_ADVERTISER_ID" },
 };
 
+// Workspace-level key cache (loaded once on workspace init)
+let _wsKeys = {};
+let _wsId = null;
+
+export async function loadWorkspaceKeys(workspaceId) {
+  if (!workspaceId) return;
+  _wsId = workspaceId;
+  try {
+    const { data } = await supabase
+      .from("workspace_settings")
+      .select("api_keys")
+      .eq("workspace_id", workspaceId)
+      .single();
+    _wsKeys = data?.api_keys || {};
+  } catch (e) {
+    _wsKeys = {};
+  }
+}
+
+export async function saveWorkspaceKey(workspaceId, service, value) {
+  _wsKeys[service] = value;
+  _wsId = workspaceId;
+  try {
+    // Upsert the api_keys column
+    const { data: existing } = await supabase
+      .from("workspace_settings")
+      .select("api_keys")
+      .eq("workspace_id", workspaceId)
+      .single();
+    const merged = { ...(existing?.api_keys || {}), [service]: value };
+    await supabase
+      .from("workspace_settings")
+      .upsert({ workspace_id: workspaceId, api_keys: merged }, { onConflict: "workspace_id" });
+  } catch (e) {
+    console.error("Failed to save workspace key:", e);
+  }
+}
+
 export function getApiKey(service) {
   const k = KEYS[service];
-  if (!k) return "";
+  // Priority: workspace-level > localStorage > env var
+  const wsVal = _wsKeys[service];
+  if (wsVal?.trim()) return wsVal;
+  if (!k) return wsVal || "";
   return localStorage.getItem(k.storage) || import.meta.env[k.env] || "";
 }
 
 export function setApiKey(service, value) {
   const k = KEYS[service];
-  if (!k) return;
-  localStorage.setItem(k.storage, value);
+  // Save to workspace if we have a workspace ID
+  if (_wsId) {
+    saveWorkspaceKey(_wsId, service, value.trim());
+  }
+  // Also save to localStorage as fallback
+  if (k) localStorage.setItem(k.storage, value);
 }
 
 export function isConfigured(service) {
