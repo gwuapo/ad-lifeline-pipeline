@@ -382,28 +382,32 @@ Within each take, identify all mess-ups:
 - Off-script content: anything the speaker said that doesn't match the script (comments to themselves, "let me try again", breathing/sighing, etc.). Flag with timestamps.
 - Repeated words/phrases: speaker said the same word twice due to stumbling. Flag the duplicate.
 
-STEP 4 — FILLER WORD AND BREATH DETECTION:
-Flag filler words, breaths, and unwanted sounds. Types to detect:
-- Arabic fillers: يعني, طيب, آه, إيه, هم, والله
-- English fillers: um, uh, ah, like, so, okay, you know, right
-- Breaths, lip smacks, tongue clicks, throat clears, sighs
-- Any word in the transcript that is NOT in the script
+STEP 4 — BREATH AND FILLER DETECTION:
+ONLY flag these specific things:
+1. Standalone filler SOUNDS that Whisper transcribed as their own word: "um", "uh", "ah", "هم", "آه", "إيه"
+2. Gaps between words where there is NO Whisper word -- these are breaths/dead air
 
-CRITICAL TIMESTAMP PRECISION RULES FOR FILLERS:
-- The "start" timestamp MUST be the END timestamp of the last real word BEFORE the filler/breath. Use that word's Whisper end time.
-- The "end" timestamp MUST be the START timestamp of the first real word AFTER the filler/breath. Use that word's Whisper start time.
-- NEVER include any part of a real script word inside a filler region.
-- If a filler like "um" has its own Whisper word entry, use that word's exact start/end.
-- For breaths (gaps between words with no Whisper transcription), set start = previous word's end time, end = next word's start time.
-- When in doubt, make the filler region SMALLER not larger. Leaving a tiny gap is fine. Cutting into a word is NOT fine.
+DO NOT flag:
+- Words like "يعني", "طيب", "like", "so", "okay", "right", "you know" -- these are real words even if casual
+- Any word that appears in the script, even if mispronounced
+- Any word that COULD be part of natural speech
+- Partial words or stutters that share sounds with the next word
+
+TIMESTAMP RULES (EXTREMELY IMPORTANT):
+- For fillers that Whisper transcribed as a word (e.g. "um"): use EXACTLY that word's Whisper start and end timestamps. Do not expand the region at all.
+- For breaths/gaps with no Whisper word: start = previous word's Whisper END time + 0.02, end = next word's Whisper START time - 0.02. This 20ms padding on each side ensures we never touch adjacent words.
+- NEVER EVER set a filler start time that is before the previous word's end time.
+- NEVER EVER set a filler end time that is after the next word's start time.
+- If unsure whether something is a filler, DO NOT flag it. The user can manually cut it.
 
 STEP 5 — PAUSE DETECTION:
-Using word-level timestamps, identify gaps longer than 0.5 seconds between consecutive words WITHIN a take.
+ONLY flag gaps longer than 1.0 seconds between consecutive words WITHIN a take. Short pauses are natural speech rhythm -- leave them alone.
 
-CRITICAL TIMESTAMP PRECISION RULES FOR PAUSES:
-- "start" = the END timestamp of the word BEFORE the pause (from Whisper)
-- "end" = the START timestamp of the word AFTER the pause (from Whisper)
-- NEVER let a pause region overlap with any word's timestamp range.
+TIMESTAMP RULES FOR PAUSES:
+- "start" = the word BEFORE the pause: use its Whisper END time + 0.02
+- "end" = the word AFTER the pause: use its Whisper START time - 0.02
+- This 20ms padding ensures the pause region NEVER overlaps with any word.
+- NEVER let a pause region include any part of a word's timestamp range.
 - Only flag gaps within a take, not between takes.
 
 STEP 6 — TAKE RANKING:
@@ -968,12 +972,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
       // Check if this pixel's time falls inside a clip
       const t = x / pxPerSec;
       const inClip = clips.find(c => t >= c.start && t < c.end);
-      const inSkip = skipRegions.some(r => t >= r.start && t < r.end);
-      if (inClip && !inSkip) {
+      if (inClip) {
         const color = COLORS[inClip.sectionIdx % COLORS.length];
         ctx.fillStyle = color + "cc";
-      } else if (inClip && inSkip) {
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
       } else {
         ctx.fillStyle = "rgba(255,255,255,0.08)";
       }
@@ -1492,17 +1493,30 @@ function ExportStep({ recording, analysis, sections, transcript, projectId, onDo
       setProgress("Validating cut boundaries...");
       const words = transcript?.words || [];
       if (words.length > 0) {
+        const WORD_PADDING = 0.03; // 30ms safety padding around each word
         const clampRegion = (region) => {
-          // Find the word that ends closest before this region starts
-          const wordBefore = words.filter(w => w.end <= region.start + 0.05).sort((a, b) => b.end - a.end)[0];
-          // Find the word that starts closest after this region ends
-          const wordAfter = words.filter(w => w.start >= region.end - 0.05).sort((a, b) => a.start - b.start)[0];
-          // Clamp: region start can't be earlier than the word before's end
-          if (wordBefore && region.start < wordBefore.end) region.start = wordBefore.end;
-          // Clamp: region end can't be later than the word after's start
-          if (wordAfter && region.end > wordAfter.start) region.end = wordAfter.start;
-          // If region became invalid, mark it to skip
-          if (region.end <= region.start + 0.01) region._skip = true;
+          // Find any word that overlaps with or is very close to this region
+          for (const w of words) {
+            const wStart = w.start - WORD_PADDING;
+            const wEnd = w.end + WORD_PADDING;
+            // If region overlaps a word, clamp it away
+            if (region.start < wEnd && region.end > wStart) {
+              // Region starts inside/before a word -- push start past the word
+              if (region.start < wEnd && region.start >= wStart) {
+                region.start = w.end + WORD_PADDING;
+              }
+              // Region ends inside/after a word -- pull end before the word
+              if (region.end > wStart && region.end <= wEnd) {
+                region.end = w.start - WORD_PADDING;
+              }
+              // Region fully contains a word -- this region is bad, skip it
+              if (region.start <= w.start && region.end >= w.end) {
+                region._skip = true;
+                return;
+              }
+            }
+          }
+          if (region.end <= region.start + 0.02) region._skip = true;
         };
         (analysis.filler_words || []).filter(f => f.removed !== false).forEach(clampRegion);
         (analysis.pauses || []).filter(p => p.removed !== false).forEach(clampRegion);
