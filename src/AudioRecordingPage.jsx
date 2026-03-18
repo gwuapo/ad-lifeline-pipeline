@@ -218,132 +218,166 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
                 duration_seconds: recording.duration, file_size_bytes: recording.blob.size,
               });
 
-              const geminiKey = getApiKey("gemini");
-              if (!geminiKey) throw new Error("Gemini API key required for transcription & analysis. Set it in Settings > Integrations.");
-              const geminiModel = getSelectedModel("gemini");
+              // ── STEP 1: Whisper Transcription ──
+              setProcessingStatus("Transcribing with Whisper...");
+              const openaiKey = getApiKey("openai");
+              if (!openaiKey) throw new Error("OpenAI API key required for Whisper transcription. Set it in Settings > Integrations.");
 
-              // Convert audio blob to base64 for Gemini
-              setProcessingStatus("Preparing audio for Gemini...");
-              const audioBase64 = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(",")[1]);
-                reader.onerror = reject;
-                reader.readAsDataURL(recording.blob);
+              const whisperFd = new FormData();
+              whisperFd.append("file", recording.blob, "recording.webm");
+              whisperFd.append("model", "whisper-1");
+              whisperFd.append("response_format", "verbose_json");
+              whisperFd.append("timestamp_granularities[]", "word");
+              whisperFd.append("language", "ar");
+
+              const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${openaiKey}` },
+                body: whisperFd,
               });
-              const audioMime = recording.blob.type || "audio/webm";
-
-              // Step 1: Transcribe with Gemini
-              setProcessingStatus("Transcribing audio with Gemini...");
-              const transcribeRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    contents: [{
-                      parts: [
-                        { inlineData: { mimeType: audioMime, data: audioBase64 } },
-                        { text: `Transcribe this Arabic audio recording with word-level timestamps. The audio is a VSL voiceover recording where the speaker may do multiple takes of each section.
-
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "text": "full transcript text",
-  "words": [
-    { "word": "كلمة", "start": 0.0, "end": 0.5 }
-  ]
-}
-
-Be precise with timestamps. Include every word spoken, including filler words like يعني, هاه, آه, um, ah.` }
-                      ]
-                    }],
-                    generationConfig: { maxOutputTokens: 16384, temperature: 0.1 },
-                  }),
-                }
-              );
-              if (!transcribeRes.ok) {
-                const err = await transcribeRes.text().catch(() => "");
-                throw new Error(`Gemini transcription failed (${transcribeRes.status}): ${err.slice(0, 200)}`);
+              if (!whisperRes.ok) {
+                const err = await whisperRes.text().catch(() => "");
+                throw new Error(`Whisper transcription failed (${whisperRes.status}): ${err.slice(0, 200)}`);
               }
-              const transcribeData = await transcribeRes.json();
-              const transcriptRaw = transcribeData.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-              let whisperData;
-              try {
-                whisperData = JSON.parse(transcriptRaw.replace(/```json|```/g, "").trim());
-              } catch {
-                whisperData = { text: transcriptRaw, words: [] };
-              }
+              const whisperData = await whisperRes.json();
               setTranscript(whisperData);
 
-              // Step 2: Analyze transcript vs script with Gemini
-              setProcessingStatus("Analyzing takes with Gemini...");
-              const sectionsText = sections.map((s, i) => `Section ${i + 1} (${s.label}): "${s.script_text}"`).join("\n");
-              const wordsText = whisperData.words?.length > 0
-                ? whisperData.words.map(w => `[${w.start?.toFixed?.(2) || w.start}-${w.end?.toFixed?.(2) || w.end}] ${w.word}`).join("\n")
-                : whisperData.text || "";
+              // ── STEP 2: Claude Analysis ──
+              setProcessingStatus("Analyzing with Claude...");
+              const claudeKey = getApiKey("claude");
+              if (!claudeKey) throw new Error("Claude API key required for analysis. Set it in Settings > Integrations.");
 
-              const analyzeRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    contents: [{
-                      parts: [
-                        { inlineData: { mimeType: audioMime, data: audioBase64 } },
-                        { text: `You are an audio editing assistant analyzing a VSL voiceover recording in Saudi Arabic.
+              const sectionsText = sections.map((s, i) => `Section ${i + 1} (${s.label}): "${s.script_text}"`).join("\n");
+              const wordsJson = JSON.stringify(whisperData.words || []);
+
+              const claudePrompt = `You are an audio editing assistant analyzing a VSL voiceover recording in Saudi Arabic. The user recorded one large continuous audio file containing multiple sections of a script, with multiple takes per section, including mess-ups, false starts, filler words, and off-script chatter between takes.
 
 Here is the original script broken into sections:
 ${sectionsText}
 
-Here is the transcript with word-level timestamps:
-${wordsText}
+Here is the full transcript with word-level timestamps from Whisper:
+${wordsJson}
 
-Full transcript: "${whisperData.text || ""}"
+Full transcript text: "${whisperData.text || ""}"
 
-Your job:
-1. Map each chunk of the transcript to the corresponding script section. The speaker may have recorded multiple takes of each section back to back.
-2. Within each section, identify separate takes (indicated by repeated content, long pauses >1.5s, or the speaker restarting).
-3. Rank each take by: completeness, clarity, and natural flow.
-4. Flag all filler words (um, ah, يعني, هاه, آه, etc.) with exact timestamps.
-5. Flag all pauses longer than 0.8 seconds with timestamps.
-6. Select the best take per section.
+Your job is to analyze the transcript against the script and return precise cut points. Follow these steps:
 
-Return ONLY valid JSON (no markdown, no code fences):
+STEP 1 — SECTION MAPPING:
+Map each chunk of the transcript to the corresponding script section. The speaker recorded everything in one continuous take, so you need to figure out where one section ends and the next begins by matching transcript content to script content. Use fuzzy text matching — the speaker is reading in Saudi dialect Arabic so some words may be transcribed slightly differently by Whisper than they appear in the script.
+
+STEP 2 — TAKE DETECTION:
+Within each section, identify separate takes. A new take is indicated by:
+- The same script content repeating (speaker re-read the section)
+- A long pause (>2 seconds) followed by the same content restarting
+- Off-script speech like "again", "يلا مرة ثانية", "let me redo that", or similar markers
+- A false start where the speaker begins, stumbles, and restarts from the beginning of the section
+Tag each take with its start and end timestamps.
+
+STEP 3 — MESS-UP DETECTION:
+Within each take, identify all mess-ups:
+- False starts: speaker begins a sentence, stumbles partway through, restarts. Flag the incomplete first attempt with timestamps.
+- Missing words: compare take transcript against script text word by word. Note any skipped or missing words.
+- Off-script content: anything the speaker said that doesn't match the script (comments to themselves, "let me try again", breathing/sighing, etc.). Flag with timestamps.
+- Repeated words/phrases: speaker said the same word twice due to stumbling. Flag the duplicate.
+
+STEP 4 — FILLER WORD DETECTION:
+Flag ALL filler words and sounds with exact start/end timestamps:
+- Arabic fillers: يعني, طيب, آه, إيه, هم, والله
+- English fillers: um, uh, ah, like, so, okay
+- Breathing sounds, sighs, lip smacks (Whisper sometimes transcribes these — flag if present)
+- Any word that appears in the transcript but NOT in the corresponding script section
+
+STEP 5 — PAUSE DETECTION:
+Using the word-level timestamps, identify all gaps longer than 0.8 seconds between consecutive words WITHIN a take (not between takes). Flag each pause with start, end, and duration.
+
+STEP 6 — TAKE RANKING:
+For each section, rank all takes by these criteria (in order of weight):
+1. Completeness (highest weight): What percentage of the script words for this section are present in the take? Use fuzzy matching for dialect variations.
+2. Cleanliness: How many filler words, false starts, and mid-sentence restarts exist in this take? Fewer = higher score.
+3. Flow: Analyze the timestamp gaps between consecutive words. Consistent natural spacing = high flow. Irregular gaps with mid-sentence hesitations = low flow.
+
+Select the highest-ranked take per section as the recommended pick.
+
+Return ONLY the JSON object (no explanation, no markdown, no preamble):
 {
-  "section_mappings": [
+  "sections": [
     {
       "section_id": "0",
-      "section_label": "label",
+      "section_label": "string",
       "takes": [
-        { "take_number": 1, "start": 0.0, "end": 5.5, "rank": 1, "completeness_score": 0.95, "clarity_notes": "note", "is_selected": true }
+        {
+          "take_number": 1,
+          "start": 0.0,
+          "end": 0.0,
+          "completeness_score": 0.0,
+          "cleanliness_score": 0.0,
+          "flow_score": 0.0,
+          "overall_rank": 1,
+          "is_recommended": true,
+          "mess_ups": [
+            {
+              "type": "false_start",
+              "start": 0.0,
+              "end": 0.0,
+              "transcript_text": "what was said",
+              "expected_text": "what should have been said"
+            }
+          ]
+        }
       ]
     }
   ],
   "filler_words": [
-    { "start": 2.1, "end": 2.4, "word": "um" }
+    { "word": "string", "start": 0.0, "end": 0.0, "section_id": "0", "take_number": 1 }
   ],
   "pauses": [
-    { "start": 5.5, "end": 6.8, "duration": 1.3 }
+    { "start": 0.0, "end": 0.0, "duration": 0.0, "section_id": "0", "take_number": 1 }
+  ],
+  "off_script_segments": [
+    { "start": 0.0, "end": 0.0, "transcript_text": "string", "context": "between sections" }
   ]
-}` }
-                      ]
-                    }],
-                    generationConfig: { maxOutputTokens: 16384, temperature: 0.1 },
-                  }),
-                }
-              );
-              if (!analyzeRes.ok) {
-                const err = await analyzeRes.text().catch(() => "");
-                throw new Error(`Gemini analysis failed (${analyzeRes.status}): ${err.slice(0, 200)}`);
+}`;
+
+              const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-api-key": claudeKey,
+                  "anthropic-version": "2023-06-01",
+                },
+                body: JSON.stringify({
+                  model: getSelectedModel("claude"),
+                  max_tokens: 16384,
+                  messages: [{ role: "user", content: claudePrompt }],
+                }),
+              });
+              if (!claudeRes.ok) {
+                const err = await claudeRes.text().catch(() => "");
+                throw new Error(`Claude analysis failed (${claudeRes.status}): ${err.slice(0, 200)}`);
               }
-              const analyzeData = await analyzeRes.json();
-              const analysisRaw = analyzeData.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+              const claudeData = await claudeRes.json();
+              const analysisRaw = claudeData.content?.[0]?.text || "";
               let analysisData;
               try {
                 analysisData = JSON.parse(analysisRaw.replace(/```json|```/g, "").trim());
               } catch {
-                console.warn("Gemini analysis JSON parse failed, raw:", analysisRaw);
-                analysisData = { section_mappings: [], filler_words: [], pauses: [], raw: analysisRaw };
+                console.warn("Claude analysis JSON parse failed, raw:", analysisRaw.slice(0, 500));
+                analysisData = { sections: [], filler_words: [], pauses: [], off_script_segments: [] };
+              }
+
+              // Normalize: map new format to what the timeline editor expects
+              // Add is_selected to recommended takes
+              if (analysisData.sections) {
+                analysisData.section_mappings = analysisData.sections.map(s => ({
+                  section_id: s.section_id,
+                  section_label: s.section_label,
+                  takes: s.takes?.map(t => ({
+                    ...t,
+                    rank: t.overall_rank || t.rank || 99,
+                    is_selected: !!t.is_recommended,
+                    clarity_notes: t.mess_ups?.length ? `${t.mess_ups.length} issue(s): ${t.mess_ups.map(m => m.type.replace("_", " ")).join(", ")}` : "Clean take",
+                  })) || [],
+                }));
               }
               setAnalysis(analysisData);
 
@@ -814,7 +848,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
               </div>
               {currentMapping.takes?.map(take => (
                 <div key={take.take_number} className="card" style={{
-                  marginBottom: 6, padding: "10px 14px",
+                  marginBottom: 8, padding: "12px 14px",
                   borderColor: take.is_selected ? "var(--green-border)" : "var(--border-light)",
                   background: take.is_selected ? "var(--green-bg)" : undefined,
                 }}>
@@ -823,8 +857,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                       <span style={{ fontSize: 14, fontWeight: 700, color: take.is_selected ? "var(--green-light)" : "var(--text-secondary)" }}>
                         Take {take.take_number}
                       </span>
-                      {take.rank === 1 && <span className="badge badge-green" style={{ fontSize: 9 }}>Best</span>}
+                      {(take.rank === 1 || take.overall_rank === 1) && <span className="badge badge-green" style={{ fontSize: 9 }}>Best</span>}
                       {take.is_selected && <span className="badge badge-accent" style={{ fontSize: 9 }}>Selected</span>}
+                      {take.mess_ups?.length > 0 && <span className="badge badge-red" style={{ fontSize: 9 }}>{take.mess_ups.length} issue{take.mess_ups.length > 1 ? "s" : ""}</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>
@@ -839,7 +874,30 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                       </button>
                     </div>
                   </div>
-                  {take.clarity_notes && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{take.clarity_notes}</div>}
+                  {/* Scores */}
+                  {(take.completeness_score != null || take.cleanliness_score != null || take.flow_score != null) && (
+                    <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 10 }}>
+                      {take.completeness_score != null && <span style={{ color: "var(--text-muted)" }}>Completeness: <strong style={{ color: take.completeness_score >= 0.9 ? "var(--green-light)" : take.completeness_score >= 0.7 ? "var(--yellow)" : "var(--red-light)" }}>{(take.completeness_score * 100).toFixed(0)}%</strong></span>}
+                      {take.cleanliness_score != null && <span style={{ color: "var(--text-muted)" }}>Clean: <strong style={{ color: take.cleanliness_score >= 0.9 ? "var(--green-light)" : take.cleanliness_score >= 0.7 ? "var(--yellow)" : "var(--red-light)" }}>{(take.cleanliness_score * 100).toFixed(0)}%</strong></span>}
+                      {take.flow_score != null && <span style={{ color: "var(--text-muted)" }}>Flow: <strong style={{ color: take.flow_score >= 0.9 ? "var(--green-light)" : take.flow_score >= 0.7 ? "var(--yellow)" : "var(--red-light)" }}>{(take.flow_score * 100).toFixed(0)}%</strong></span>}
+                    </div>
+                  )}
+                  {/* Mess-ups */}
+                  {take.mess_ups?.length > 0 && (
+                    <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {take.mess_ups.map((m, mi) => (
+                        <span key={mi} style={{
+                          fontSize: 10, padding: "2px 6px", borderRadius: "var(--radius-sm)",
+                          background: m.type === "false_start" ? "var(--red-bg)" : m.type === "off_script" ? "var(--yellow-bg)" : "var(--bg-elevated)",
+                          color: m.type === "false_start" ? "var(--red-light)" : m.type === "off_script" ? "var(--yellow)" : "var(--text-muted)",
+                          border: `1px solid ${m.type === "false_start" ? "var(--red-border)" : m.type === "off_script" ? "var(--yellow-border)" : "var(--border)"}`,
+                        }}>
+                          {m.type.replace("_", " ")}{m.transcript_text ? `: "${m.transcript_text.slice(0, 30)}"` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {take.clarity_notes && !take.mess_ups?.length && <div style={{ fontSize: 11, color: "var(--green-light)", marginTop: 4 }}>{take.clarity_notes}</div>}
                 </div>
               ))}
             </div>
@@ -888,6 +946,24 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Off-script segments */}
+          {analysis.off_script_segments?.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div className="section-title" style={{ fontSize: 11, marginBottom: 8 }}>Off-Script Segments (auto-removed)</div>
+              <div className="card" style={{ padding: "10px 14px" }}>
+                {analysis.off_script_segments.map((seg, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < analysis.off_script_segments.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      <span style={{ color: "var(--red-light)", fontWeight: 600 }}>"{seg.transcript_text?.slice(0, 50)}"</span>
+                      <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.7 }}>{seg.context}</span>
+                    </div>
+                    <span style={{ fontSize: 10, fontFamily: "var(--fm)", color: "var(--text-muted)" }}>{formatTs(seg.start)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
