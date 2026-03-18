@@ -895,29 +895,20 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     }
   }, [waveformData, duration, clips, skipRegions, zoom, pxPerSec]);
 
-  // Keyboard shortcuts
-  const splitRef = useRef(splitAtCursor);
-  const deleteRef = useRef(deleteClip);
-  const undoRef = useRef(undo);
-  const redoRef = useRef(redo);
-  useEffect(() => { splitRef.current = splitAtCursor; }, [splitAtCursor]);
-  useEffect(() => { deleteRef.current = deleteClip; }, [deleteClip]);
-  useEffect(() => { undoRef.current = undo; }, [undo]);
-  useEffect(() => { redoRef.current = redo; }, [redo]);
+  // Keyboard shortcuts -- refs initialized null, synced after functions are defined below
+  const splitRef = useRef(null);
+  const deleteRef = useRef(null);
+  const undoRef = useRef(null);
+  const redoRef = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
       if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
-      // Space = play/pause
       if (e.code === "Space") { e.preventDefault(); const ws = wsRef.current; if (ws) ws.isPlaying() ? ws.pause() : ws.play(); return; }
-      // C = split at playhead
-      if (e.code === "KeyC" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); splitRef.current(); return; }
-      // X = delete selected clip
-      if (e.code === "KeyX" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); deleteRef.current(); return; }
-      // Cmd/Ctrl+Shift+Z = redo
-      if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && e.shiftKey) { e.preventDefault(); redoRef.current(); return; }
-      // Cmd/Ctrl+Z = undo
-      if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undoRef.current(); return; }
+      if (e.code === "KeyC" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); splitRef.current?.(); return; }
+      if (e.code === "KeyX" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); deleteRef.current?.(); return; }
+      if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && e.shiftKey) { e.preventDefault(); redoRef.current?.(); return; }
+      if (e.code === "KeyZ" && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undoRef.current?.(); return; }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -1101,6 +1092,12 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     setSelectedClip(null);
     setAnalysis(next);
   };
+
+  // Keep shortcut refs in sync
+  splitRef.current = splitAtCursor;
+  deleteRef.current = deleteClip;
+  undoRef.current = undo;
+  redoRef.current = redo;
 
   const toggleTake = (sectionIdx, takeNum) => {
     pushUndo();
