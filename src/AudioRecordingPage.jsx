@@ -552,25 +552,28 @@ Return ONLY the JSON object (no explanation, no markdown, no preamble):
             await supabase.storage.from("audio").upload(filePath, blob, { contentType: "audio/webm" });
             const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
 
-            // Add as a new take in the analysis
+            // Add as a new take, positioned where the old selected take was
             const next = JSON.parse(JSON.stringify(analysis));
             const sm = next.section_mappings[sectionIdx];
             if (!sm) return;
+            const oldSelected = sm.takes?.find(t => t.is_selected);
             const newTakeNum = (sm.takes?.length || 0) + 1;
             // Deselect all existing takes for this section
             sm.takes?.forEach(t => { t.is_selected = false; });
-            // Add new take -- it references a separate audio file
             sm.takes.push({
               take_number: newTakeNum,
-              start: 0,
-              end: dur,
+              // Position in main timeline = same spot as old take (for visual placement)
+              start: oldSelected?.start || 0,
+              end: (oldSelected?.start || 0) + dur,
+              // Actual audio source
+              is_rerecorded: true,
+              audio_url: urlData.publicUrl,
+              audio_duration: dur,
+              is_selected: true,
               completeness_score: 1.0,
               cleanliness_score: 1.0,
               flow_score: 1.0,
               overall_rank: 1,
-              is_selected: true,
-              is_rerecorded: true,
-              audio_url: urlData.publicUrl,
               mess_ups: [],
             });
             setAnalysis(next);
@@ -929,6 +932,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const [selectedClip, setSelectedClip] = useState(null);
   const [selectedSection, setSelectedSection] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
+  const reRecAudioCache = useRef({}); // { audio_url: HTMLAudioElement }
   // Re-record state
   const [reRecording, setReRecording] = useState(null); // { sectionIdx }
   const [reRecBlob, setReRecBlob] = useState(null);
@@ -1009,6 +1013,11 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const keepRegions = useMemo(() => {
     const regions = [];
     for (const clip of clips) {
+      if (clip.is_rerecorded) {
+        // Re-recorded clips are their own region with separate audio
+        regions.push({ start: clip.start, end: clip.end, sectionIdx: clip.sectionIdx, is_rerecorded: true, audio_url: clip.audio_url, audio_duration: clip.audio_duration });
+        continue;
+      }
       const overlaps = skipRegions.filter(r => r.start < clip.end && r.end > clip.start);
       let cursor = clip.start;
       for (const r of overlaps) {
@@ -1341,6 +1350,23 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
 
   const playPause = () => { const ws = wsRef.current; if (ws) ws.isPlaying() ? ws.pause() : ws.play(); };
 
+  // Play a re-recorded take's audio
+  const playReRecordedTake = (take) => {
+    if (!take?.audio_url) return;
+    // Stop main audio
+    const ws = wsRef.current;
+    if (ws?.isPlaying()) ws.pause();
+    // Stop any other re-rec audio
+    Object.values(reRecAudioCache.current).forEach(a => { a.pause(); a.currentTime = 0; });
+    let audio = reRecAudioCache.current[take.audio_url];
+    if (!audio) {
+      audio = new Audio(take.audio_url);
+      reRecAudioCache.current[take.audio_url] = audio;
+    }
+    audio.currentTime = 0;
+    audio.play();
+  };
+
   // Re-record functions
   const startReRecord = async (sectionIdx) => {
     setReRecording({ sectionIdx });
@@ -1394,22 +1420,37 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const playResult = () => {
     const ws = wsRef.current;
     if (!ws || keepRegions.length === 0) return;
-    if (previewPlaying) { ws.pause(); setPreviewPlaying(false); clearInterval(playIntervalRef.current); return; }
+    if (previewPlaying) {
+      ws.pause();
+      Object.values(reRecAudioCache.current).forEach(a => { a.pause(); a.currentTime = 0; });
+      setPreviewPlaying(false);
+      clearInterval(playIntervalRef.current);
+      return;
+    }
     let idx = 0;
     setPreviewPlaying(true);
     const playNext = () => {
       if (idx >= keepRegions.length) { ws.pause(); setPreviewPlaying(false); return; }
       const r = keepRegions[idx];
-      ws.seekTo(r.start / ws.getDuration());
-      ws.play();
-      playIntervalRef.current = setInterval(() => {
-        if (ws.getCurrentTime() >= r.end - 0.03) {
-          clearInterval(playIntervalRef.current);
-          ws.pause();
-          idx++;
-          setTimeout(playNext, 20);
-        }
-      }, 30);
+      if (r.is_rerecorded && r.audio_url) {
+        // Play re-recorded audio
+        let audio = reRecAudioCache.current[r.audio_url];
+        if (!audio) { audio = new Audio(r.audio_url); reRecAudioCache.current[r.audio_url] = audio; }
+        audio.currentTime = 0;
+        audio.play();
+        audio.onended = () => { idx++; setTimeout(playNext, 20); };
+      } else {
+        ws.seekTo(r.start / ws.getDuration());
+        ws.play();
+        playIntervalRef.current = setInterval(() => {
+          if (ws.getCurrentTime() >= r.end - 0.03) {
+            clearInterval(playIntervalRef.current);
+            ws.pause();
+            idx++;
+            setTimeout(playNext, 20);
+          }
+        }, 30);
+      }
     };
     playNext();
   };
@@ -1524,7 +1565,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                     </div>
                     {/* Label */}
                     {w > 40 && <div style={{ position: "absolute", left: HANDLE_W + 2, top: 3, zIndex: 3, pointerEvents: "none" }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: "#fff", textShadow: "0 1px 4px #000", lineHeight: 1 }}>{clip.sectionLabel}</div>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#fff", textShadow: "0 1px 4px #000", lineHeight: 1 }}>{clip.sectionLabel}{clip.is_rerecorded ? " (new)" : ""}</div>
                       <div style={{ fontSize: 7, color: "rgba(255,255,255,0.4)", fontFamily: "var(--fm)", marginTop: 1 }}>{formatTs(clip.start)} - {formatTs(clip.end)}</div>
                     </div>}
                   </div>
@@ -1574,7 +1615,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                     <div style={{ width: 8, height: 8, borderRadius: 2, background: COLORS[i % COLORS.length], flexShrink: 0 }} />
                     <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>{sm.section_label || sections[i]?.label || `Section ${i + 1}`}</span>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); const ws = wsRef.current; if (ws && sel) { ws.seekTo(sel.start / ws.getDuration()); ws.play(); } }}
+                  <button onClick={(e) => { e.stopPropagation(); if (sel?.is_rerecorded) { playReRecordedTake(sel); } else { const ws = wsRef.current; if (ws && sel) { ws.seekTo(sel.start / ws.getDuration()); ws.play(); } } }}
                     className="btn btn-ghost btn-xs" style={{ fontSize: 11, padding: "2px 6px" }}>▶</button>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2, marginLeft: 14 }}>
@@ -1610,7 +1651,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                     </div>
                     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                       <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{formatTs(take.start)}-{formatTs(take.end)}</span>
-                      <button onClick={() => { const ws = wsRef.current; if (ws) { ws.seekTo(take.start / ws.getDuration()); ws.play(); } }} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>▶</button>
+                      <button onClick={() => { if (take.is_rerecorded) { playReRecordedTake(take); } else { const ws = wsRef.current; if (ws) { ws.seekTo(take.start / ws.getDuration()); ws.play(); } } }} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>▶</button>
                       <button onClick={() => toggleTake(selectedSection, take.take_number)} className={`btn btn-xs ${take.is_selected ? "btn-success" : "btn-ghost"}`} style={{ fontSize: 10 }}>
                         {take.is_selected ? "✓" : "Use"}
                       </button>
