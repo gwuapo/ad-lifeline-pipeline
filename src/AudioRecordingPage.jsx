@@ -1047,6 +1047,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     const clip = clips[clipIdx];
     for (let i = 0; i < clips.length; i++) {
       if (i === clipIdx) continue;
+      // Only block against clips from DIFFERENT sections/takes
+      // Pieces of the same take (split by fillers) should not block each other
+      if (clips[i].sectionIdx === clip.sectionIdx && clips[i].take_number === clip.take_number) continue;
       if (clips[i].end <= clip.start + 0.01 && clips[i].end > minStart) minStart = clips[i].end;
       if (clips[i].start >= clip.end - 0.01 && clips[i].start < maxEnd) maxEnd = clips[i].start;
     }
@@ -1097,9 +1100,6 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
       const dt = dx / pxPerSec;
       const next = JSON.parse(JSON.stringify(analysis));
       const clip = clips[dragging.clipIdx];
-      const sm = next.section_mappings[clip.sectionIdx];
-      const take = sm.takes.find(t => t.take_number === clip.take_number && t.is_selected);
-      if (!take) return;
       const { minStart, maxEnd } = dragging.bounds;
 
       if (dragging.edge === "left") {
@@ -1111,7 +1111,23 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
             if (Math.abs((v - clips[i].start) * pxPerSec) < SNAP_PX) { v = clips[i].start; break; }
           }
         }
-        take.start = parseFloat(Math.max(minStart, Math.min(v, take.end - 0.05)).toFixed(3));
+        v = parseFloat(Math.max(minStart, Math.min(v, dragging.origEnd - 0.05)).toFixed(3));
+
+        // Restore any filler/pause that we're extending into (dragging left = reclaiming)
+        if (v < dragging.origStart) {
+          (next.filler_words || []).forEach(f => { if (f.removed !== false && f.end > v && f.start < dragging.origStart) f.removed = false; });
+          (next.pauses || []).forEach(p => { if (p.removed !== false && p.end > v && p.start < dragging.origStart) p.removed = false; });
+        }
+        // Shrink into a filler/pause region (dragging right = creating skip)
+        if (v > dragging.origStart) {
+          (next.filler_words || []).forEach(f => { if (f.removed === false && f.start >= dragging.origStart && f.end <= v) f.removed = true; });
+          (next.pauses || []).forEach(p => { if (p.removed === false && p.start >= dragging.origStart && p.end <= v) p.removed = true; });
+        }
+
+        // Also adjust the underlying take boundary if needed
+        const sm = next.section_mappings[clip.sectionIdx];
+        const take = sm.takes.find(t => t.take_number === clip.take_number && t.is_selected);
+        if (take && v < take.start) take.start = v;
       } else {
         let v = dragging.origEnd + dt;
         if (snap) {
@@ -1121,7 +1137,22 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
             if (Math.abs((v - clips[i].end) * pxPerSec) < SNAP_PX) { v = clips[i].end; break; }
           }
         }
-        take.end = parseFloat(Math.min(maxEnd, Math.max(v, take.start + 0.05)).toFixed(3));
+        v = parseFloat(Math.min(maxEnd, Math.max(v, dragging.origStart + 0.05)).toFixed(3));
+
+        // Restore fillers/pauses when extending right
+        if (v > dragging.origEnd) {
+          (next.filler_words || []).forEach(f => { if (f.removed !== false && f.start < v && f.end > dragging.origEnd) f.removed = false; });
+          (next.pauses || []).forEach(p => { if (p.removed !== false && p.start < v && p.end > dragging.origEnd) p.removed = false; });
+        }
+        // Mark fillers/pauses as removed when shrinking
+        if (v < dragging.origEnd) {
+          (next.filler_words || []).forEach(f => { if (f.removed === false && f.start >= v && f.end <= dragging.origEnd) f.removed = true; });
+          (next.pauses || []).forEach(p => { if (p.removed === false && p.start >= v && p.end <= dragging.origEnd) p.removed = true; });
+        }
+
+        const sm = next.section_mappings[clip.sectionIdx];
+        const take = sm.takes.find(t => t.take_number === clip.take_number && t.is_selected);
+        if (take && v > take.end) take.end = v;
       }
       setAnalysis(next);
     };
@@ -1490,56 +1521,41 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
         }
       }
 
-      // Precision silence trimming using RMS energy windows
-      setProgress("Precision-trimming silence...");
+      // Light silence trim: only remove pure digital silence from segment edges
+      // (NOT breaths or quiet speech -- the AI handles those via filler detection)
       const sampleRate = audioBuffer.sampleRate;
       const channels = audioBuffer.numberOfChannels;
       const rawAudio = audioBuffer.getChannelData(0);
-
-      // RMS energy over a window (returns energy level 0-1)
-      const rmsAt = (center, windowMs) => {
-        const half = Math.floor((windowMs / 1000) * sampleRate / 2);
-        let sum = 0, count = 0;
-        for (let i = Math.max(0, center - half); i < Math.min(rawAudio.length, center + half); i++) {
-          sum += rawAudio[i] * rawAudio[i];
-          count++;
-        }
-        return count > 0 ? Math.sqrt(sum / count) : 0;
-      };
-
-      const RMS_THRESHOLD = 0.008; // very conservative -- only trim true silence
-      const WINDOW_MS = 20; // 20ms RMS window for energy detection
-      const STEP = Math.floor(sampleRate * 0.005); // check every 5ms
-      const SAFETY_MS = 40; // 40ms safety buffer so we never clip into speech
+      const DIGITAL_SILENCE = 0.002; // near-zero amplitude = true digital silence only
+      const SAFETY_SAMPLES = Math.floor(sampleRate * 0.06); // 60ms safety margin
 
       for (let i = 0; i < cutSegments.length; i++) {
         const seg = cutSegments[i];
         const origStart = Math.floor(seg.start * sampleRate);
         const origEnd = Math.floor(seg.end * sampleRate);
-        const safetyBuf = Math.floor((SAFETY_MS / 1000) * sampleRate);
-
-        // Find first voice from the left
-        let speechStart = origStart;
-        for (let s = origStart; s < origEnd - safetyBuf; s += STEP) {
-          if (rmsAt(s, WINDOW_MS) > RMS_THRESHOLD) { speechStart = s; break; }
+        // Only trim if there's actual digital silence at the edge (>100ms of it)
+        const minSilence = Math.floor(sampleRate * 0.1);
+        let silentStart = 0;
+        for (let s = origStart; s < Math.min(origStart + Math.floor(sampleRate * 0.5), origEnd); s++) {
+          if (Math.abs(rawAudio[s] || 0) > DIGITAL_SILENCE) break;
+          silentStart++;
         }
-        // Back up by safety buffer
-        speechStart = Math.max(origStart, speechStart - safetyBuf);
-
-        // Find last voice from the right
-        let speechEnd = origEnd;
-        for (let s = origEnd; s > speechStart + safetyBuf; s -= STEP) {
-          if (rmsAt(s, WINDOW_MS) > RMS_THRESHOLD) { speechEnd = s; break; }
+        if (silentStart > minSilence) {
+          seg.start = (origStart + silentStart - SAFETY_SAMPLES) / sampleRate;
+          seg.start = Math.max(origStart / sampleRate, seg.start);
         }
-        // Extend by safety buffer
-        speechEnd = Math.min(origEnd, speechEnd + safetyBuf);
-
-        seg.start = speechStart / sampleRate;
-        seg.end = speechEnd / sampleRate;
+        let silentEnd = 0;
+        for (let s = origEnd - 1; s > Math.max(origEnd - Math.floor(sampleRate * 0.5), origStart); s--) {
+          if (Math.abs(rawAudio[s] || 0) > DIGITAL_SILENCE) break;
+          silentEnd++;
+        }
+        if (silentEnd > minSilence) {
+          seg.end = (origEnd - silentEnd + SAFETY_SAMPLES) / sampleRate;
+          seg.end = Math.min(origEnd / sampleRate, seg.end);
+        }
       }
 
-      // Remove any segments that became too short
-      const trimmedSegments = cutSegments.filter(s => s.end - s.start > 0.03);
+      const trimmedSegments = cutSegments.filter(s => s.end - s.start > 0.02);
       totalDuration = trimmedSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
 
       const outputBuffer = audioCtx.createBuffer(channels, Math.ceil(totalDuration * sampleRate), sampleRate);
