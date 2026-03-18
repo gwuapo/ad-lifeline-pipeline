@@ -628,6 +628,29 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
   const streamRef = useRef(null);
   const scriptRef = useRef(null);
 
+  const fileInputRef = useRef(null);
+
+  const handleImportAudio = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    // Get duration from audio element
+    const audio = new Audio(url);
+    audio.addEventListener("loadedmetadata", async () => {
+      const dur = audio.duration || 0;
+      setElapsed(Math.floor(dur));
+      setAudioUrl(url);
+      setRecording({ blob: file, url, duration: dur });
+      if (onSaveRecording) {
+        setSaving(true);
+        try { await onSaveRecording(file, dur); } catch (err) { console.error("Auto-save imported audio:", err); }
+        setSaving(false);
+      }
+    });
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 } });
@@ -719,18 +742,22 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-          {!isRecording ? (
+          {!isRecording ? (<>
             <button onClick={startRecording} className="btn btn-danger" style={{ padding: "16px 40px", fontSize: 16, borderRadius: "var(--radius-full)" }}>
               ● Record
             </button>
-          ) : (
+            <button onClick={() => fileInputRef.current?.click()} className="btn btn-ghost" style={{ padding: "16px 24px", fontSize: 14, borderRadius: "var(--radius-full)" }}>
+              Import Audio
+            </button>
+            <input ref={fileInputRef} type="file" accept="audio/mpeg,audio/wav,audio/mp3,audio/x-wav,.mp3,.wav" onChange={handleImportAudio} style={{ display: "none" }} />
+          </>) : (
             <button onClick={stopRecording} className="btn btn-ghost" style={{ padding: "16px 40px", fontSize: 16, borderRadius: "var(--radius-full)", border: "2px solid var(--red)", color: "var(--red)" }}>
               ■ Stop Recording
             </button>
           )}
         </div>
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 14, maxWidth: 420, margin: "14px auto 0" }}>
-          Just hit record and read through the full script. Redo any section as many times as you want -- the AI will find the best take for each part and clean everything up.
+          Record live or import an MP3/WAV file. Redo any section as many times as you want -- the AI will find the best take for each part and clean everything up.
         </p>
       </div>
 
