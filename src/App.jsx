@@ -638,40 +638,35 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       )}
 
       {/* Header */}
-      <div style={{ marginTop: -4, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
           {editingName ? (
             <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1, marginRight: 8 }}>
               <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
-                className="input" autoFocus style={{ fontSize: 17, fontWeight: 700, padding: "4px 8px", flex: 1 }} />
+                className="input" autoFocus style={{ fontSize: 18, fontWeight: 600, padding: "4px 8px", flex: 1 }} />
               <button onClick={saveName} className="btn btn-primary btn-xs">Save</button>
               <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-xs">Cancel</button>
             </div>
           ) : (
-            <div style={{ fontSize: 19, fontWeight: 700, color: "var(--text-primary)", cursor: role === "founder" ? "pointer" : "default", display: "flex", alignItems: "center", gap: 6 }}
+            <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", cursor: role === "founder" ? "pointer" : "default", lineHeight: 1.3, letterSpacing: "-0.01em" }}
               onClick={() => { if (role === "founder") setEditingName(true); }}
               title={role === "founder" ? "Click to rename" : ""}>
               {ad.name}
-              {role === "founder" && <span style={{ fontSize: 12, color: "var(--text-muted)", opacity: 0.5 }}>✎</span>}
-            </div>
+            </h1>
           )}
           {role === "founder" && !editingName && (
-            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 16, padding: "4px 6px" }} title="Delete ad">🗑️</button>
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)", padding: "4px 6px" }} title="Delete ad">🗑</button>
           )}
         </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="badge" style={{ background: stg.color + "18", color: stg.color }}>{stg.label}</span>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="badge" style={{ background: stg.color + "10", color: stg.color, border: `1px solid ${stg.color}22` }}>{stg.label}</span>
           <span className="badge">{ad.type}</span>
-          {ad.editor && <span className="badge">⚙ {ad.editor}</span>}
-          {ad.stage === "live" && la && <span className="badge" style={{ background: cs.bg, color: cs.c, fontWeight: 700 }}>{cs.l} {CUR} {la.cpa}</span>}
-          {ad.iterations > 0 && <span className="badge badge-yellow">Iter {ad.iterations}/{ad.maxIter}</span>}
-          {over && <span className="badge badge-red">OVERDUE</span>}
+          {ad.editor && <span className="badge">@ {ad.editor}</span>}
           {ad.deadline && !over && <span className="badge">Due {fd(ad.deadline)}</span>}
-          {winner && <span className="badge badge-green">WINNER ({gdays}d)</span>}
-          {ad.parentId && <span className="badge badge-green">variation</span>}
-          {ad.briefApproved && <span className="badge badge-green">Brief</span>}
-          {ad.draftSubmitted && <span className="badge badge-accent">Draft</span>}
-          {ad.finalApproved && <span className="badge badge-green">Final</span>}
+          {over && <span className="badge badge-red">Overdue</span>}
+          {ad.stage === "live" && la && <span className="badge" style={{ background: cs.bg, color: cs.c }}>{cs.l} {CUR} {la.cpa}</span>}
+          {ad.iterations > 0 && <span className="badge badge-yellow">Iter {ad.iterations}/{ad.maxIter}</span>}
+          {winner && <span className="badge badge-green">Winner ({gdays}d)</span>}
         </div>
       </div>
 
@@ -680,11 +675,11 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 
       {/* Stage movement -- founder only */}
       {ad.stage !== "killed" && role === "founder" && (
-        <div style={{ display: "flex", gap: 4, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginRight: 4 }}>Move to:</span>
+        <div style={{ display: "flex", gap: 4, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginRight: 2 }}>Move to:</span>
           {SO.filter(s => s !== ad.stage).map(s => {
             const st = STAGES.find(x => x.id === s);
-            return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color }}>{st.icon} {st.label}</button>;
+            return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "30" }}>{st.icon} {st.label}</button>;
           })}
           {ad.iterations >= ad.maxIter && ad.stage === "live" && CL(la?.cpa, th) === "red" && (
             <button onClick={doKill} className="btn btn-danger btn-xs">Kill Ad</button>
@@ -694,13 +689,13 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 
       {/* Alerts */}
       {ad.stage === "live" && cl === "green" && (
-        <div className="card-flat" style={{ background: "var(--green-bg)", border: "1px solid var(--green-border)", marginBottom: 10, fontSize: 12.5, color: "var(--green-light)" }}>
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--green-bg)", borderLeft: "3px solid var(--green)", marginBottom: 10, fontSize: 12.5, color: "var(--green)" }}>
           {winner ? "Confirmed winner (5+ days). Scale aggressively via variations." : `${gdays}/5 green days to confirm winner.`}
         </div>
       )}
       {ad.stage === "live" && cl === "red" && role === "founder" && (
-        <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>
-          <div>Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached — kill or pivot." : "Run analysis then iterate."}</div>
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 10, fontSize: 12.5, color: "var(--red)" }}>
+          <div>Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached -- kill or pivot." : "Run analysis then iterate."}</div>
           {ad.iterations < ad.maxIter && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
             <button onClick={analyze} disabled={busy} className="btn btn-ghost btn-sm">{busy ? "Analyzing..." : "Run AI Analysis"}</button>
             <button onClick={doIter} className="btn btn-danger btn-sm">Iterate</button>
@@ -708,12 +703,12 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       )}
       {ad.stage === "killed" && (
-        <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>
-          Killed — ad archived after {ad.iterations} iterations. Learnings preserved.
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 10, fontSize: 12.5, color: "var(--red)" }}>
+          Killed -- ad archived after {ad.iterations} iterations. Learnings preserved.
         </div>
       )}
       {ad.revisionRequests.filter(r => !r.resolved).length > 0 && (
-        <div className="card-flat" style={{ background: "var(--yellow-bg)", border: "1px solid var(--yellow-border)", marginBottom: 10, fontSize: 12.5, color: "var(--yellow-light)" }}>
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--yellow-bg)", borderLeft: "3px solid var(--yellow)", marginBottom: 10, fontSize: 12.5, color: "var(--yellow)" }}>
           {ad.revisionRequests.filter(r => !r.resolved).length} unresolved revision request(s)
         </div>
       )}
@@ -726,7 +721,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
         <div className="animate-fade">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          {/* Details section */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
             <div>
               <label className="label" style={{ marginTop: 0 }}>Editor</label>
               <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
@@ -739,9 +735,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             </div>
           </div>
 
-          {!isEditor && <div style={{ marginBottom: 14 }}>
-            <label className="label">Ad Set IDs <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-tertiary)" }}>(auto-matched by name, or set manually)</span></label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {/* Ad Set IDs */}
+          {!isEditor && <div style={{ marginBottom: 20 }}>
+            <label className="label">Ad Set IDs</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {CHANNELS.map(ch => {
                 const hasId = eChIds[ch.id]?.trim();
                 const chm = (ad.channelMetrics || {})[ch.id] || [];
@@ -750,16 +747,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
                 return (
                   <div key={ch.id}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
-                      <span style={{ fontSize: 10.5, color: ch.color, fontWeight: 600 }}>{ch.label}</span>
-                      {status === "synced" && <span style={{ fontSize: 9, color: "var(--green)" }}>● synced</span>}
-                      {status === "auto_synced" && <span style={{ fontSize: 9, color: "var(--green)" }}>● auto-matched</span>}
-                      {status === "auto" && <span style={{ fontSize: 9, color: "var(--green)" }}>● auto-matched</span>}
-                      {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>● no data yet</span>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: ch.color, fontWeight: 500 }}>{ch.label}</span>
+                      {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 9, color: "var(--green)" }}>synced</span>}
+                      {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>pending</span>}
                     </div>
                     <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched by name" />
-                    {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      Matched to: <span style={{ color: "var(--accent-light)", fontWeight: 600 }}>{matchedName}</span>
+                    {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
+                      Matched: <span style={{ color: "var(--accent-light)", fontWeight: 500 }}>{matchedName}</span>
                     </div>}
                   </div>
                 );
@@ -767,29 +762,35 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             </div>
           </div>}
 
-          <label className="label">Brief</label>
-          <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" />
-          <label className="label">Notes</label>
-          <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" />
+          {/* Brief & Notes */}
+          <div style={{ marginBottom: 20 }}>
+            <label className="label">Brief</label>
+            <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" />
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <label className="label">Notes</label>
+            <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" />
+          </div>
 
-          {!isEditor && <>
-            <label className="label">TikTok Video URL <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-muted)" }}>(for comment scraping)</span></label>
+          {!isEditor && <div style={{ marginBottom: 20 }}>
+            <label className="label">TikTok Video URL</label>
             <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
-          </>}
+          </div>}
 
+          {/* Approval buttons */}
           {!isEditor && (
-            <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
               {[["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
                 <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
                   className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
-                  style={ad[k] ? { background: col + "15", borderColor: col + "40", color: col } : {}}>
+                  style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
                   {ad[k] ? "✓ " : ""}{label}
                 </button>
               ))}
             </div>
           )}
 
-          <button onClick={save} className="btn btn-primary btn-sm" style={{ marginTop: 14 }}>Save Changes</button>
+          <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
 
           {ad.iterHistory.length > 0 && <div style={{ marginTop: 18 }}>
             <div className="section-title">Iteration History</div>
@@ -1221,14 +1222,14 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
   return (
     <div className="pipeline-card" onClick={() => onClick(ad)}>
       {ad.stage === "live" && cl !== "none" && <div className="status-bar" style={{ background: cs.c }} />}
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 5 }}>{ad.name}</div>
-      <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
-        <span className="badge badge-accent" style={{ fontSize: 9.5 }}>{ad.type}</span>
-        {ad.editor && <span className="badge" style={{ fontSize: 9.5 }}>⚙ {ad.editor}</span>}
-        {ad.iterations > 0 && <span className="badge badge-yellow" style={{ fontSize: 9.5 }}>iter {ad.iterations}</span>}
-        {ov && <span className="badge badge-red" style={{ fontSize: 9.5, fontWeight: 700 }}>OVERDUE</span>}
-        {ad.parentId && <span className="badge badge-green" style={{ fontSize: 9.5 }}>var</span>}
-        {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 9.5 }}>📝 {unresolvedRevs}</span>}
+      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 4, lineHeight: 1.3 }}>{ad.name}</div>
+      <div style={{ display: "flex", gap: 3, marginBottom: 6, flexWrap: "wrap" }}>
+        <span className="badge" style={{ fontSize: 10 }}>{ad.type}</span>
+        {ad.editor && <span className="badge" style={{ fontSize: 10 }}>@ {ad.editor}</span>}
+        {ad.iterations > 0 && <span className="badge badge-yellow" style={{ fontSize: 10 }}>iter {ad.iterations}</span>}
+        {ov && <span className="badge badge-red" style={{ fontSize: 10 }}>Overdue</span>}
+        {ad.parentId && <span className="badge badge-green" style={{ fontSize: 10 }}>var</span>}
+        {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 10 }}>{unresolvedRevs} rev</span>}
       </div>
       {ad.notes && <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 6, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{ad.notes}</div>}
 
@@ -1244,9 +1245,9 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
         <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
       </div>}
 
-      {noDataYet && <div style={{ fontSize: 10.5, color: "var(--yellow)", background: "var(--yellow-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Awaiting sync</div>}
-      {ad.stage === "live" && cl === "green" && <div style={{ fontSize: 10.5, color: "var(--green-light)", background: "var(--green-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Scale</div>}
-      {ad.stage === "live" && cl === "red" && <div style={{ fontSize: 10.5, color: "var(--red-light)", background: "var(--red-bg)", padding: "3px 8px", borderRadius: "var(--radius-sm)", marginBottom: 5 }}>Iter {ad.iterations}/{ad.maxIter}</div>}
+      {noDataYet && <div style={{ fontSize: 10, color: "var(--yellow)", marginBottom: 5 }}>Awaiting sync</div>}
+      {ad.stage === "live" && cl === "green" && <div style={{ fontSize: 10, color: "var(--green)", marginBottom: 5 }}>Scale</div>}
+      {ad.stage === "live" && cl === "red" && <div style={{ fontSize: 10, color: "var(--red)", marginBottom: 5 }}>Iter {ad.iterations}/{ad.maxIter}</div>}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", gap: 3 }}>
@@ -2140,7 +2141,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
               <div>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, marginBottom: 4 }}>Pipeline</h2>
+                <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, marginBottom: 3, letterSpacing: "-0.01em" }}>Pipeline</h2>
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
                   {visibleAds.length} ads · {CUR} {spend.toLocaleString()} total spend
                   {killed > 0 && <span> · {killed} killed</span>}
@@ -2201,12 +2202,12 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                     onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
                     onDragLeave={() => setDragOver(null)}
                     onDrop={e => { e.preventDefault(); if (did.current != null) tryMove(did.current, stage.id); did.current = null; setDragOver(null); }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--border-light)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px 8px", borderBottom: "1px solid var(--border-light)" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: stage.color }} />
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{stage.label}</span>
+                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: stage.color }} />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{stage.label}</span>
                       </div>
-                      <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{stageAds.length}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{stageAds.length}</span>
                     </div>
                     {stageAds.length === 0 && <div className="empty-state">Drop ads here</div>}
                     <div className="stagger">

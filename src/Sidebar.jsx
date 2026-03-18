@@ -21,11 +21,11 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
   return (
     <div className="sidebar" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Brand */}
-      <div style={{ padding: "4px 10px 14px", flexShrink: 0 }}>
+      <div style={{ padding: "2px 8px 16px", flexShrink: 0 }}>
         <img
           src={isDark ? "/nexus-logo-dark.png" : "/nexus-logo-light.png"}
           alt="Nexus Holdings"
-          style={{ height: 28, objectFit: "contain" }}
+          style={{ height: 24, objectFit: "contain" }}
         />
       </div>
 
@@ -45,8 +45,8 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         {/* Quick stats */}
         {stats && (
           <div style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5,
-            padding: "0 4px", marginBottom: 12,
+            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4,
+            padding: "0 2px", marginBottom: 14,
           }}>
             {[
               { label: "Live", value: stats.live, color: "var(--green)" },
@@ -55,12 +55,12 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
               { label: "Learnings", value: stats.learns, color: "var(--accent-light)" },
             ].map(s => (
               <div key={s.label} style={{
-                padding: "7px 8px", borderRadius: "var(--radius-sm)",
+                padding: "6px 8px", borderRadius: "var(--radius-sm)",
                 background: "var(--bg-elevated)", border: "1px solid var(--border-light)",
                 textAlign: "center",
               }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: s.color, fontFamily: "var(--fm)" }}>{s.value}</div>
-                <div style={{ fontSize: 8.5, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{s.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: s.color, fontFamily: "var(--fm)" }}>{s.value}</div>
+                <div style={{ fontSize: 9, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.3px" }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -69,7 +69,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         <div className="nav-section-label">Main</div>
 
         {/* Nav items */}
-        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {NAV_ITEMS.filter(item => {
             if (role === "editor") {
               return item.id === "pipeline" || item.id === "earnings" || item.id === "audio";
@@ -90,9 +90,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
           ))}
         </nav>
 
-        {/* Spacer */}
-        <div style={{ height: 12 }} />
-
+        <div style={{ height: 8 }} />
         <div className="nav-section-label">Support</div>
 
         {BOTTOM_ITEMS.filter(item => {
@@ -112,23 +110,22 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
 
       {/* User (pinned to bottom) */}
       <div style={{
-        flexShrink: 0, marginTop: 10, padding: "10px 10px",
+        flexShrink: 0, marginTop: 8, padding: "8px 10px",
         borderRadius: "var(--radius-md)",
-        background: "var(--bg-elevated)",
         border: "1px solid var(--border-light)",
-        display: "flex", alignItems: "center", gap: 9,
+        display: "flex", alignItems: "center", gap: 8,
       }}>
         <div style={{
-          width: 30, height: 30, borderRadius: "var(--radius-full)",
-          background: "var(--accent-bg)", border: "1.5px solid var(--accent-border)",
+          width: 28, height: 28, borderRadius: "var(--radius-full)",
+          background: "var(--accent-bg)", border: "1px solid var(--accent-border)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 12, fontWeight: 700, color: "var(--accent-light)",
+          fontSize: 11, fontWeight: 600, color: "var(--accent-light)",
         }}>
           {(userName || "U")[0].toUpperCase()}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 12, fontWeight: 600, color: "var(--text-primary)",
+            fontSize: 12, fontWeight: 500, color: "var(--text-primary)",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>{userName || "User"}</div>
           <div style={{ fontSize: 10, color: "var(--text-tertiary)", textTransform: "capitalize" }}>{role}</div>
@@ -136,7 +133,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         <button
           onClick={onSignOut}
           className="btn btn-ghost btn-xs"
-          style={{ padding: "4px 8px", fontSize: 10 }}
+          style={{ padding: "3px 7px", fontSize: 10 }}
         >
           Sign Out
         </button>
