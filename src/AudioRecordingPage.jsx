@@ -761,6 +761,7 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
 
 function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis, onNext }) {
   const timelineRef = useRef(null);
+  const trackRef = useRef(null); // inner content div for accurate position math
   const waveCanvasRef = useRef(null);
   const wsRef = useRef(null);
   const hiddenWaveRef = useRef(null);
@@ -906,16 +907,27 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Zoom with Ctrl+scroll
+  // Zoom with Ctrl+scroll -- zooms toward cursor position
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
     const handler = (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
+        const track = trackRef.current;
+        const trackRect = track ? track.getBoundingClientRect() : el.getBoundingClientRect();
+        const cursorX = e.clientX - trackRect.left; // px from left edge of track content
+        const cursorTime = (cursorX + el.scrollLeft) / pxPerSec; // time at cursor
+
         setZoom(prev => {
-          const next = prev * (e.deltaY < 0 ? 1.15 : 0.87);
-          return Math.max(0.5, Math.min(6, next));
+          const next = Math.max(0.5, Math.min(6, prev * (e.deltaY < 0 ? 1.15 : 0.87)));
+          // After zoom, scroll so the same time stays under cursor
+          requestAnimationFrame(() => {
+            const newPxPerSec = BASE_PX_PER_SEC * next;
+            const newCursorPx = cursorTime * newPxPerSec;
+            el.scrollLeft = newCursorPx - cursorX;
+          });
+          return next;
         });
       }
     };
@@ -951,11 +963,21 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     setSelectedSection(clip.sectionIdx);
   };
 
+  // Convert mouse event to time position on the timeline
+  const mouseToTime = (e) => {
+    const track = trackRef.current;
+    if (!track) return 0;
+    const rect = track.getBoundingClientRect();
+    const scrollEl = timelineRef.current;
+    const x = e.clientX - rect.left;
+    return Math.max(0, Math.min(x / pxPerSec, duration));
+  };
+
   // Playhead drag
   const handlePlayheadDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragging({ type: "playhead", startX: e.clientX, origTime: currentTime });
+    setDragging({ type: "playhead" });
   };
 
   // Unified drag handler
@@ -963,12 +985,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     if (!dragging) return;
     const onMove = (e) => {
       if (dragging.type === "playhead") {
-        const dx = e.clientX - dragging.startX;
-        const dt = dx / pxPerSec;
-        let t = dragging.origTime + dt;
-        t = Math.max(0, Math.min(t, duration));
+        const t = mouseToTime(e);
         const ws = wsRef.current;
-        if (ws) ws.seekTo(t / duration);
+        if (ws && duration > 0) ws.seekTo(t / duration);
         return;
       }
       // Trim drag
@@ -1075,11 +1094,9 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   // Click on timeline to seek (only if not clicking a clip or handle)
   const seekOnClick = (e) => {
     const ws = wsRef.current;
-    if (!ws || !timelineRef.current || dragging) return;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left + timelineRef.current.scrollLeft;
-    const t = x / pxPerSec;
-    if (t >= 0 && t <= duration) ws.seekTo(t / duration);
+    if (!ws || dragging) return;
+    const t = mouseToTime(e);
+    if (t >= 0 && t <= duration && duration > 0) ws.seekTo(t / duration);
   };
 
   const totalWidth = Math.max(duration * pxPerSec, 200);
@@ -1127,7 +1144,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
       <div className="card" style={{ marginBottom: 12, padding: "8px 0", background: "#0a0a0a" }}>
         <div ref={timelineRef} onClick={seekOnClick}
           style={{ overflowX: "auto", position: "relative", cursor: "crosshair", padding: "0 12px" }}>
-          <div style={{ width: totalWidth, height: RULER_H + CLIP_H + 8, position: "relative", minWidth: "100%" }}>
+          <div ref={trackRef} style={{ width: totalWidth, height: RULER_H + CLIP_H + 8, position: "relative", minWidth: "100%" }}>
 
             {/* Ruler */}
             <div style={{ height: RULER_H, position: "relative", borderBottom: "1px solid #222" }}>
@@ -1189,10 +1206,10 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
               })}
 
               {/* Playhead (draggable) */}
-              <div onMouseDown={handlePlayheadDown}
+              <div onMouseDown={handlePlayheadDown} onClick={(e) => e.stopPropagation()}
                 style={{
-                  position: "absolute", left: currentTime * pxPerSec - 6, top: -RULER_H - 4,
-                  width: 12, height: RULER_H + CLIP_H + 8,
+                  position: "absolute", left: currentTime * pxPerSec - 8, top: -RULER_H - 4,
+                  width: 16, height: RULER_H + CLIP_H + 8,
                   cursor: "ew-resize", zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center",
                 }}>
                 {/* Head */}
@@ -1303,14 +1320,16 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
     setProgress("Building cut list...");
 
     try {
-      // Build ordered segments from selected takes
+      // Build ordered segments from ALL selected takes, sorted by start time (left to right)
       const selectedSegments = [];
       for (const sm of analysis.section_mappings) {
-        const selectedTake = sm.takes?.find(t => t.is_selected);
-        if (selectedTake) {
-          selectedSegments.push({ start: selectedTake.start, end: selectedTake.end, sectionId: sm.section_id });
+        for (const take of (sm.takes || [])) {
+          if (take.is_selected) {
+            selectedSegments.push({ start: take.start, end: take.end, sectionId: sm.section_id });
+          }
         }
       }
+      selectedSegments.sort((a, b) => a.start - b.start);
 
       if (selectedSegments.length === 0) throw new Error("No takes selected");
 
