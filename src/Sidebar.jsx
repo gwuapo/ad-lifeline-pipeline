@@ -16,12 +16,12 @@ const BOTTOM_ITEMS = [
 ];
 
 export default function Sidebar({ page, setPage, role, userName, onSignOut, stats, workspaces, activeWorkspaceId, onSelectWorkspace, onCreateWorkspace }) {
-  const { isDark, toggle } = useTheme();
+  const { isDark } = useTheme();
 
   return (
-    <div className="sidebar">
+    <div className="sidebar" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Brand */}
-      <div style={{ padding: "4px 10px 14px" }}>
+      <div style={{ padding: "4px 10px 14px", flexShrink: 0 }}>
         <img
           src={isDark ? "/nexus-logo-dark.png" : "/nexus-logo-light.png"}
           alt="Nexus Holdings"
@@ -40,41 +40,63 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         />
       )}
 
-      {/* Quick stats */}
-      {stats && (
-        <div style={{
-          display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5,
-          padding: "0 4px", marginBottom: 12,
-        }}>
-          {[
-            { label: "Live", value: stats.live, color: "var(--green)" },
-            { label: "Winners", value: stats.win, color: "var(--green-light)" },
-            { label: "Losing", value: stats.lose, color: "var(--red)" },
-            { label: "Learnings", value: stats.learns, color: "var(--accent-light)" },
-          ].map(s => (
-            <div key={s.label} style={{
-              padding: "7px 8px", borderRadius: "var(--radius-sm)",
-              background: "var(--bg-elevated)", border: "1px solid var(--border-light)",
-              textAlign: "center",
-            }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: s.color, fontFamily: "var(--fm)" }}>{s.value}</div>
-              <div style={{ fontSize: 8.5, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{s.label}</div>
+      {/* Scrollable middle section */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
+        {/* Quick stats */}
+        {stats && (
+          <div style={{
+            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5,
+            padding: "0 4px", marginBottom: 12,
+          }}>
+            {[
+              { label: "Live", value: stats.live, color: "var(--green)" },
+              { label: "Winners", value: stats.win, color: "var(--green-light)" },
+              { label: "Losing", value: stats.lose, color: "var(--red)" },
+              { label: "Learnings", value: stats.learns, color: "var(--accent-light)" },
+            ].map(s => (
+              <div key={s.label} style={{
+                padding: "7px 8px", borderRadius: "var(--radius-sm)",
+                background: "var(--bg-elevated)", border: "1px solid var(--border-light)",
+                textAlign: "center",
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: s.color, fontFamily: "var(--fm)" }}>{s.value}</div>
+                <div style={{ fontSize: 8.5, color: "var(--text-tertiary)", textTransform: "uppercase" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="nav-section-label">Main</div>
+
+        {/* Nav items */}
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {NAV_ITEMS.filter(item => {
+            if (role === "editor") {
+              return item.id === "pipeline" || item.id === "earnings" || item.id === "audio";
+            }
+            if (role === "strategist") {
+              return item.id !== "editors" && item.id !== "splittests";
+            }
+            return true;
+          }).map(item => (
+            <div
+              key={item.id}
+              className={`nav-item ${page === item.id ? "active" : ""}`}
+              onClick={() => setPage(item.id)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
             </div>
           ))}
-        </div>
-      )}
+        </nav>
 
-      <div className="nav-section-label">Main</div>
+        {/* Spacer */}
+        <div style={{ height: 12 }} />
 
-      {/* Nav items */}
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {NAV_ITEMS.filter(item => {
-          if (role === "editor") {
-            return item.id === "pipeline" || item.id === "earnings" || item.id === "audio";
-          }
-          if (role === "strategist") {
-            return item.id !== "editors" && item.id !== "splittests";
-          }
+        <div className="nav-section-label">Support</div>
+
+        {BOTTOM_ITEMS.filter(item => {
+          if (item.id === "settings" && (role === "editor" || role === "strategist")) return false;
           return true;
         }).map(item => (
           <div
@@ -86,43 +108,11 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
             <span>{item.label}</span>
           </div>
         ))}
-      </nav>
-
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
-      {/* Theme toggle */}
-      <div style={{ padding: "0 2px", marginBottom: 4 }}>
-        <button className="theme-toggle" onClick={toggle}>
-          <span style={{ fontSize: 15 }}>{isDark ? "🌙" : "☀️"}</span>
-          <span style={{ fontSize: 12.5, fontWeight: 500 }}>{isDark ? "Dark Mode" : "Light Mode"}</span>
-          <div style={{ marginLeft: "auto" }}>
-            <div className={`toggle-track ${isDark ? "on" : ""}`}>
-              <div className="toggle-thumb" />
-            </div>
-          </div>
-        </button>
       </div>
 
-      <div className="nav-section-label">Support</div>
-
-      {BOTTOM_ITEMS.filter(item => {
-        if (item.id === "settings" && (role === "editor" || role === "strategist")) return false;
-        return true;
-      }).map(item => (
-        <div
-          key={item.id}
-          className={`nav-item ${page === item.id ? "active" : ""}`}
-          onClick={() => setPage(item.id)}
-        >
-          <span className="nav-icon">{item.icon}</span>
-          <span>{item.label}</span>
-        </div>
-      ))}
-
-      {/* User */}
+      {/* User (pinned to bottom) */}
       <div style={{
-        marginTop: 10, padding: "10px 10px",
+        flexShrink: 0, marginTop: 10, padding: "10px 10px",
         borderRadius: "var(--radius-md)",
         background: "var(--bg-elevated)",
         border: "1px solid var(--border-light)",
