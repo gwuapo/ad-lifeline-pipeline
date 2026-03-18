@@ -126,9 +126,26 @@ export default function AudioRecordingPage({ activeWorkspaceId, session }) {
 // PROJECT EDITOR (all 5 steps)
 // ════════════════════════════════════════════════
 
+const LANGUAGES = [
+  { code: "", label: "Auto-detect" },
+  { code: "ar", label: "Arabic" },
+  { code: "en", label: "English" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "pt", label: "Portuguese" },
+  { code: "hi", label: "Hindi" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "zh", label: "Chinese" },
+  { code: "tr", label: "Turkish" },
+  { code: "ru", label: "Russian" },
+];
+
 function ProjectEditor({ project, onBack, onUpdate, session }) {
   const [sections, setSections] = useState(project.script_sections || []);
   const [projectName, setProjectName] = useState(project.name);
+  const [language, setLanguage] = useState("");
   const [recording, setRecording] = useState(null); // { blob, url, duration }
   const [transcript, setTranscript] = useState(null);
   const [analysis, setAnalysis] = useState(null);
@@ -227,6 +244,9 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
         <input value={projectName} onChange={e => setProjectName(e.target.value)}
           onBlur={() => saveProject({ name: projectName })}
           style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", background: "none", border: "none", outline: "none", flex: 1, padding: 0 }} />
+        <select value={language} onChange={e => setLanguage(e.target.value)} className="input" style={{ width: "auto", fontSize: 11, padding: "4px 8px", cursor: "pointer" }}>
+          {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+        </select>
       </div>
 
       {/* Step indicator */}
@@ -309,7 +329,7 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
               whisperFd.append("model", "whisper-1");
               whisperFd.append("response_format", "verbose_json");
               whisperFd.append("timestamp_granularities[]", "word");
-              whisperFd.append("language", "ar");
+              if (language) whisperFd.append("language", language);
 
               const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
                 method: "POST",
@@ -331,7 +351,8 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
               const sectionsText = sections.map((s, i) => `Section ${i + 1} (${s.label}): "${s.script_text}"`).join("\n");
               const wordsJson = JSON.stringify(whisperData.words || []);
 
-              const claudePrompt = `You are an audio editing assistant analyzing a VSL voiceover recording in Saudi Arabic. The user recorded one large continuous audio file containing multiple sections of a script, with multiple takes per section, including mess-ups, false starts, filler words, and off-script chatter between takes.
+              const langLabel = LANGUAGES.find(l => l.code === language)?.label || "the detected language";
+              const claudePrompt = `You are an audio editing assistant analyzing a VSL voiceover recording in ${language === "ar" ? "Saudi Arabic" : langLabel}. The user recorded one large continuous audio file containing multiple sections of a script, with multiple takes per section, including mess-ups, false starts, filler words, and off-script chatter between takes.
 
 Here is the original script broken into sections:
 ${sectionsText}
@@ -549,7 +570,7 @@ function ScriptStep({ sections, setSections, onNext }) {
           </p>
           <textarea value={rawScript} onChange={e => setRawScript(e.target.value)}
             className="input" rows={14} placeholder={"Line 1: Hook...\nLine 2: Lead...\nLine 3: Body...\n..."} 
-            style={{ fontFamily: "var(--fm)", fontSize: 13, lineHeight: 1.8, direction: "rtl" }} />
+            style={{ fontFamily: "var(--fm)", fontSize: 13, lineHeight: 1.8 }} dir="auto" />
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button onClick={parseScript} disabled={!rawScript.trim()} className="btn btn-primary btn-sm">
               Split into Sections ({rawScript.split("\n").filter(l => l.trim()).length} lines)
@@ -577,7 +598,7 @@ function ScriptStep({ sections, setSections, onNext }) {
                 <button onClick={() => removeSection(i)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }}>Remove</button>
               </div>
               <textarea value={s.script_text} onChange={e => updateSection(i, { script_text: e.target.value })}
-                className="input" rows={2} style={{ fontSize: 13, lineHeight: 1.6, direction: "rtl" }} />
+                className="input" rows={2} style={{ fontSize: 13, lineHeight: 1.6 }} dir="auto" />
             </div>
           ))}
           <button onClick={onNext} disabled={sections.length === 0 || sections.some(s => !s.script_text.trim())}
@@ -661,7 +682,7 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{sections.length} sections</span>
         </div>
         <div ref={scriptRef} style={{
-          maxHeight: 340, overflowY: "auto", direction: "rtl",
+          maxHeight: 340, overflowY: "auto",
           background: "var(--bg-elevated)", borderRadius: "var(--radius-lg)", padding: "20px 20px",
         }}>
           {sections.map((s, i) => (
@@ -669,7 +690,7 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-light)", marginBottom: 4, direction: "ltr", textAlign: "left" }}>
                 {i + 1}. {s.label}
               </div>
-              <div style={{ fontSize: 20, lineHeight: 1.8, color: "var(--text-primary)", fontWeight: 500 }}>
+              <div dir="auto" style={{ fontSize: 20, lineHeight: 1.8, color: "var(--text-primary)", fontWeight: 500 }}>
                 {s.script_text}
               </div>
               {i < sections.length - 1 && <div style={{ borderBottom: "1px dashed var(--border-light)", marginTop: 12 }} />}
@@ -842,6 +863,66 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     setAnalysis(next);
   };
 
+  // Manual trim: adjust start/end of selected take to current cursor
+  const trimStart = () => {
+    const ws = wsRef.current;
+    if (!ws || !sectionMappings[selectedSection]) return;
+    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+    const next = JSON.parse(JSON.stringify(analysis));
+    const takes = next.section_mappings[selectedSection].takes;
+    const sel = takes.find(t => t.is_selected);
+    if (sel && currentTime > sel.start && currentTime < sel.end) {
+      sel.start = parseFloat(currentTime.toFixed(2));
+    }
+    setAnalysis(next);
+  };
+
+  const trimEnd = () => {
+    const ws = wsRef.current;
+    if (!ws || !sectionMappings[selectedSection]) return;
+    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+    const next = JSON.parse(JSON.stringify(analysis));
+    const takes = next.section_mappings[selectedSection].takes;
+    const sel = takes.find(t => t.is_selected);
+    if (sel && currentTime > sel.start && currentTime < sel.end) {
+      sel.end = parseFloat(currentTime.toFixed(2));
+    }
+    setAnalysis(next);
+  };
+
+  // Split at cursor: creates a manual cut point (adds a pause region to remove)
+  const splitAtCursor = () => {
+    if (!currentTime || currentTime <= 0) return;
+    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+    const next = JSON.parse(JSON.stringify(analysis));
+    const cutDuration = 0.15; // remove 150ms around the split point
+    if (!next.pauses) next.pauses = [];
+    next.pauses.push({
+      start: parseFloat((currentTime - cutDuration / 2).toFixed(2)),
+      end: parseFloat((currentTime + cutDuration / 2).toFixed(2)),
+      duration: cutDuration,
+      removed: true,
+      manual: true,
+    });
+    setAnalysis(next);
+  };
+
+  // Delete: remove the selected take entirely (mark it as not selected, no replacement)
+  const deleteSelectedTake = () => {
+    if (!sectionMappings[selectedSection]) return;
+    setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(analysis))]);
+    const next = JSON.parse(JSON.stringify(analysis));
+    const takes = next.section_mappings[selectedSection].takes;
+    const selIdx = takes.findIndex(t => t.is_selected);
+    if (selIdx !== -1) {
+      takes[selIdx].is_selected = false;
+      // Auto-select next best if available
+      const nextBest = takes.filter((_, i) => i !== selIdx).sort((a, b) => (a.rank || 99) - (b.rank || 99))[0];
+      if (nextBest) nextBest.is_selected = true;
+    }
+    setAnalysis(next);
+  };
+
   const undo = () => {
     if (undoStack.length === 0) return;
     setAnalysis(undoStack[undoStack.length - 1]);
@@ -894,6 +975,16 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
             <button onClick={undo} disabled={undoStack.length === 0} className="btn btn-ghost btn-xs">Undo</button>
           </div>
         </div>
+        {/* Edit toolbar */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          <button onClick={trimStart} className="btn btn-ghost btn-xs" title="Set the start of the selected take to the current cursor position">Trim Start ◁|</button>
+          <button onClick={trimEnd} className="btn btn-ghost btn-xs" title="Set the end of the selected take to the current cursor position">|▷ Trim End</button>
+          <button onClick={splitAtCursor} className="btn btn-ghost btn-xs" title="Add a cut at the current cursor position">✂ Split at Cursor</button>
+          <button onClick={deleteSelectedTake} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }} title="Remove this take and auto-select the next best">✕ Delete Take</button>
+          <span style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", marginLeft: 8 }}>
+            Cursor: {formatTs(currentTime)}
+          </span>
+        </div>
         <div ref={waveformRef} style={{ borderRadius: "var(--radius-md)", overflow: "hidden" }} />
         <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 10, color: "var(--text-muted)" }}>
           <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: "rgba(99,102,241,0.4)", marginRight: 4 }} />Selected takes</span>
@@ -937,7 +1028,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
               <div className="section-title" style={{ fontSize: 11, marginBottom: 8 }}>
                 Takes for: {currentMapping.section_label || sections[selectedSection]?.label}
               </div>
-              <div style={{ fontSize: 13, color: "var(--text-tertiary)", marginBottom: 12, padding: "8px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)", direction: "rtl", lineHeight: 1.6 }}>
+              <div dir="auto" style={{ fontSize: 13, color: "var(--text-tertiary)", marginBottom: 12, padding: "8px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)", lineHeight: 1.6 }}>
                 {sections[selectedSection]?.script_text}
               </div>
               {currentMapping.takes?.map(take => (
