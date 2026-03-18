@@ -10,7 +10,7 @@ import { getApiKey, getSelectedModel } from "./apiKeys.js";
 
 const STEPS = ["script", "record", "processing", "editor", "export"];
 const STEP_LABELS = { script: "Script", record: "Record", processing: "Processing", editor: "Timeline Editor", export: "Export" };
-const DEFAULT_SECTION_LABELS = ["Hook", "Lead", "Body", "Proof", "CTA", "Close"];
+
 const PAUSE_THRESHOLD = 0.8;
 
 // ════════════════════════════════════════════════
@@ -592,15 +592,80 @@ Return ONLY the JSON object (no explanation, no markdown, no preamble):
 // ════════════════════════════════════════════════
 
 function ScriptStep({ sections, setSections, onNext }) {
-  const [rawScript, setRawScript] = useState(sections.map(s => s.script_text).join("\n") || "");
+  const [rawScript, setRawScript] = useState(sections.map(s => `${s.label ? `[${s.label}]\n` : ""}${s.script_text}`).join("\n\n") || "");
   const [mode, setMode] = useState(sections.length > 0 ? "sections" : "paste");
 
+  // Auto-detect section markers and group lines into sections
   const parseScript = () => {
-    const lines = rawScript.split("\n").filter(l => l.trim());
-    const parsed = lines.map((text, i) => ({
+    const text = rawScript.trim();
+    if (!text) return;
+
+    // Patterns that indicate a section marker (not a line to be read)
+    // Matches: [HOOK], [HOOK - 0:00 to 0:15], HOOK:, ## HOOK, **HOOK**, etc.
+    const markerRegex = /^\s*(?:\[([^\]]+)\]|##?\s*(.+?)$|(?:\*\*)?([A-Z\u0600-\u06FF][A-Z\u0600-\u06FF\s]{0,30}?)(?:\*\*)?(?:\s*[-–—:]\s*.*)?$)/;
+    const timecodeRegex = /\d+:\d+/;
+    const isMarker = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      // Lines in brackets are always markers
+      if (/^\s*\[.+\]\s*$/.test(trimmed)) return true;
+      // Very short lines (1-4 words) that are ALL CAPS or contain timecodes
+      const wordCount = trimmed.split(/\s+/).length;
+      if (wordCount <= 5 && (/^[A-Z\s\-–—:0-9.()]+$/.test(trimmed) || timecodeRegex.test(trimmed))) return true;
+      // Lines ending with : that are short
+      if (wordCount <= 4 && trimmed.endsWith(":")) return true;
+      // Markdown headers
+      if (/^#{1,3}\s/.test(trimmed)) return true;
+      return false;
+    };
+
+    const extractLabel = (line) => {
+      const trimmed = line.trim();
+      // [Label - timecode] or [Label]
+      const bracket = trimmed.match(/^\[(.+?)\]/);
+      if (bracket) {
+        let label = bracket[1].replace(/\s*[-–—]\s*\d+:\d+.*$/, "").trim();
+        return label || "Section";
+      }
+      // ## Header
+      const header = trimmed.match(/^#{1,3}\s+(.+)/);
+      if (header) return header[1].trim();
+      // HOOK: or **HOOK**
+      return trimmed.replace(/[\[\]*#:]/g, "").replace(/\s*[-–—]\s*\d+:\d+.*$/, "").trim() || "Section";
+    };
+
+    const lines = text.split("\n");
+    const detected = [];
+    let currentLabel = null;
+    let currentLines = [];
+
+    for (const line of lines) {
+      if (isMarker(line)) {
+        // Save previous section
+        if (currentLines.length > 0) {
+          detected.push({ label: currentLabel || `Section ${detected.length + 1}`, lines: [...currentLines] });
+          currentLines = [];
+        }
+        currentLabel = extractLabel(line);
+      } else if (line.trim()) {
+        currentLines.push(line.trim());
+      }
+    }
+    // Save last section
+    if (currentLines.length > 0) {
+      detected.push({ label: currentLabel || `Section ${detected.length + 1}`, lines: [...currentLines] });
+    }
+
+    // If no markers were detected, treat the whole thing as one section
+    if (detected.length === 0) {
+      const allLines = lines.filter(l => l.trim());
+      detected.push({ label: "Full Script", lines: allLines });
+    }
+
+    const parsed = detected.map((s, i) => ({
       id: `section_${i}`,
-      label: i < DEFAULT_SECTION_LABELS.length ? DEFAULT_SECTION_LABELS[i] : `Section ${i + 1}`,
-      script_text: text.trim(),
+      label: s.label,
+      script_text: s.lines.join("\n"),
       order: i,
     }));
     setSections(parsed);
@@ -627,14 +692,14 @@ function ScriptStep({ sections, setSections, onNext }) {
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="section-title">Paste Your Script</div>
           <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>
-            Paste the full VSL script below. Each line becomes a separate section for recording.
+            Paste the full script below -- including section markers like [HOOK], [LEAD], [CTA], etc. The app will auto-detect sections and group the lines.
           </p>
           <textarea value={rawScript} onChange={e => setRawScript(e.target.value)}
-            className="input" rows={14} placeholder={"Line 1: Hook...\nLine 2: Lead...\nLine 3: Body...\n..."} 
+            className="input" rows={14} placeholder={"[HOOK - 0:00 to 0:15]\nFirst line of the hook...\nSecond line of the hook...\n\n[LEAD]\nFirst line of the lead...\nSecond line...\n\n[BODY]\n...\n\n[CTA]\n..."} 
             style={{ fontFamily: "var(--fm)", fontSize: 13, lineHeight: 1.8 }} dir="auto" />
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button onClick={parseScript} disabled={!rawScript.trim()} className="btn btn-primary btn-sm">
-              Split into Sections ({rawScript.split("\n").filter(l => l.trim()).length} lines)
+              Auto-Detect Sections
             </button>
             {sections.length > 0 && <button onClick={() => setMode("sections")} className="btn btn-ghost btn-sm">Back to Sections</button>}
           </div>
@@ -659,7 +724,7 @@ function ScriptStep({ sections, setSections, onNext }) {
                 <button onClick={() => removeSection(i)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)" }}>Remove</button>
               </div>
               <textarea value={s.script_text} onChange={e => updateSection(i, { script_text: e.target.value })}
-                className="input" rows={2} style={{ fontSize: 13, lineHeight: 1.6 }} dir="auto" />
+                className="input" rows={Math.max(2, Math.min(8, (s.script_text || "").split("\n").length + 1))} style={{ fontSize: 13, lineHeight: 1.6 }} dir="auto" />
             </div>
           ))}
           <button onClick={onNext} disabled={sections.length === 0 || sections.some(s => !s.script_text.trim())}
