@@ -61,31 +61,32 @@ export { DEFAULT_ANALYSIS_PROMPT };
 // ── Model Selection ──
 
 const GEMINI_MODELS = [
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
   { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
   { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-  { id: "gemini-2.5-pro-preview-05-06", label: "Gemini 2.5 Pro" },
-  { id: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash" },
-  { id: "gemini-3.0-flash-preview", label: "Gemini 3 Flash Preview" },
-  { id: "gemini-3.0-pro-preview", label: "Gemini 3 Pro Preview" },
-  { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
 ];
 
 const CLAUDE_MODELS = [
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
   { id: "claude-sonnet-4-5-20250514", label: "Claude Sonnet 4.5" },
   { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-  { id: "claude-haiku-4-20250414", label: "Claude Haiku 4" },
 ];
 
 const OPENAI_MODELS = [
-  { id: "gpt-4o", label: "GPT-4o" },
-  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
+  { id: "gpt-5.4", label: "GPT-5.4" },
+  { id: "gpt-5-mini", label: "GPT-5 Mini" },
   { id: "gpt-4.1", label: "GPT-4.1" },
   { id: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
-  { id: "o3-mini", label: "o3-mini" },
+  { id: "gpt-4o", label: "GPT-4o" },
+  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
+  { id: "o3-mini", label: "o3 Mini" },
 ];
 
 const MODEL_KEYS = { gemini: "al_gemini_model", claude: "al_claude_model", openai: "al_openai_model" };
-const MODEL_DEFAULTS = { gemini: "gemini-2.0-flash", claude: "claude-sonnet-4-5-20250514", openai: "gpt-4o" };
+const MODEL_DEFAULTS = { gemini: "gemini-2.5-flash", claude: "claude-sonnet-4-6", openai: "gpt-4o" };
 
 export function getSelectedModel(service) {
   return localStorage.getItem(MODEL_KEYS[service] || MODEL_KEYS.gemini) || MODEL_DEFAULTS[service] || MODEL_DEFAULTS.gemini;
