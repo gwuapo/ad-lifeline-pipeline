@@ -907,28 +907,37 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Zoom with Ctrl+scroll -- zooms toward cursor position
+  // Min zoom: timeline should never be wider than audio length at full zoom out
+  const getMinZoom = () => {
+    const el = timelineRef.current;
+    if (!el || !duration) return 0.5;
+    const containerW = el.clientWidth - 24; // minus padding
+    return Math.max(0.3, containerW / (duration * BASE_PX_PER_SEC));
+  };
+
+  // Apply zoom anchored to playhead: keeps playhead in same visual position
+  const applyZoom = (newZoom) => {
+    const el = timelineRef.current;
+    const minZ = getMinZoom();
+    const clamped = Math.max(minZ, Math.min(6, newZoom));
+    const newPPS = BASE_PX_PER_SEC * clamped;
+    // Keep playhead at same visual offset within the container
+    const playheadViewX = currentTime * pxPerSec - el.scrollLeft;
+    setZoom(clamped);
+    requestAnimationFrame(() => {
+      el.scrollLeft = currentTime * newPPS - playheadViewX;
+    });
+  };
+
+  // Zoom with Ctrl+scroll -- zooms toward playhead
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
     const handler = (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        const track = trackRef.current;
-        const trackRect = track ? track.getBoundingClientRect() : el.getBoundingClientRect();
-        const cursorX = e.clientX - trackRect.left; // px from left edge of track content
-        const cursorTime = (cursorX + el.scrollLeft) / pxPerSec; // time at cursor
-
-        setZoom(prev => {
-          const next = Math.max(0.5, Math.min(6, prev * (e.deltaY < 0 ? 1.15 : 0.87)));
-          // After zoom, scroll so the same time stays under cursor
-          requestAnimationFrame(() => {
-            const newPxPerSec = BASE_PX_PER_SEC * next;
-            const newCursorPx = cursorTime * newPxPerSec;
-            el.scrollLeft = newCursorPx - cursorX;
-          });
-          return next;
-        });
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        applyZoom(zoom * factor);
       }
     };
     el.addEventListener("wheel", handler, { passive: false });
@@ -1099,7 +1108,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     if (t >= 0 && t <= duration && duration > 0) ws.seekTo(t / duration);
   };
 
-  const totalWidth = Math.max(duration * pxPerSec, 200);
+  const totalWidth = duration > 0 ? duration * pxPerSec : 200;
 
   // Ruler interval based on zoom
   const rulerInterval = zoom >= 3 ? 1 : zoom >= 1.5 ? 2 : 5;
@@ -1133,8 +1142,8 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
           <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
           {/* Zoom slider */}
           <span style={{ fontSize: 9, color: "var(--text-muted)" }}>Zoom</span>
-          <input type="range" min="0.5" max="6" step="0.1" value={zoom}
-            onChange={e => setZoom(parseFloat(e.target.value))}
+          <input type="range" min={getMinZoom()} max="6" step="0.1" value={zoom}
+            onChange={e => applyZoom(parseFloat(e.target.value))}
             style={{ width: 70, accentColor: "var(--accent)" }} />
           <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)", minWidth: 24 }}>{zoom.toFixed(1)}x</span>
         </div>
@@ -1144,7 +1153,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
       <div className="card" style={{ marginBottom: 12, padding: "8px 0", background: "#0a0a0a" }}>
         <div ref={timelineRef} onClick={seekOnClick}
           style={{ overflowX: "auto", position: "relative", cursor: "crosshair", padding: "0 12px" }}>
-          <div ref={trackRef} style={{ width: totalWidth, height: RULER_H + CLIP_H + 8, position: "relative", minWidth: "100%" }}>
+          <div ref={trackRef} style={{ width: totalWidth, height: RULER_H + CLIP_H + 8, position: "relative" }}>
 
             {/* Ruler */}
             <div style={{ height: RULER_H, position: "relative", borderBottom: "1px solid #222" }}>
