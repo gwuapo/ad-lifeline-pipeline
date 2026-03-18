@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js";
 import { supabase } from "./supabase.js";
-import { getApiKey } from "./apiKeys.js";
+import { getApiKey, getSelectedModel } from "./apiKeys.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -218,50 +218,132 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
                 duration_seconds: recording.duration, file_size_bytes: recording.blob.size,
               });
 
-              setProcessingStatus("Transcribing with Whisper...");
-              const formData = new FormData();
-              formData.append("file", recording.blob, "recording.wav");
-              formData.append("language", "ar");
+              const geminiKey = getApiKey("gemini");
+              if (!geminiKey) throw new Error("Gemini API key required for transcription & analysis. Set it in Settings > Integrations.");
+              const geminiModel = getSelectedModel("gemini");
 
-              const openaiKey = getApiKey("openai");
-              if (!openaiKey) throw new Error("OpenAI API key required for transcription. Set it in Settings > Integrations.");
-
-              const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${openaiKey}` },
-                body: (() => {
-                  const fd = new FormData();
-                  fd.append("file", recording.blob, "recording.wav");
-                  fd.append("model", "whisper-1");
-                  fd.append("response_format", "verbose_json");
-                  fd.append("timestamp_granularities[]", "word");
-                  fd.append("language", "ar");
-                  return fd;
-                })(),
+              // Convert audio blob to base64 for Gemini
+              setProcessingStatus("Preparing audio for Gemini...");
+              const audioBase64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(",")[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(recording.blob);
               });
-              if (!whisperRes.ok) {
-                const err = await whisperRes.text();
-                throw new Error("Whisper transcription failed: " + err);
+              const audioMime = recording.blob.type || "audio/webm";
+
+              // Step 1: Transcribe with Gemini
+              setProcessingStatus("Transcribing audio with Gemini...");
+              const transcribeRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [{
+                      parts: [
+                        { inlineData: { mimeType: audioMime, data: audioBase64 } },
+                        { text: `Transcribe this Arabic audio recording with word-level timestamps. The audio is a VSL voiceover recording where the speaker may do multiple takes of each section.
+
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "text": "full transcript text",
+  "words": [
+    { "word": "كلمة", "start": 0.0, "end": 0.5 }
+  ]
+}
+
+Be precise with timestamps. Include every word spoken, including filler words like يعني, هاه, آه, um, ah.` }
+                      ]
+                    }],
+                    generationConfig: { maxOutputTokens: 16384, temperature: 0.1 },
+                  }),
+                }
+              );
+              if (!transcribeRes.ok) {
+                const err = await transcribeRes.text().catch(() => "");
+                throw new Error(`Gemini transcription failed (${transcribeRes.status}): ${err.slice(0, 200)}`);
               }
-              const whisperData = await whisperRes.json();
+              const transcribeData = await transcribeRes.json();
+              const transcriptRaw = transcribeData.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+              let whisperData;
+              try {
+                whisperData = JSON.parse(transcriptRaw.replace(/```json|```/g, "").trim());
+              } catch {
+                whisperData = { text: transcriptRaw, words: [] };
+              }
               setTranscript(whisperData);
 
-              setProcessingStatus("Analyzing with Claude...");
-              const claudeKey = getApiKey("claude");
-              if (!claudeKey) throw new Error("Claude API key required for analysis. Set it in Settings > Integrations.");
+              // Step 2: Analyze transcript vs script with Gemini
+              setProcessingStatus("Analyzing takes with Gemini...");
+              const sectionsText = sections.map((s, i) => `Section ${i + 1} (${s.label}): "${s.script_text}"`).join("\n");
+              const wordsText = whisperData.words?.length > 0
+                ? whisperData.words.map(w => `[${w.start?.toFixed?.(2) || w.start}-${w.end?.toFixed?.(2) || w.end}] ${w.word}`).join("\n")
+                : whisperData.text || "";
 
-              const analyzeRes = await fetch("/api/analyze-audio", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-claude-key": claudeKey },
-                body: JSON.stringify({ scriptSections: sections, transcript: whisperData }),
-              });
+              const analyzeRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    contents: [{
+                      parts: [
+                        { inlineData: { mimeType: audioMime, data: audioBase64 } },
+                        { text: `You are an audio editing assistant analyzing a VSL voiceover recording in Saudi Arabic.
+
+Here is the original script broken into sections:
+${sectionsText}
+
+Here is the transcript with word-level timestamps:
+${wordsText}
+
+Full transcript: "${whisperData.text || ""}"
+
+Your job:
+1. Map each chunk of the transcript to the corresponding script section. The speaker may have recorded multiple takes of each section back to back.
+2. Within each section, identify separate takes (indicated by repeated content, long pauses >1.5s, or the speaker restarting).
+3. Rank each take by: completeness, clarity, and natural flow.
+4. Flag all filler words (um, ah, يعني, هاه, آه, etc.) with exact timestamps.
+5. Flag all pauses longer than 0.8 seconds with timestamps.
+6. Select the best take per section.
+
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "section_mappings": [
+    {
+      "section_id": "0",
+      "section_label": "label",
+      "takes": [
+        { "take_number": 1, "start": 0.0, "end": 5.5, "rank": 1, "completeness_score": 0.95, "clarity_notes": "note", "is_selected": true }
+      ]
+    }
+  ],
+  "filler_words": [
+    { "start": 2.1, "end": 2.4, "word": "um" }
+  ],
+  "pauses": [
+    { "start": 5.5, "end": 6.8, "duration": 1.3 }
+  ]
+}` }
+                      ]
+                    }],
+                    generationConfig: { maxOutputTokens: 16384, temperature: 0.1 },
+                  }),
+                }
+              );
               if (!analyzeRes.ok) {
-                const err = await analyzeRes.json().catch(() => ({}));
-                throw new Error("Analysis failed: " + (err.error || analyzeRes.status));
+                const err = await analyzeRes.text().catch(() => "");
+                throw new Error(`Gemini analysis failed (${analyzeRes.status}): ${err.slice(0, 200)}`);
               }
-              const analysisData = await analyzeRes.json();
-              if (analysisData.parseError) {
-                console.warn("Claude returned non-JSON, using raw:", analysisData.raw);
+              const analyzeData = await analyzeRes.json();
+              const analysisRaw = analyzeData.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+              let analysisData;
+              try {
+                analysisData = JSON.parse(analysisRaw.replace(/```json|```/g, "").trim());
+              } catch {
+                console.warn("Gemini analysis JSON parse failed, raw:", analysisRaw);
+                analysisData = { section_mappings: [], filler_words: [], pauses: [], raw: analysisRaw };
               }
               setAnalysis(analysisData);
 
