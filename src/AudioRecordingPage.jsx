@@ -146,6 +146,7 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
   const [sections, setSections] = useState(project.script_sections || []);
   const [projectName, setProjectName] = useState(project.name);
   const [language, setLanguage] = useState("");
+  const [autoCut, setAutoCut] = useState(false); // auto-remove breaths/deadspace
   const [recording, setRecording] = useState(null); // { blob, url, duration }
   const [transcript, setTranscript] = useState(null);
   const [analysis, setAnalysis] = useState(null);
@@ -293,6 +294,7 @@ function ProjectEditor({ project, onBack, onUpdate, session }) {
       )}
       {step === "record" && (
         <RecordStep sections={sections} recording={recording} setRecording={setRecording}
+          autoCut={autoCut} setAutoCut={setAutoCut}
           onSaveRecording={async (blob, duration) => {
             const filePath = `${project.id}/${Date.now()}.webm`;
             const { error: upErr } = await supabase.storage.from("audio").upload(filePath, blob, { contentType: "audio/webm" });
@@ -367,6 +369,8 @@ Your job is to analyze the transcript against the script and return precise cut 
 STEP 1 — SECTION MAPPING:
 Map each chunk of the transcript to the corresponding script section. The speaker recorded everything in one continuous take, so you need to figure out where one section ends and the next begins by matching transcript content to script content. Use fuzzy text matching — the speaker is reading in Saudi dialect Arabic so some words may be transcribed slightly differently by Whisper than they appear in the script.
 
+IMPORTANT: The script may contain section markers/labels like "[HOOK - 0:00 to 0:15]", "[LEAD]", "[CTA - 2:00 to 2:30]", "[SECTION 1]", etc. These are NOT lines to be read aloud. Ignore them completely when matching transcript to script. Only match against the actual spoken text content.
+
 STEP 2 — TAKE DETECTION:
 Within each section, identify separate takes. A new take is indicated by:
 - The same script content repeating (speaker re-read the section)
@@ -382,7 +386,7 @@ Within each take, identify all mess-ups:
 - Off-script content: anything the speaker said that doesn't match the script (comments to themselves, "let me try again", breathing/sighing, etc.). Flag with timestamps.
 - Repeated words/phrases: speaker said the same word twice due to stumbling. Flag the duplicate.
 
-STEP 4 — BREATH AND FILLER DETECTION:
+${autoCut ? `STEP 4 — BREATH AND FILLER DETECTION:
 ONLY flag these specific things:
 1. Standalone filler SOUNDS that Whisper transcribed as their own word: "um", "uh", "ah", "هم", "آه", "إيه"
 2. Gaps between words where there is NO Whisper word -- these are breaths/dead air
@@ -408,7 +412,11 @@ TIMESTAMP RULES FOR PAUSES:
 - "end" = the word AFTER the pause: use its Whisper START time - 0.02
 - This 20ms padding ensures the pause region NEVER overlaps with any word.
 - NEVER let a pause region include any part of a word's timestamp range.
-- Only flag gaps within a take, not between takes.
+- Only flag gaps within a take, not between takes.` : `STEP 4 — FILLER DETECTION:
+Return EMPTY arrays for filler_words and pauses. The user has chosen to keep all audio as-is without auto-cutting.
+
+STEP 5 — PAUSE DETECTION:
+Return EMPTY pauses array. The user has chosen to keep all pauses.`}
 
 STEP 6 — TAKE RANKING:
 For each section, rank all takes by these criteria (in order of weight):
@@ -531,7 +539,42 @@ Return ONLY the JSON object (no explanation, no markdown, no preamble):
       )}
       {step === "editor" && analysis && (
         <TimelineEditor recording={recording} transcript={transcript} analysis={analysis}
-          sections={sections} setAnalysis={setAnalysis} onNext={() => setStep("export")} />
+          sections={sections} setAnalysis={setAnalysis} onNext={() => setStep("export")}
+          onReRecord={async (sectionIdx, blob, blobUrl) => {
+            // Decode the new audio to get its duration
+            const arrBuf = await blob.arrayBuffer();
+            const actx = new (window.AudioContext || window.webkitAudioContext)();
+            const decoded = await actx.decodeAudioData(arrBuf);
+            const dur = decoded.duration;
+
+            // Upload to Supabase storage
+            const filePath = `${project.id}/rerecord_${sectionIdx}_${Date.now()}.webm`;
+            await supabase.storage.from("audio").upload(filePath, blob, { contentType: "audio/webm" });
+            const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
+
+            // Add as a new take in the analysis
+            const next = JSON.parse(JSON.stringify(analysis));
+            const sm = next.section_mappings[sectionIdx];
+            if (!sm) return;
+            const newTakeNum = (sm.takes?.length || 0) + 1;
+            // Deselect all existing takes for this section
+            sm.takes?.forEach(t => { t.is_selected = false; });
+            // Add new take -- it references a separate audio file
+            sm.takes.push({
+              take_number: newTakeNum,
+              start: 0,
+              end: dur,
+              completeness_score: 1.0,
+              cleanliness_score: 1.0,
+              flow_score: 1.0,
+              overall_rank: 1,
+              is_selected: true,
+              is_rerecorded: true,
+              audio_url: urlData.publicUrl,
+              mess_ups: [],
+            });
+            setAnalysis(next);
+          }} />
       )}
       {step === "export" && (
         <ExportStep recording={recording} analysis={analysis} sections={sections} transcript={transcript}
@@ -633,7 +676,7 @@ function ScriptStep({ sections, setSections, onNext }) {
 // STEP 2: RECORD
 // ════════════════════════════════════════════════
 
-function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording }) {
+function RecordStep({ sections, recording, setRecording, autoCut, setAutoCut, onNext, onSaveRecording }) {
   const [isRecording, setIsRecording] = useState(false);
   const [saving, setSaving] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -786,9 +829,14 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
             {!saving && recording?.savedId && <span style={{ fontSize: 11, color: "var(--green-light)" }}>Saved</span>}
           </div>
           <audio src={audioUrl} controls style={{ width: "100%", margin: "10px 0 12px" }} />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer", marginBottom: 10, padding: "8px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)" }}>
+            <input type="checkbox" checked={autoCut} onChange={e => setAutoCut(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+            <span>Auto-cut breaths & dead space</span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>AI will automatically detect and remove breaths, filler sounds, and silence</span>
+          </label>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onNext} disabled={saving} className="btn btn-primary" style={{ flex: 1 }}>
-              {saving ? "Saving recording..." : "Process Recording -- AI will clean it up →"}
+              {saving ? "Saving recording..." : "Process Recording →"}
             </button>
             <button onClick={() => { setAudioUrl(null); setRecording(null); }} className="btn btn-ghost btn-sm">
               Re-record
@@ -804,7 +852,7 @@ function RecordStep({ sections, recording, setRecording, onNext, onSaveRecording
 // STEP 4: TIMELINE EDITOR
 // ════════════════════════════════════════════════
 
-function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis, onNext }) {
+function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis, onNext, onReRecord }) {
   const timelineRef = useRef(null);
   const trackRef = useRef(null); // inner content div for accurate position math
   const waveCanvasRef = useRef(null);
@@ -816,6 +864,14 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
   const [selectedClip, setSelectedClip] = useState(null);
   const [selectedSection, setSelectedSection] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
+  // Re-record state
+  const [reRecording, setReRecording] = useState(null); // { sectionIdx }
+  const [reRecBlob, setReRecBlob] = useState(null);
+  const [reRecUrl, setReRecUrl] = useState(null);
+  const [reRecIsRecording, setReRecIsRecording] = useState(false);
+  const reRecStreamRef = useRef(null);
+  const reRecMrRef = useRef(null);
+  const reRecChunksRef = useRef([]);
   const [redoStack, setRedoStack] = useState([]);
   const [dragging, setDragging] = useState(null); // { type: "trim"|"playhead", ... }
   const [snap, setSnap] = useState(true);
@@ -1220,6 +1276,56 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
 
   const playPause = () => { const ws = wsRef.current; if (ws) ws.isPlaying() ? ws.pause() : ws.play(); };
 
+  // Re-record functions
+  const startReRecord = async (sectionIdx) => {
+    setReRecording({ sectionIdx });
+    setReRecBlob(null);
+    setReRecUrl(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 } });
+      reRecStreamRef.current = stream;
+      const mr = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      reRecMrRef.current = mr;
+      reRecChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) reRecChunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(reRecChunksRef.current, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setReRecBlob(blob);
+        setReRecUrl(url);
+        stream.getTracks().forEach(t => t.stop());
+      };
+      mr.start();
+      setReRecIsRecording(true);
+    } catch (e) {
+      console.error("Mic access denied:", e);
+      setReRecording(null);
+    }
+  };
+
+  const stopReRecord = () => {
+    reRecMrRef.current?.stop();
+    setReRecIsRecording(false);
+  };
+
+  const cancelReRecord = () => {
+    if (reRecIsRecording) reRecMrRef.current?.stop();
+    reRecStreamRef.current?.getTracks().forEach(t => t.stop());
+    if (reRecUrl) URL.revokeObjectURL(reRecUrl);
+    setReRecording(null);
+    setReRecBlob(null);
+    setReRecUrl(null);
+    setReRecIsRecording(false);
+  };
+
+  const confirmReRecord = () => {
+    if (!reRecording || !reRecBlob || !onReRecord) return;
+    onReRecord(reRecording.sectionIdx, reRecBlob, reRecUrl);
+    setReRecording(null);
+    setReRecBlob(null);
+    setReRecUrl(null);
+  };
+
   const playResult = () => {
     const ws = wsRef.current;
     if (!ws || keepRegions.length === 0) return;
@@ -1406,8 +1512,12 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                   <button onClick={(e) => { e.stopPropagation(); const ws = wsRef.current; if (ws && sel) { ws.seekTo(sel.start / ws.getDuration()); ws.play(); } }}
                     className="btn btn-ghost btn-xs" style={{ fontSize: 11, padding: "2px 6px" }}>▶</button>
                 </div>
-                <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2, marginLeft: 14 }}>
-                  {sm.takes?.length || 0} takes{sel ? ` -- using #${sel.take_number}` : ""}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2, marginLeft: 14 }}>
+                  <span style={{ fontSize: 9, color: "var(--text-muted)" }}>
+                    {sm.takes?.length || 0} takes{sel ? ` -- using #${sel.take_number}` : ""}
+                  </span>
+                  {onReRecord && <button onClick={(e) => { e.stopPropagation(); startReRecord(i); }}
+                    className="btn btn-ghost btn-xs" style={{ fontSize: 9, padding: "1px 5px", color: "var(--accent-light)" }}>Re-record</button>}
                 </div>
               </div>
             );
@@ -1428,7 +1538,8 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: take.is_selected ? "var(--green-light)" : "var(--text-secondary)" }}>Take {take.take_number}</span>
-                      {(take.rank === 1 || take.overall_rank === 1) && <span className="badge badge-green" style={{ fontSize: 8 }}>Best</span>}
+                      {take.is_rerecorded && <span className="badge" style={{ fontSize: 8, background: "var(--accent-bg)", color: "var(--accent-light)", border: "1px solid var(--accent-border)" }}>Re-recorded</span>}
+                      {(take.rank === 1 || take.overall_rank === 1) && !take.is_rerecorded && <span className="badge badge-green" style={{ fontSize: 8 }}>Best</span>}
                       {take.is_selected && <span className="badge badge-accent" style={{ fontSize: 8 }}>Using</span>}
                       {take.mess_ups?.length > 0 && <span className="badge badge-red" style={{ fontSize: 8 }}>{take.mess_ups.length} issues</span>}
                     </div>
@@ -1454,6 +1565,48 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
         </div>
       </div>
 
+      {/* Re-record panel */}
+      {reRecording && (
+        <div className="card" style={{ marginTop: 16, padding: 16, border: "2px solid var(--accent-border)", background: "var(--accent-bg)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div className="section-title" style={{ margin: 0, color: "var(--accent-light)" }}>
+              Re-record: {sections[reRecording.sectionIdx]?.label || `Section ${reRecording.sectionIdx + 1}`}
+            </div>
+            <button onClick={cancelReRecord} className="btn btn-ghost btn-xs">Cancel</button>
+          </div>
+          <div dir="auto" style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12, padding: "6px 10px", background: "var(--bg-elevated)", borderRadius: "var(--radius-sm)", lineHeight: 1.6 }}>
+            {sections[reRecording.sectionIdx]?.script_text}
+          </div>
+          {!reRecUrl ? (
+            <div style={{ textAlign: "center" }}>
+              {!reRecIsRecording ? (
+                <button onClick={() => startReRecord(reRecording.sectionIdx)} className="btn btn-danger" style={{ padding: "12px 32px", fontSize: 14, borderRadius: "var(--radius-full)" }}>
+                  ● Start Recording
+                </button>
+              ) : (
+                <button onClick={stopReRecord} className="btn btn-ghost" style={{ padding: "12px 32px", fontSize: 14, borderRadius: "var(--radius-full)", border: "2px solid var(--red)", color: "var(--red)" }}>
+                  ■ Stop
+                </button>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>Preview your new recording:</div>
+              <audio src={reRecUrl} controls style={{ width: "100%", marginBottom: 10 }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={confirmReRecord} className="btn btn-primary" style={{ flex: 1 }}>
+                  Use this recording
+                </button>
+                <button onClick={() => { setReRecBlob(null); setReRecUrl(null); }} className="btn btn-ghost btn-sm">
+                  Try again
+                </button>
+                <button onClick={cancelReRecord} className="btn btn-ghost btn-sm">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <button onClick={onNext} className="btn btn-primary" style={{ marginTop: 20, width: "100%" }}>Continue to Export →</button>
     </div>
   );
@@ -1475,18 +1628,25 @@ function ExportStep({ recording, analysis, sections, transcript, projectId, onDo
     setProgress("Building cut list...");
 
     try {
-      // Build ordered segments from ALL selected takes, sorted by start time (left to right)
+      // Build ordered segments from ALL selected takes
+      // Re-recorded takes have their own audio_url and are sorted by section order
       const selectedSegments = [];
-      for (const sm of analysis.section_mappings) {
+      const reRecordedSegments = []; // separate audio files
+      analysis.section_mappings.forEach((sm, si) => {
         for (const take of (sm.takes || [])) {
-          if (take.is_selected) {
-            selectedSegments.push({ start: take.start, end: take.end, sectionId: sm.section_id });
+          if (!take.is_selected) continue;
+          if (take.is_rerecorded && take.audio_url) {
+            reRecordedSegments.push({ start: take.start, end: take.end, audio_url: take.audio_url, sectionOrder: si });
+          } else {
+            selectedSegments.push({ start: take.start, end: take.end, sectionId: sm.section_id, sectionOrder: si });
           }
         }
-      }
+      });
+      // Sort original segments by start time, re-recorded by section order
       selectedSegments.sort((a, b) => a.start - b.start);
+      reRecordedSegments.sort((a, b) => a.sectionOrder - b.sectionOrder);
 
-      if (selectedSegments.length === 0) throw new Error("No takes selected");
+      if (selectedSegments.length === 0 && reRecordedSegments.length === 0) throw new Error("No takes selected");
 
       // Safety: clamp all removal regions against Whisper word timestamps
       // so we NEVER cut into a real word
@@ -1598,7 +1758,7 @@ function ExportStep({ recording, analysis, sections, transcript, projectId, onDo
       const trimmedSegments = cutSegments.filter(s => s.end - s.start > 0.02);
       totalDuration = trimmedSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
 
-      const outputBuffer = audioCtx.createBuffer(channels, Math.ceil(totalDuration * sampleRate), sampleRate);
+      let outputBuffer = audioCtx.createBuffer(channels, Math.ceil(totalDuration * sampleRate), sampleRate);
 
       let writeOffset = 0;
       for (const cut of trimmedSegments) {
@@ -1614,6 +1774,39 @@ function ExportStep({ recording, analysis, sections, transcript, projectId, onDo
           }
         }
         writeOffset += length;
+      }
+
+      // Append re-recorded segments
+      if (reRecordedSegments.length > 0) {
+        setProgress("Stitching re-recorded sections...");
+        for (const rr of reRecordedSegments) {
+          try {
+            const rrRes = await fetch(rr.audio_url);
+            const rrBuf = await rrRes.arrayBuffer();
+            const rrDecoded = await audioCtx.decodeAudioData(rrBuf);
+            const rrStart = Math.floor(rr.start * rrDecoded.sampleRate);
+            const rrEnd = Math.min(Math.floor(rr.end * rrDecoded.sampleRate), rrDecoded.length);
+            const rrLen = rrEnd - rrStart;
+            // Need to expand the output buffer to fit
+            const newTotal = writeOffset + rrLen;
+            const newOutput = audioCtx.createBuffer(channels, newTotal, sampleRate);
+            for (let ch = 0; ch < channels; ch++) {
+              const existing = outputBuffer.getChannelData(ch);
+              const newData = newOutput.getChannelData(ch);
+              newData.set(existing.subarray(0, writeOffset));
+            }
+            for (let ch = 0; ch < Math.min(channels, rrDecoded.numberOfChannels); ch++) {
+              const rrData = rrDecoded.getChannelData(ch);
+              const outData = newOutput.getChannelData(ch);
+              for (let i = 0; i < rrLen && (writeOffset + i) < outData.length; i++) {
+                outData[writeOffset + i] = rrData[rrStart + i] || 0;
+              }
+            }
+            outputBuffer = newOutput;
+            writeOffset += rrLen;
+          } catch (e) { console.error("Failed to stitch re-recorded segment:", e); }
+        }
+        totalDuration = writeOffset / sampleRate;
       }
 
       setProgress("Encoding WAV...");
