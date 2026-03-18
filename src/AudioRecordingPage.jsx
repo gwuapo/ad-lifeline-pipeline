@@ -338,25 +338,23 @@ Return ONLY the JSON object (no explanation, no markdown, no preamble):
   ]
 }`;
 
-              const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+              const claudeRes = await fetch("/api/analyze-audio", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
-                  "x-api-key": claudeKey,
-                  "anthropic-version": "2023-06-01",
+                  "x-claude-key": claudeKey,
                 },
                 body: JSON.stringify({
+                  prompt: claudePrompt,
                   model: getSelectedModel("claude"),
-                  max_tokens: 16384,
-                  messages: [{ role: "user", content: claudePrompt }],
                 }),
               });
               if (!claudeRes.ok) {
-                const err = await claudeRes.text().catch(() => "");
-                throw new Error(`Claude analysis failed (${claudeRes.status}): ${err.slice(0, 200)}`);
+                const err = await claudeRes.json().catch(() => ({}));
+                throw new Error(`Claude analysis failed: ${err.error || claudeRes.status}`);
               }
               const claudeData = await claudeRes.json();
-              const analysisRaw = claudeData.content?.[0]?.text || "";
+              const analysisRaw = claudeData.text || "";
               let analysisData;
               try {
                 analysisData = JSON.parse(analysisRaw.replace(/```json|```/g, "").trim());
