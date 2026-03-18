@@ -611,23 +611,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   };
 
   return (
-    <Modal title="" onClose={onClose} w={720}>
-      {/* Delete confirmation overlay */}
+    <div className="animate-fade" style={{ maxWidth: 960 }}>
+      {/* Delete confirmation modal */}
       {showDeleteConfirm && (
-        <div style={{
-          position: "absolute", inset: 0, zIndex: 10,
-          background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          borderRadius: "var(--radius-xl)",
-        }}>
-          <div style={{
-            background: "var(--bg-root)", border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)", padding: "24px 28px", maxWidth: 360, textAlign: "center",
-          }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>🗑️</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Delete this ad?</div>
-            <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 18, lineHeight: 1.5 }}>
-              "{ad.name}" will be permanently removed from the pipeline. This cannot be undone.
+        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ width: 360, textAlign: "center" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>Delete this ad?</div>
+            <div style={{ fontSize: 13, color: "var(--text-tertiary)", marginBottom: 20, lineHeight: 1.5 }}>
+              "{ad.name}" will be permanently removed. This cannot be undone.
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               <button onClick={() => setShowDeleteConfirm(false)} className="btn btn-ghost btn-sm">Cancel</button>
@@ -637,28 +628,39 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       )}
 
+      {/* Breadcrumb */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
+        <button onClick={onClose} className="btn btn-ghost btn-xs" style={{ padding: "4px 8px", gap: 4 }}>
+          <span style={{ fontSize: 14 }}>←</span> Pipeline
+        </button>
+        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>/</span>
+        <span style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{stg.label}</span>
+      </div>
+
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
           {editingName ? (
-            <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1, marginRight: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, marginRight: 12 }}>
               <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
-                className="input" autoFocus style={{ fontSize: 18, fontWeight: 600, padding: "4px 8px", flex: 1 }} />
-              <button onClick={saveName} className="btn btn-primary btn-xs">Save</button>
-              <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-xs">Cancel</button>
+                className="input" autoFocus style={{ fontSize: 22, fontWeight: 600, padding: "6px 10px", flex: 1 }} />
+              <button onClick={saveName} className="btn btn-primary btn-sm">Save</button>
+              <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-sm">Cancel</button>
             </div>
           ) : (
-            <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", cursor: role === "founder" ? "pointer" : "default", lineHeight: 1.3, letterSpacing: "-0.01em" }}
+            <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)", cursor: role === "founder" ? "pointer" : "default", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0 }}
               onClick={() => { if (role === "founder") setEditingName(true); }}
               title={role === "founder" ? "Click to rename" : ""}>
               {ad.name}
             </h1>
           )}
           {role === "founder" && !editingName && (
-            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)", padding: "4px 6px" }} title="Delete ad">🗑</button>
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)" }} title="Delete ad">🗑</button>
           )}
         </div>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+
+        {/* Metadata row */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span className="badge" style={{ background: stg.color + "10", color: stg.color, border: `1px solid ${stg.color}22` }}>{stg.label}</span>
           <span className="badge">{ad.type}</span>
           {ad.editor && <span className="badge">@ {ad.editor}</span>}
@@ -721,78 +723,91 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
         <div className="animate-fade">
-          {/* Details section */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+          {/* Two-column layout */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+            {/* Left column -- Assignment & Content */}
             <div>
-              <label className="label" style={{ marginTop: 0 }}>Editor</label>
-              <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
-                <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label" style={{ marginTop: 0 }}>Deadline</label>
-              <input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} className="input" />
-            </div>
-          </div>
-
-          {/* Ad Set IDs */}
-          {!isEditor && <div style={{ marginBottom: 20 }}>
-            <label className="label">Ad Set IDs</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {CHANNELS.map(ch => {
-                const hasId = eChIds[ch.id]?.trim();
-                const chm = (ad.channelMetrics || {})[ch.id] || [];
-                const matchedName = (ad.channelMatchedNames || {})[ch.id];
-                const wasAutoMatched = hasId && matchedName;
-                const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
-                return (
-                  <div key={ch.id}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: ch.color, fontWeight: 500 }}>{ch.label}</span>
-                      {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 9, color: "var(--green)" }}>synced</span>}
-                      {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>pending</span>}
-                    </div>
-                    <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched by name" />
-                    {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
-                      Matched: <span style={{ color: "var(--accent-light)", fontWeight: 500 }}>{matchedName}</span>
-                    </div>}
+              <div className="section-title">Details</div>
+              <div className="card" style={{ padding: "20px", marginBottom: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label className="label" style={{ marginTop: 0 }}>Editor</label>
+                    <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
+                      <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
                   </div>
-                );
-              })}
+                  <div>
+                    <label className="label" style={{ marginTop: 0 }}>Deadline</label>
+                    <input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} className="input" />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label className="label" style={{ marginTop: 0 }}>Brief</label>
+                  <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label className="label" style={{ marginTop: 0 }}>Notes</label>
+                  <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" />
+                </div>
+                {!isEditor && <div>
+                  <label className="label" style={{ marginTop: 0 }}>TikTok Video URL</label>
+                  <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
+                </div>}
+              </div>
+
+              <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
             </div>
-          </div>}
 
-          {/* Brief & Notes */}
-          <div style={{ marginBottom: 20 }}>
-            <label className="label">Brief</label>
-            <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <label className="label">Notes</label>
-            <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" />
-          </div>
+            {/* Right column -- Ad Sets & Actions */}
+            <div>
+              {/* Ad Set IDs */}
+              {!isEditor && <>
+                <div className="section-title">Ad Set IDs</div>
+                <div className="card" style={{ padding: "20px", marginBottom: 16 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {CHANNELS.map(ch => {
+                      const hasId = eChIds[ch.id]?.trim();
+                      const chm = (ad.channelMetrics || {})[ch.id] || [];
+                      const matchedName = (ad.channelMatchedNames || {})[ch.id];
+                      const wasAutoMatched = hasId && matchedName;
+                      const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
+                      return (
+                        <div key={ch.id}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, color: ch.color, fontWeight: 500 }}>{ch.label}</span>
+                            {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 9, color: "var(--green)" }}>synced</span>}
+                            {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>pending</span>}
+                          </div>
+                          <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched by name" />
+                          {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
+                            Matched: <span style={{ color: "var(--accent-light)", fontWeight: 500 }}>{matchedName}</span>
+                          </div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>}
 
-          {!isEditor && <div style={{ marginBottom: 20 }}>
-            <label className="label">TikTok Video URL</label>
-            <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
-          </div>}
-
-          {/* Approval buttons */}
-          {!isEditor && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-              {[["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
-                <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
-                  className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
-                  style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
-                  {ad[k] ? "✓ " : ""}{label}
-                </button>
-              ))}
+              {/* Approval actions */}
+              {!isEditor && <>
+                <div className="section-title">Workflow</div>
+                <div className="card" style={{ padding: "20px" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
+                      <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
+                        className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
+                        style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
+                        {ad[k] ? "✓ " : ""}{label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>}
             </div>
-          )}
+          </div>
 
-          <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
-
-          {ad.iterHistory.length > 0 && <div style={{ marginTop: 18 }}>
+          {ad.iterHistory.length > 0 && <div style={{ marginTop: 24 }}>
             <div className="section-title">Iteration History</div>
             {ad.iterHistory.map((h, i) => <div key={i} className="card-flat" style={{ marginBottom: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
@@ -1201,7 +1216,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           </div>}
         </div>
       )}
-    </Modal>
+    </div>
   );
 }
 
@@ -2133,8 +2148,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {syncMsg && <div className={`toast ${syncMsg.ok ? "toast-success" : "toast-error"}`}>{syncMsg.ok ? "🐳" : "⚠"} {syncMsg.text}</div>}
         {flywheelStatus && <div className="toast toast-success">🧠 {flywheelStatus}</div>}
 
+        {/* ── AD EXPANDED VIEW ── */}
+        {page === "pipeline" && openAd && (
+          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} />
+        )}
+
         {/* ── PIPELINE PAGE ── */}
-        {page === "pipeline" && (
+        {page === "pipeline" && !openAd && (
           <div className="animate-fade">
             {adsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}><div className="loading-dot" style={{ margin: "0 auto 12px" }} />Loading pipeline...</div>}
             {!adsLoading && <>
@@ -2309,8 +2329,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {/* ── SETTINGS PAGE ── */}
         {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
 
-        {/* Modals */}
-        {openAd && <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} />}
+        {/* Modals (only NewAdForm stays as modal) */}
         {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}
       </div>
     </div>
