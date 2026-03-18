@@ -382,15 +382,17 @@ Within each take, identify all mess-ups:
 - Off-script content: anything the speaker said that doesn't match the script (comments to themselves, "let me try again", breathing/sighing, etc.). Flag with timestamps.
 - Repeated words/phrases: speaker said the same word twice due to stumbling. Flag the duplicate.
 
-STEP 4 — FILLER WORD DETECTION:
-Flag ALL filler words and sounds with exact start/end timestamps:
+STEP 4 — FILLER WORD AND BREATH DETECTION:
+Flag ALL filler words, breaths, and unwanted sounds with exact start/end timestamps:
 - Arabic fillers: يعني, طيب, آه, إيه, هم, والله
-- English fillers: um, uh, ah, like, so, okay
-- Breathing sounds, sighs, lip smacks (Whisper sometimes transcribes these — flag if present)
+- English fillers: um, uh, ah, like, so, okay, you know, right
+- Breaths and mouth sounds: Any audible inhale/exhale between words. Whisper often transcribes these as "[inaudible]", "(breathing)", short "hh" sounds, or just gaps with very short duration words. If there's a gap of 0.15-0.8 seconds between words and it's not a natural sentence pause, flag it as a breath.
+- Lip smacks, tongue clicks, throat clears, sighs
 - Any word that appears in the transcript but NOT in the corresponding script section
+Be AGGRESSIVE about flagging these. It's better to flag too many than too few — the user can always restore them.
 
 STEP 5 — PAUSE DETECTION:
-Using the word-level timestamps, identify all gaps longer than 0.8 seconds between consecutive words WITHIN a take (not between takes). Flag each pause with start, end, and duration.
+Using the word-level timestamps, identify all gaps longer than 0.5 seconds between consecutive words WITHIN a take (not between takes). Flag each pause with start, end, and duration. Also flag any gap > 0.3 seconds that occurs mid-sentence (not at a natural comma or period boundary).
 
 STEP 6 — TAKE RANKING:
 For each section, rank all takes by these criteria (in order of weight):
@@ -1389,10 +1391,11 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
 
       for (const seg of selectedSegments) {
         let { start, end } = seg;
-        // Remove fillers within this segment
+        // Remove fillers, pauses, and off-script segments within this segment
         const fillers = (analysis.filler_words || []).filter(f => f.removed !== false && f.start >= start && f.end <= end);
         const pauses = (analysis.pauses || []).filter(p => p.removed !== false && p.start >= start && p.end <= end);
-        const removals = [...fillers, ...pauses].sort((a, b) => a.start - b.start);
+        const offScript = (analysis.off_script_segments || []).filter(s => s.start >= start && s.end <= end);
+        const removals = [...fillers, ...pauses, ...offScript].sort((a, b) => a.start - b.start);
 
         if (removals.length === 0) {
           cutSegments.push({ start, end });
@@ -1413,13 +1416,44 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
         }
       }
 
-      // Create output buffer
+      // Trim silence/breaths from each segment edges
+      setProgress("Trimming silence and breaths...");
       const sampleRate = audioBuffer.sampleRate;
       const channels = audioBuffer.numberOfChannels;
+      const rawAudio = audioBuffer.getChannelData(0);
+      const SILENCE_THRESHOLD = 0.015; // amplitude below this = silence
+      const MIN_SILENCE_MS = 80; // trim silence longer than 80ms from edges
+      const minSilenceSamples = Math.floor((MIN_SILENCE_MS / 1000) * sampleRate);
+
+      // Trim leading and trailing silence from each cut segment
+      for (let i = 0; i < cutSegments.length; i++) {
+        const seg = cutSegments[i];
+        let startSamp = Math.floor(seg.start * sampleRate);
+        let endSamp = Math.floor(seg.end * sampleRate);
+
+        // Trim leading silence/breaths
+        let trimStart = startSamp;
+        while (trimStart < endSamp - minSilenceSamples && Math.abs(rawAudio[trimStart] || 0) < SILENCE_THRESHOLD) trimStart++;
+        // Step back a tiny bit to avoid cutting into speech onset
+        trimStart = Math.max(startSamp, trimStart - Math.floor(sampleRate * 0.01));
+
+        // Trim trailing silence/breaths
+        let trimEnd = endSamp;
+        while (trimEnd > trimStart + minSilenceSamples && Math.abs(rawAudio[trimEnd - 1] || 0) < SILENCE_THRESHOLD) trimEnd--;
+        trimEnd = Math.min(endSamp, trimEnd + Math.floor(sampleRate * 0.01));
+
+        seg.start = trimStart / sampleRate;
+        seg.end = trimEnd / sampleRate;
+      }
+
+      // Remove any segments that became too short after trimming
+      const trimmedSegments = cutSegments.filter(s => s.end - s.start > 0.03);
+      totalDuration = trimmedSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
+
       const outputBuffer = audioCtx.createBuffer(channels, Math.ceil(totalDuration * sampleRate), sampleRate);
 
       let writeOffset = 0;
-      for (const cut of cutSegments) {
+      for (const cut of trimmedSegments) {
         const startSample = Math.floor(cut.start * sampleRate);
         const endSample = Math.floor(cut.end * sampleRate);
         const length = endSample - startSample;
@@ -1448,7 +1482,7 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
         const { data: urlData } = supabase.storage.from("audio").getPublicUrl(exportPath);
         await supabase.from("audio_exports").insert({
           project_id: projectId, file_url: urlData.publicUrl, file_path: exportPath,
-          settings: { ...settings, segments: cutSegments.length, duration: totalDuration },
+          settings: { ...settings, segments: trimmedSegments.length, duration: totalDuration },
         });
       }
 
