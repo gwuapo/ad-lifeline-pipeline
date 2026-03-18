@@ -862,6 +862,21 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
     return () => ws.destroy();
   }, [recording?.url]);
 
+  // Auto-scroll timeline to keep playhead in view
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el || !duration || dragging?.type === "playhead") return;
+    const playheadPx = currentTime * pxPerSec;
+    const viewLeft = el.scrollLeft;
+    const viewRight = viewLeft + el.clientWidth;
+    const margin = el.clientWidth * 0.15; // keep 15% margin from edges
+    if (playheadPx < viewLeft + margin) {
+      el.scrollLeft = playheadPx - margin;
+    } else if (playheadPx > viewRight - margin) {
+      el.scrollLeft = playheadPx - el.clientWidth + margin;
+    }
+  }, [currentTime, pxPerSec]);
+
   // Draw full-width waveform canvas (entire audio, fixed position)
   useEffect(() => {
     const canvas = waveCanvasRef.current;
@@ -1061,7 +1076,17 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
       }
       setAnalysis(next);
     };
-    const onUp = () => setDragging(null);
+    const onUp = () => {
+      setDragging(null);
+      // After drag ends, ensure playhead is visible
+      const el = timelineRef.current;
+      if (el) {
+        const px = currentTimeRef.current * pxPerSecRef.current;
+        const vl = el.scrollLeft;
+        const vr = vl + el.clientWidth;
+        if (px < vl || px > vr) el.scrollLeft = px - el.clientWidth / 2;
+      }
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
