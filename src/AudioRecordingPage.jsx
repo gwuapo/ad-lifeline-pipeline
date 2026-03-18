@@ -383,16 +383,28 @@ Within each take, identify all mess-ups:
 - Repeated words/phrases: speaker said the same word twice due to stumbling. Flag the duplicate.
 
 STEP 4 — FILLER WORD AND BREATH DETECTION:
-Flag ALL filler words, breaths, and unwanted sounds with exact start/end timestamps:
+Flag filler words, breaths, and unwanted sounds. Types to detect:
 - Arabic fillers: يعني, طيب, آه, إيه, هم, والله
 - English fillers: um, uh, ah, like, so, okay, you know, right
-- Breaths and mouth sounds: Any audible inhale/exhale between words. Whisper often transcribes these as "[inaudible]", "(breathing)", short "hh" sounds, or just gaps with very short duration words. If there's a gap of 0.15-0.8 seconds between words and it's not a natural sentence pause, flag it as a breath.
-- Lip smacks, tongue clicks, throat clears, sighs
-- Any word that appears in the transcript but NOT in the corresponding script section
-Be AGGRESSIVE about flagging these. It's better to flag too many than too few — the user can always restore them.
+- Breaths, lip smacks, tongue clicks, throat clears, sighs
+- Any word in the transcript that is NOT in the script
+
+CRITICAL TIMESTAMP PRECISION RULES FOR FILLERS:
+- The "start" timestamp MUST be the END timestamp of the last real word BEFORE the filler/breath. Use that word's Whisper end time.
+- The "end" timestamp MUST be the START timestamp of the first real word AFTER the filler/breath. Use that word's Whisper start time.
+- NEVER include any part of a real script word inside a filler region.
+- If a filler like "um" has its own Whisper word entry, use that word's exact start/end.
+- For breaths (gaps between words with no Whisper transcription), set start = previous word's end time, end = next word's start time.
+- When in doubt, make the filler region SMALLER not larger. Leaving a tiny gap is fine. Cutting into a word is NOT fine.
 
 STEP 5 — PAUSE DETECTION:
-Using the word-level timestamps, identify all gaps longer than 0.5 seconds between consecutive words WITHIN a take (not between takes). Flag each pause with start, end, and duration. Also flag any gap > 0.3 seconds that occurs mid-sentence (not at a natural comma or period boundary).
+Using word-level timestamps, identify gaps longer than 0.5 seconds between consecutive words WITHIN a take.
+
+CRITICAL TIMESTAMP PRECISION RULES FOR PAUSES:
+- "start" = the END timestamp of the word BEFORE the pause (from Whisper)
+- "end" = the START timestamp of the word AFTER the pause (from Whisper)
+- NEVER let a pause region overlap with any word's timestamp range.
+- Only flag gaps within a take, not between takes.
 
 STEP 6 — TAKE RANKING:
 For each section, rank all takes by these criteria (in order of weight):
@@ -518,7 +530,7 @@ Return ONLY the JSON object (no explanation, no markdown, no preamble):
           sections={sections} setAnalysis={setAnalysis} onNext={() => setStep("export")} />
       )}
       {step === "export" && (
-        <ExportStep recording={recording} analysis={analysis} sections={sections}
+        <ExportStep recording={recording} analysis={analysis} sections={sections} transcript={transcript}
           projectId={project.id} onDone={async (url) => {
             await saveProject({ status: "exported" });
           }}
@@ -1458,7 +1470,7 @@ function TimelineEditor({ recording, transcript, analysis, sections, setAnalysis
 // STEP 5: EXPORT
 // ════════════════════════════════════════════════
 
-function ExportStep({ recording, analysis, sections, projectId, onDone }) {
+function ExportStep({ recording, analysis, sections, transcript, projectId, onDone }) {
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState(null);
   const [settings, setSettings] = useState({ normalize: true, noiseGate: false });
@@ -1483,6 +1495,28 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
 
       if (selectedSegments.length === 0) throw new Error("No takes selected");
 
+      // Safety: clamp all removal regions against Whisper word timestamps
+      // so we NEVER cut into a real word
+      setProgress("Validating cut boundaries...");
+      const words = transcript?.words || [];
+      if (words.length > 0) {
+        const clampRegion = (region) => {
+          // Find the word that ends closest before this region starts
+          const wordBefore = words.filter(w => w.end <= region.start + 0.05).sort((a, b) => b.end - a.end)[0];
+          // Find the word that starts closest after this region ends
+          const wordAfter = words.filter(w => w.start >= region.end - 0.05).sort((a, b) => a.start - b.start)[0];
+          // Clamp: region start can't be earlier than the word before's end
+          if (wordBefore && region.start < wordBefore.end) region.start = wordBefore.end;
+          // Clamp: region end can't be later than the word after's start
+          if (wordAfter && region.end > wordAfter.start) region.end = wordAfter.start;
+          // If region became invalid, mark it to skip
+          if (region.end <= region.start + 0.01) region._skip = true;
+        };
+        (analysis.filler_words || []).filter(f => f.removed !== false).forEach(clampRegion);
+        (analysis.pauses || []).filter(p => p.removed !== false).forEach(clampRegion);
+        (analysis.off_script_segments || []).forEach(clampRegion);
+      }
+
       setProgress("Decoding audio...");
       const response = await fetch(recording.url);
       const arrayBuffer = await response.arrayBuffer();
@@ -1497,9 +1531,9 @@ function ExportStep({ recording, analysis, sections, projectId, onDone }) {
       for (const seg of selectedSegments) {
         let { start, end } = seg;
         // Remove fillers, pauses, and off-script segments within this segment
-        const fillers = (analysis.filler_words || []).filter(f => f.removed !== false && f.start >= start && f.end <= end);
-        const pauses = (analysis.pauses || []).filter(p => p.removed !== false && p.start >= start && p.end <= end);
-        const offScript = (analysis.off_script_segments || []).filter(s => s.start >= start && s.end <= end);
+        const fillers = (analysis.filler_words || []).filter(f => f.removed !== false && !f._skip && f.start >= start && f.end <= end);
+        const pauses = (analysis.pauses || []).filter(p => p.removed !== false && !p._skip && p.start >= start && p.end <= end);
+        const offScript = (analysis.off_script_segments || []).filter(s => !s._skip && s.start >= start && s.end <= end);
         const removals = [...fillers, ...pauses, ...offScript].sort((a, b) => a.start - b.start);
 
         if (removals.length === 0) {
