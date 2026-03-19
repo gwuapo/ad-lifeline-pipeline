@@ -2017,9 +2017,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
     };
     load();
 
-    // Subscribe to realtime changes
+    // Subscribe to realtime changes (skip if triggered by our own write)
     const unsub = subscribeToAds(activeWorkspaceId, async () => {
-      // On any change, refetch all ads
+      if (Date.now() - lastWriteRef.current < 2000) return; // ignore own writes
       try {
         const fresh = await fetchAds(activeWorkspaceId);
         if (!cancelled) setAds(fresh);
@@ -2176,10 +2176,12 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   }, [ads, th, role, activeWorkspaceId]);
 
   // Sync a single ad to Supabase by reading current state
+  const lastWriteRef = useRef(0);
   const syncAdToDb = useCallback((adId, updatedAds) => {
     if (!activeWorkspaceId) return;
     const ad = updatedAds.find(x => x.id === adId);
     if (!ad) return;
+    lastWriteRef.current = Date.now();
     dbUpdateAd(adId, ad, activeWorkspaceId).catch(e => console.error("Sync error:", e));
   }, [activeWorkspaceId]);
 
