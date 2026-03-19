@@ -22,12 +22,61 @@ import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAd
 // ════════════════════════════════════════════════
 
 const STAGES = [
-  { id: "pre", label: "Pre-Production", icon: "✎", color: "#8b5cf6", desc: "Script + brief finalized", exitLabel: "Brief approved + editor assigned" },
-  { id: "in", label: "In-Production", icon: "⚡", color: "#d97706", desc: "Editor working on deliverable", exitLabel: "Draft submitted for review" },
-  { id: "post", label: "Post-Production", icon: "◎", color: "#3b82f6", desc: "Review, revisions, approve", exitLabel: "Final version approved" },
+  { id: "pre", label: "Pre-Production", icon: "✎", color: "#8b5cf6", desc: "Script + brief finalized", exitLabel: "Complete all checklist items" },
+  { id: "in", label: "In-Production", icon: "⚡", color: "#d97706", desc: "Editor working on deliverable", exitLabel: "Complete all checklist items" },
+  { id: "post", label: "Post-Production", icon: "◎", color: "#3b82f6", desc: "Review, revisions, approve", exitLabel: "Complete all checklist items" },
   { id: "live", label: "Live", icon: "▶", color: "#10b981", desc: "Running — tracking metrics", exitLabel: "CPA verdict" },
   { id: "killed", label: "Killed", icon: "✕", color: "#ef4444", desc: "Archived", exitLabel: "" },
 ];
+
+const STAGE_CHECKLIST = {
+  pre: [
+    { key: "idea", label: "Idea finalized", role: "strategist" },
+    { key: "hooks", label: "Hooks written", role: "strategist" },
+    { key: "leads", label: "Leads written", role: "strategist" },
+    { key: "script", label: "Script completed", role: "strategist" },
+    { key: "ad_brief", label: "Ad brief finalized", role: "strategist" },
+    { key: "vo_brief", label: "Voice over brief ready", role: "strategist" },
+  ],
+  in: [
+    { key: "vo_submitted", label: "Voice over submitted", role: "editor" },
+    { key: "video_submitted", label: "Video submitted", role: "editor" },
+    { key: "hook_visuals", label: "Hook visuals done", role: "editor" },
+  ],
+  post: [
+    { key: "vo_approved", label: "Voice over approved", role: "founder" },
+    { key: "video_approved", label: "Video approved", role: "founder" },
+    { key: "final_greenlit", label: "Final greenlit for launch", role: "founder" },
+  ],
+  live: [
+    { key: "ad_ids_matched", label: "Ad IDs auto-matched with Triple Whale", role: "system" },
+    { key: "data_tracking", label: "Data tracking confirmed", role: "system" },
+  ],
+};
+
+function getChecklistProgress(ad, stage) {
+  const items = STAGE_CHECKLIST[stage] || [];
+  if (items.length === 0) return { total: 0, done: 0, pct: 100 };
+  const done = items.filter(i => ad.checklist?.[i.key]?.done).length;
+  return { total: items.length, done, pct: Math.round((done / items.length) * 100) };
+}
+
+function getStaleItems(ad, stage) {
+  const items = STAGE_CHECKLIST[stage] || [];
+  const now = Date.now();
+  const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+  const staleItems = [];
+  const stageEnteredAt = ad.stageEnteredAt || ad.createdAt || 0;
+  for (const item of items) {
+    if (ad.checklist?.[item.key]?.done) continue;
+    const elapsed = now - stageEnteredAt;
+    if (elapsed > TWO_DAYS) {
+      const days = Math.floor(elapsed / (24 * 60 * 60 * 1000));
+      staleItems.push({ ...item, daysStale: days });
+    }
+  }
+  return staleItems;
+}
 const SO = ["pre", "in", "post", "live"];
 const AD_TYPES = ["VSL", "Video Ad", "UGC", "Image Ad", "Advertorial", "Listicle"];
 const DEFAULT_EDITORS = [];
@@ -195,17 +244,21 @@ function checkGate(ad, fromStage, toStage) {
   const idx = SO.indexOf(toStage);
   const fromIdx = SO.indexOf(fromStage);
   if (idx < 0 || fromIdx < 0) return null;
-  if (idx < fromIdx) return null;
+  if (idx < fromIdx) return null; // allow moving backwards
+
+  // Check all checklist items for the current stage are completed
+  const items = STAGE_CHECKLIST[fromStage] || [];
+  const incomplete = items.filter(i => !ad.checklist?.[i.key]?.done);
+  if (incomplete.length > 0) {
+    return `Complete all checklist items before moving: ${incomplete.map(i => i.label).join(", ")}`;
+  }
+
+  // Additional hard requirements
   if (fromStage === "pre" && toStage === "in") {
-    if (!ad.briefApproved) return "Brief must be approved before moving to In-Production";
     if (!ad.editor) return "Editor must be assigned before moving to In-Production";
   }
-  if (fromStage === "in" && toStage === "post") {
-    if (!ad.draftSubmitted && ad.drafts.length === 0) return "Editor must submit a draft before moving to Post-Production";
-  }
   if (fromStage === "post" && toStage === "live") {
-    if (!ad.finalApproved) return "Final version must be approved before going Live";
-    if (ad.revisionRequests.some(r => !r.resolved)) return "Unresolved revision requests — resolve before going Live";
+    if (ad.revisionRequests.some(r => !r.resolved)) return "Unresolved revision requests -- resolve before going Live";
   }
   return null;
 }
@@ -723,6 +776,79 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
         <div className="animate-fade">
+          {/* Stage Checklist */}
+          {(() => {
+            const items = STAGE_CHECKLIST[ad.stage] || [];
+            const stale = getStaleItems(ad, ad.stage);
+            const cp = getChecklistProgress(ad, ad.stage);
+            if (items.length === 0) return null;
+            return (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div className="section-title" style={{ margin: 0 }}>{stg.label} Checklist</div>
+                  <span style={{ fontSize: 12, color: cp.pct === 100 ? "var(--green)" : "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{cp.done}/{cp.total}</span>
+                </div>
+                {/* Stale warnings */}
+                {stale.length > 0 && (
+                  <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)", lineHeight: 1.6 }}>
+                    {stale.map((s, i) => (
+                      <div key={s.key}>{s.label} -- stale for {s.daysStale} days. {
+                        s.key.includes("vo") ? "Did you record it?" :
+                        s.key.includes("video") ? "Did you forget to submit?" :
+                        s.key.includes("hook") ? "Why are hook visuals still pending?" :
+                        s.key.includes("script") ? "Is the script still being written?" :
+                        "Why is this still incomplete?"
+                      }</div>
+                    ))}
+                  </div>
+                )}
+                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  {items.map((item, i) => {
+                    const checked = ad.checklist?.[item.key]?.done;
+                    const doneAt = ad.checklist?.[item.key]?.doneAt;
+                    const isStale = stale.some(s => s.key === item.key);
+                    return (
+                      <div key={item.key} style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
+                        borderBottom: i < items.length - 1 ? "1px solid var(--border-light)" : "none",
+                        background: isStale ? "var(--red-bg)" : checked ? "var(--green-bg)" : "transparent",
+                        cursor: "pointer",
+                        transition: "background 0.15s ease",
+                      }}
+                        onClick={() => dispatch({ type: "TOGGLE_CHECKLIST", id: ad.id, key: item.key })}
+                        onMouseEnter={e => { if (!checked && !isStale) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                        onMouseLeave={e => { if (!checked && !isStale) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <div style={{
+                          width: 18, height: 18, borderRadius: "var(--radius-xs)", flexShrink: 0,
+                          border: checked ? "none" : "1.5px solid var(--border)",
+                          background: checked ? "var(--green)" : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          transition: "all 0.15s ease",
+                        }}>
+                          {checked && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 450, color: checked ? "var(--green)" : "var(--text-primary)", textDecoration: checked ? "line-through" : "none" }}>
+                            {item.label}
+                          </div>
+                          {doneAt && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
+                            Completed {new Date(doneAt).toLocaleDateString()}
+                          </div>}
+                        </div>
+                        <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "capitalize" }}>{item.role}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Progress bar */}
+                <div style={{ marginTop: 8, height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 2, width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : stale.length > 0 ? "var(--red)" : "var(--accent)", transition: "width 0.3s ease" }} />
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Two-column layout */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
             {/* Left column -- Assignment & Content */}
@@ -1237,7 +1363,10 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
   return (
     <div className="pipeline-card" onClick={() => onClick(ad)}>
       {ad.stage === "live" && cl !== "none" && <div className="status-bar" style={{ background: cs.c }} />}
-      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 4, lineHeight: 1.3 }}>{ad.name}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.3, flex: 1 }}>{ad.name}</div>
+        {ad.deadline && <span style={{ fontSize: 10, color: ov ? "var(--red)" : "var(--text-tertiary)", fontFamily: "var(--fm)", flexShrink: 0, marginLeft: 8 }}>{fd(ad.deadline)}</span>}
+      </div>
       <div style={{ display: "flex", gap: 3, marginBottom: 6, flexWrap: "wrap" }}>
         <span className="badge" style={{ fontSize: 10 }}>{ad.type}</span>
         {ad.editor && <span className="badge" style={{ fontSize: 10 }}>@ {ad.editor}</span>}
@@ -1246,6 +1375,20 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
         {ad.parentId && <span className="badge badge-green" style={{ fontSize: 10 }}>var</span>}
         {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 10 }}>{unresolvedRevs} rev</span>}
       </div>
+
+      {/* Checklist progress */}
+      {(() => { const cp = getChecklistProgress(ad, ad.stage); const stale = getStaleItems(ad, ad.stage); return cp.total > 0 ? (
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+            <span style={{ fontSize: 10, color: cp.pct === 100 ? "var(--green)" : "var(--text-tertiary)" }}>{cp.done}/{cp.total} tasks</span>
+            {stale.length > 0 && <span style={{ fontSize: 9, color: "var(--red)" }}>{stale.length} stale</span>}
+          </div>
+          <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 2, width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : stale.length > 0 ? "var(--red)" : "var(--accent)", transition: "width 0.3s ease" }} />
+          </div>
+        </div>
+      ) : null; })()}
+
       {ad.notes && <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 6, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{ad.notes}</div>}
 
       {ad.stage === "live" && la && bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
@@ -2044,8 +2187,14 @@ export default function App({ session, userRole, userName, workspaces, activeWor
     setAds(p => {
       let next;
       switch (a.type) {
-        case "MOVE": next = p.map(x => x.id === a.id ? { ...x, stage: a.stage } : x); break;
+        case "MOVE": next = p.map(x => x.id === a.id ? { ...x, stage: a.stage, stageEnteredAt: Date.now() } : x); break;
         case "UPDATE": next = p.map(x => x.id === a.id ? { ...x, ...a.data } : x); break;
+        case "TOGGLE_CHECKLIST": next = p.map(x => {
+          if (x.id !== a.id) return x;
+          const cl = { ...(x.checklist || {}) };
+          cl[a.key] = cl[a.key]?.done ? { done: false, doneAt: null } : { done: true, doneAt: Date.now() };
+          return { ...x, checklist: cl };
+        }); break;
         case "ADD_METRIC": next = p.map(x => x.id === a.id ? { ...x, metrics: [...x.metrics, a.metric] } : x); break;
         case "SET_CH_METRICS": next = p.map(x => x.id === a.id ? { ...x, channelMetrics: { ...(x.channelMetrics || emptyChMetrics()), [a.channel]: a.metrics } } : x); break;
         case "ADD_COMMENT": next = p.map(x => x.id === a.id ? { ...x, comments: [...x.comments, a.comment] } : x); break;
@@ -2059,12 +2208,12 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         case "ADD_REVISION": next = p.map(x => x.id === a.id ? { ...x, revisionRequests: [...x.revisionRequests, a.rev] } : x); break;
         case "RESOLVE_REVISION": next = p.map(x => x.id === a.id ? { ...x, revisionRequests: x.revisionRequests.map(r => r.id === a.rid ? { ...r, resolved: true } : r) } : x); break;
         case "APPROVE_DRAFT": next = p.map(x => x.id === a.id ? { ...x, drafts: x.drafts.map(d => d.id === a.did ? { ...d, status: "approved" } : d), finalApproved: true } : x); break;
-        case "ITERATE": next = p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; }); break;
+        case "ITERATE": next = p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, checklist: {}, stageEnteredAt: Date.now(), notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; }); break;
         case "KILL": next = p.map(x => x.id === a.id ? { ...x, stage: "killed" } : x); break;
         case "DELETE": next = p.filter(x => x.id !== a.id); break;
         case "ADD_AD": {
           // Create in Supabase and add to local state
-          const newAd = { name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics() };
+          const newAd = { name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics(), checklist: {}, stageEnteredAt: Date.now() };
           if (activeWorkspaceId) {
             dbCreateAd(newAd, activeWorkspaceId).then(saved => {
               setAds(curr => [...curr, saved]);
@@ -2073,7 +2222,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
           return p; // don't add locally yet — wait for Supabase response
         }
         case "CREATE_VAR": {
-          const varAd = { name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics() };
+          const varAd = { name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(), checklist: {}, stageEnteredAt: Date.now() };
           if (activeWorkspaceId) {
             dbCreateAd(varAd, activeWorkspaceId).then(saved => {
               setAds(curr => [...curr.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), saved.id] } : x), saved]);
@@ -2158,6 +2307,26 @@ export default function App({ session, userRole, userName, workspaces, activeWor
           <div className="animate-fade">
             {adsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}><div className="loading-dot" style={{ margin: "0 auto 12px" }} />Loading pipeline...</div>}
             {!adsLoading && <>
+            {/* Stale reminders */}
+            {(() => {
+              const allStale = ads.filter(a => a.stage !== "killed" && a.stage !== "live").flatMap(a => {
+                const stale = getStaleItems(a, a.stage);
+                return stale.map(s => ({ adName: a.name, adId: a.id, ...s }));
+              });
+              if (allStale.length === 0) return null;
+              return (
+                <div style={{ padding: "10px 14px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 16, fontSize: 12, color: "var(--red)", lineHeight: 1.7 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Stale tasks need attention:</div>
+                  {allStale.slice(0, 5).map((s, i) => (
+                    <div key={i} style={{ cursor: "pointer" }} onClick={() => { const a = ads.find(x => x.id === s.adId); if (a) setOpenAd(a); }}>
+                      <span style={{ fontWeight: 500 }}>{s.adName}</span> -- {s.label} ({s.daysStale}d stale)
+                    </div>
+                  ))}
+                  {allStale.length > 5 && <div style={{ color: "var(--text-muted)", marginTop: 2 }}>+{allStale.length - 5} more</div>}
+                </div>
+              );
+            })()}
+
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
               <div>
