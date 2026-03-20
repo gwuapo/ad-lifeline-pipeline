@@ -686,7 +686,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   ];
 
   return (
-    <div className="animate-fade" style={{ maxWidth: 1080 }}>
+    <div className="animate-fade" style={{ maxWidth: 1100 }}>
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
@@ -703,131 +703,144 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       )}
 
-      {/* Breadcrumb */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20, fontSize: 13, color: "var(--text-tertiary)" }}>
-        <span style={{ cursor: "pointer", color: "var(--accent-light)" }} onClick={onClose}>Pipeline</span>
-        <span style={{ color: "var(--text-muted)" }}>&gt;</span>
-        <span>{stg.label}</span>
+      {/* Top bar: breadcrumb + actions */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-tertiary)" }}>
+          <span style={{ cursor: "pointer", color: "var(--accent-light)" }} onClick={onClose}>Pipeline</span>
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>›</span>
+          <span style={{ color: stg.color }}>{stg.label}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {ad.stage !== "killed" && role === "founder" && SO.filter(s => s !== ad.stage).map(s => {
+            const st = STAGES.find(x => x.id === s);
+            return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "22", fontSize: 11 }}>{st.icon} {st.label}</button>;
+          })}
+          {ad.iterations >= ad.maxIter && ad.stage === "live" && cl === "red" && (
+            <button onClick={doKill} className="btn btn-danger btn-xs">Kill</button>
+          )}
+          {role === "founder" && (
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)" }}>···</button>
+          )}
+        </div>
       </div>
 
-      {/* Title */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+      {/* Title row */}
+      <div style={{ marginBottom: 20 }}>
         {editingName ? (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
-              className="input" autoFocus style={{ fontSize: 24, fontWeight: 600, padding: "4px 8px", flex: 1 }} />
+              className="input" autoFocus style={{ fontSize: 22, fontWeight: 600, padding: "4px 8px", flex: 1 }} />
             <button onClick={saveName} className="btn btn-primary btn-sm">Save</button>
             <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-sm">Cancel</button>
           </div>
         ) : (
-          <h1 style={{ fontSize: 26, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0, cursor: role === "founder" ? "pointer" : "default" }}
+          <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0, cursor: role === "founder" ? "pointer" : "default" }}
             onClick={() => { if (role === "founder") setEditingName(true); }}>
             {ad.name}
           </h1>
         )}
-        <div style={{ display: "flex", gap: 4 }}>
-          {role === "founder" && !editingName && (
-            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)", fontSize: 14 }}>...</button>
-          )}
-        </div>
       </div>
 
-      {/* Inline-editable metadata */}
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24, fontSize: 13 }}>
-        {/* Editor */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>Editor:</span>
-          {editingEditor ? (
-            <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ width: "auto", padding: "2px 8px", fontSize: 12 }}>
-              <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
-            </select>
-          ) : (
-            <span style={{ color: "var(--text-primary)", fontWeight: 500, cursor: !isEditor ? "pointer" : "default" }} onClick={() => !isEditor && setEditingEditor(true)}>
-              {ad.editor || "Unassigned"}{!isEditor && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>✎</span>}
-            </span>
-          )}
-        </div>
-        <span style={{ color: "var(--border)" }}>·</span>
-        {/* Deadline */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>Due:</span>
-          {editingDeadline ? (
-            <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ width: "auto", padding: "2px 8px", fontSize: 12 }} />
-          ) : (
-            <span style={{ color: over ? "var(--red)" : "var(--text-primary)", fontWeight: 500, cursor: !isEditor ? "pointer" : "default" }} onClick={() => !isEditor && setEditingDeadline(true)}>
-              {ad.deadline ? fd(ad.deadline) : "No deadline"}{!isEditor && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>✎</span>}
-            </span>
-          )}
-        </div>
-        <span style={{ color: "var(--border)" }}>·</span>
-        {/* Type */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>Type:</span>
-          {editingType ? (
-            <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ width: "auto", padding: "2px 8px", fontSize: 12 }}>
-              {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-          ) : (
-            <span style={{ color: "var(--text-primary)", fontWeight: 500, cursor: !isEditor ? "pointer" : "default" }} onClick={() => !isEditor && setEditingType(true)}>
-              {ad.type || "—"}{!isEditor && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>✎</span>}
-            </span>
-          )}
-        </div>
-        {/* Status badge + remaining meta */}
-        {metaRows.map((r, i) => (
-          <React.Fragment key={i}>
-            <span style={{ color: "var(--border)" }}>·</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>{r.label}:</span>
-              {r.badge ? (
-                <span style={{ display: "inline-block", padding: "1px 8px", borderRadius: "var(--radius-full)", background: r.badgeColor + "15", color: r.badgeColor, fontSize: 11, fontWeight: 600 }}>{r.val}</span>
+      {/* Highlights -- Attio-style card grid */}
+      {(() => {
+        const hCardS = { background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "12px 14px" };
+        const hLabelS = { fontSize: 11, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 };
+        const hValS = { fontSize: 13, fontWeight: 600, color: "var(--text-primary)" };
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>
+            {/* Editor */}
+            <div style={hCardS} onClick={() => !isEditor && setEditingEditor(true)}>
+              <div style={hLabelS}><span style={{ fontSize: 13 }}>👤</span> Editor</div>
+              {editingEditor ? (
+                <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                  <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
               ) : (
-                <span style={{ color: r.color || "var(--text-primary)", fontWeight: 500 }}>{r.val}</span>
+                <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.editor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
               )}
             </div>
-          </React.Fragment>
-        ))}
-      </div>
+            {/* Deadline */}
+            <div style={hCardS} onClick={() => !isEditor && setEditingDeadline(true)}>
+              <div style={hLabelS}><span style={{ fontSize: 13 }}>📅</span> Deadline</div>
+              {editingDeadline ? (
+                <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }} />
+              ) : (
+                <div style={{ ...hValS, color: over ? "var(--red)" : "var(--text-primary)", cursor: !isEditor ? "pointer" : "default" }}>{ad.deadline ? fd(ad.deadline) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+              )}
+            </div>
+            {/* Stage */}
+            <div style={hCardS}>
+              <div style={hLabelS}><span style={{ fontSize: 13 }}>📊</span> Stage</div>
+              <div><span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: stg.color + "15", color: stg.color, fontWeight: 600 }}>{stg.label}</span></div>
+            </div>
+            {/* Type */}
+            <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
+              <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
+              {editingType ? (
+                <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                  {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.type || "—"}</div>
+              )}
+            </div>
+            {/* ROAS (if live) */}
+            {ad.stage === "live" && la ? (
+              <div style={hCardS}>
+                <div style={hLabelS}><span style={{ fontSize: 13 }}>📈</span> ROAS</div>
+                <div style={{ ...hValS, color: cs.c }}>{adRoas}x</div>
+              </div>
+            ) : (
+              <div style={hCardS}>
+                <div style={hLabelS}><span style={{ fontSize: 13 }}>🔄</span> Iteration</div>
+                <div style={hValS}>{ad.iterations} / {ad.maxIter}</div>
+              </div>
+            )}
+            {/* CPA or Winner */}
+            {winner ? (
+              <div style={{ ...hCardS, borderColor: "var(--green-border)" }}>
+                <div style={hLabelS}><span style={{ fontSize: 13 }}>🏆</span> Verdict</div>
+                <div style={{ ...hValS, color: "var(--green)" }}>Winner ({gdays}d)</div>
+              </div>
+            ) : ad.stage === "live" && la ? (
+              <div style={hCardS}>
+                <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> CPA</div>
+                <div style={hValS}>{CUR} {la.cpa}</div>
+              </div>
+            ) : (
+              <div style={hCardS}>
+                <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Status</div>
+                <div style={hValS}>{ad.stage === "killed" ? "Killed" : "In progress"}</div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
-      {/* Gate error */}
-      {gateErr && <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12.5, color: "var(--red)" }}>{gateErr}</div>}
-
-      {/* Stage movement -- founder only */}
-      {ad.stage !== "killed" && role === "founder" && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-          {SO.filter(s => s !== ad.stage).map(s => {
-            const st = STAGES.find(x => x.id === s);
-            return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "30" }}>{st.icon} {st.label}</button>;
-          })}
-          {ad.iterations >= ad.maxIter && ad.stage === "live" && cl === "red" && (
-            <button onClick={doKill} className="btn btn-danger btn-xs">Kill Ad</button>
-          )}
-        </div>
-      )}
-
-      {/* Alerts (compact) */}
+      {/* Alert banners (compact, only when needed) */}
+      {gateErr && <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)" }}>{gateErr}</div>}
       {ad.stage === "live" && cl === "green" && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--green-bg)", borderLeft: "3px solid var(--green)", marginBottom: 12, fontSize: 12.5, color: "var(--green)" }}>
-          {winner ? "Confirmed winner (5+ days). Scale aggressively via variations." : `${gdays}/5 green days to confirm winner.`}
+        <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--green-bg)", borderLeft: "3px solid var(--green)", marginBottom: 12, fontSize: 12, color: "var(--green)" }}>
+          {winner ? "Confirmed winner (5+ days). Scale aggressively." : `${gdays}/5 green days to confirm.`}
         </div>
       )}
       {ad.stage === "live" && cl === "red" && role === "founder" && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12.5, color: "var(--red)" }}>
-          Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached -- kill or pivot." : "Run analysis then iterate."}
-          {ad.iterations < ad.maxIter && <span style={{ marginLeft: 8 }}>
-            <button onClick={analyze} disabled={busy} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>{busy ? "Analyzing..." : "Run AI Analysis"}</button>
-            <button onClick={doIter} className="btn btn-danger btn-xs" style={{ marginLeft: 4 }}>Iterate</button>
-          </span>}
+        <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>Below threshold. Iter {ad.iterations}/{ad.maxIter}.</span>
+          {ad.iterations < ad.maxIter && <>
+            <button onClick={analyze} disabled={busy} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>{busy ? "Analyzing..." : "Analyze"}</button>
+            <button onClick={doIter} className="btn btn-danger btn-xs">Iterate</button>
+          </>}
         </div>
       )}
       {ad.stage === "killed" && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12.5, color: "var(--red)" }}>
-          Killed -- ad archived after {ad.iterations} iterations.
+        <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)" }}>
+          Archived after {ad.iterations} iteration{ad.iterations !== 1 ? "s" : ""}.
         </div>
       )}
 
-      {/* Two-column: Left = tabs+content, Right = thread */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, alignItems: "start" }}>
+      {/* Two-column: Left = tabs+content, Right = discussion */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, alignItems: "start" }}>
       <div>
       {/* Tabs */}
       <div className="tabs">
@@ -837,37 +850,39 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
         <div className="animate-fade">
-          {/* Checklist subtasks */}
+          {/* Checklist */}
           {(() => {
             const items = STAGE_CHECKLIST[ad.stage] || [];
             const stale = getStaleItems(ad, ad.stage);
             const cp = getChecklistProgress(ad, ad.stage);
             if (items.length === 0) return null;
             return (
-              <div style={{ marginBottom: 28 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 10 }}>
-                  Checklist &middot; {cp.done}/{cp.total}
-                </div>
-                {stale.length > 0 && (
-                  <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 8 }}>
-                    {stale.length} overdue task{stale.length > 1 ? "s" : ""}
+              <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Checklist</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {stale.length > 0 && <span style={{ fontSize: 10, color: "var(--red)", fontWeight: 500 }}>{stale.length} overdue</span>}
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{cp.done}/{cp.total}</span>
+                    <div style={{ width: 48, height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : stale.length > 0 ? "var(--red)" : "var(--accent)", borderRadius: 2, transition: "width 0.3s" }} />
+                    </div>
                   </div>
-                )}
-                {items.map((item, i) => {
+                </div>
+                {items.map(item => {
                   const checked = ad.checklist?.[item.key]?.done;
                   return (
                     <div key={item.key}
                       onClick={() => dispatch({ type: "TOGGLE_CHECKLIST", id: ad.id, key: item.key })}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", cursor: "pointer", borderBottom: i < items.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", cursor: "pointer" }}>
                       <div style={{
-                        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-                        border: checked ? "none" : "1.5px solid var(--text-muted)",
+                        width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                        border: checked ? "none" : "1.5px solid var(--border)",
                         background: checked ? "var(--accent)" : "transparent",
-                        display: "flex", alignItems: "center", justifyContent: "center",
+                        display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
                       }}>
                         {checked && <span style={{ color: "#fff", fontSize: 10, fontWeight: 700 }}>✓</span>}
                       </div>
-                      <span style={{ fontSize: 13, color: checked ? "var(--text-muted)" : "var(--text-primary)", textDecoration: checked ? "line-through" : "none", flex: 1 }}>
+                      <span style={{ fontSize: 13, color: checked ? "var(--text-muted)" : "var(--text-primary)", textDecoration: checked ? "line-through" : "none" }}>
                         {item.label}
                       </span>
                     </div>
@@ -877,7 +892,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             );
           })()}
 
-          {/* Strategy fields */}
+          {/* Strategy -- Attio-style property rows */}
           {(() => {
             const s = ad.strategy || {};
             const avatarNames = (strategyData?.avatars || []).map(a => a.name).filter(Boolean);
@@ -885,102 +900,96 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             const updateS = (key, value) => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...s, [key]: value } } });
             const AD_FORMAT_OPTS = ["Single Static", "Video", "Carousel"];
             const VARIABLE_OPTS = ["Hook", "Lead", "Unique Mechanism", "Body", "Close"];
-            const fieldStyle = { fontSize: 12, padding: "6px 10px" };
+            const rowS = { display: "flex", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-light)" };
+            const labelS = { width: 130, flexShrink: 0, fontSize: 12, color: "var(--text-muted)", fontWeight: 450 };
+            const inputS = { flex: 1, fontSize: 12.5, padding: "4px 8px", border: "none", background: "transparent", color: "var(--text-primary)" };
             return (
-              <div style={{ marginBottom: 28 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 10 }}>
-                  Ad Strategy
+              <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "6px 16px", marginBottom: 16 }}>
+                <div style={rowS}>
+                  <div style={labelS}>Avatar</div>
+                  <select value={s.avatar || ""} onChange={e => updateS("avatar", e.target.value)} className="input" style={inputS}>
+                    <option value="">—</option>
+                    {avatarNames.map(a => <option key={a} value={a}>{a}</option>)}
+                  </select>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Avatar</div>
-                    <select value={s.avatar || ""} onChange={e => updateS("avatar", e.target.value)} className="input" style={fieldStyle}>
-                      <option value="">Select avatar...</option>
-                      {avatarNames.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Desire Targeted</div>
-                    <select value={s.desire || ""} onChange={e => updateS("desire", e.target.value)} className="input" style={fieldStyle}>
-                      <option value="">Optional...</option>
-                      {desireList.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Ad Concept</div>
-                    <input value={s.concept || ""} onChange={e => updateS("concept", e.target.value)} className="input" placeholder="Describe the concept..." style={fieldStyle} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Ad Angle</div>
-                    <input value={s.angle || ""} onChange={e => updateS("angle", e.target.value)} className="input" placeholder="e.g. Fear-based, aspirational..." style={fieldStyle} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Ad Format</div>
-                    <select value={s.ad_format || ""} onChange={e => updateS("ad_format", e.target.value)} className="input" style={fieldStyle}>
-                      <option value="">Select format...</option>
-                      {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Variable Tested</div>
-                    <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={fieldStyle}>
-                      <option value="">Select variable...</option>
-                      {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
+                <div style={rowS}>
+                  <div style={labelS}>Ad Concept</div>
+                  <input value={s.concept || ""} onChange={e => updateS("concept", e.target.value)} className="input" placeholder="Describe the concept..." style={inputS} />
+                </div>
+                <div style={rowS}>
+                  <div style={labelS}>Desire</div>
+                  <select value={s.desire || ""} onChange={e => updateS("desire", e.target.value)} className="input" style={inputS}>
+                    <option value="">—</option>
+                    {desireList.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div style={rowS}>
+                  <div style={labelS}>Ad Angle</div>
+                  <input value={s.angle || ""} onChange={e => updateS("angle", e.target.value)} className="input" placeholder="e.g. Fear-based, aspirational..." style={inputS} />
+                </div>
+                <div style={rowS}>
+                  <div style={labelS}>Ad Format</div>
+                  <select value={s.ad_format || ""} onChange={e => updateS("ad_format", e.target.value)} className="input" style={inputS}>
+                    <option value="">—</option>
+                    {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div style={{ ...rowS, borderBottom: "none" }}>
+                  <div style={labelS}>Variable Tested</div>
+                  <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={inputS}>
+                    <option value="">—</option>
+                    {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
                 </div>
               </div>
             );
           })()}
 
-          {/* Description -- Brief */}
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Brief</div>
-            <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" placeholder="Ad brief..." />
+          {/* Brief */}
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Brief</div>
+            <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" placeholder="Ad brief..." style={{ border: "none", background: "transparent", padding: 0, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, resize: "vertical" }} />
           </div>
 
           {/* Notes */}
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Notes</div>
-            <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" placeholder="Internal notes..." />
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Notes</div>
+            <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" placeholder="Internal notes..." style={{ border: "none", background: "transparent", padding: 0, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, resize: "vertical" }} />
           </div>
 
 
 
-          {/* TikTok URL */}
-          {!isEditor && <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>TikTok Video URL</div>
-            <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
-          </div>}
-
-          {/* Ad Set IDs */}
-          {!isEditor && <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Ad Set IDs</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {CHANNELS.map(ch => {
+          {/* Integrations */}
+          {!isEditor && (
+            <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "6px 16px", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
+                <div style={{ width: 130, flexShrink: 0, fontSize: 12, color: "var(--text-muted)", fontWeight: 450 }}>TikTok URL</div>
+                <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://tiktok.com/..." style={{ flex: 1, fontSize: 12.5, padding: "4px 8px", border: "none", background: "transparent", color: "var(--text-primary)" }} />
+              </div>
+              {CHANNELS.map((ch, ci) => {
                 const hasId = eChIds[ch.id]?.trim();
                 const chm = (ad.channelMetrics || {})[ch.id] || [];
                 const matchedName = (ad.channelMatchedNames || {})[ch.id];
                 const wasAutoMatched = hasId && matchedName;
                 const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
                 return (
-                  <div key={ch.id}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: ch.color, fontWeight: 500 }}>{ch.label}</span>
-                      {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 9, color: "var(--green)" }}>synced</span>}
-                      {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>pending</span>}
+                  <div key={ch.id} style={{ display: "flex", alignItems: "center", padding: "8px 0", borderBottom: ci < CHANNELS.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                    <div style={{ width: 130, flexShrink: 0, fontSize: 12, fontWeight: 450, display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ color: ch.color }}>{ch.label}</span>
+                      {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 8, color: "var(--green)" }}>●</span>}
+                      {status === "linked" && <span style={{ fontSize: 8, color: "var(--yellow)" }}>●</span>}
                     </div>
-                    <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched" />
-                    {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
-                      Matched: <span style={{ color: "var(--accent-light)", fontWeight: 500 }}>{matchedName}</span>
-                    </div>}
+                    <div style={{ flex: 1 }}>
+                      <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched" style={{ fontSize: 12.5, padding: "4px 8px", border: "none", background: "transparent", color: "var(--text-primary)", width: "100%" }} />
+                      {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", paddingLeft: 8 }}>Matched: <span style={{ color: "var(--accent-light)" }}>{matchedName}</span></div>}
+                    </div>
                   </div>
                 );
               })}
             </div>
-          </div>}
+          )}
 
-          <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
+          <button onClick={save} className="btn btn-primary btn-sm" style={{ marginBottom: 16 }}>Save Changes</button>
 
           {ad.iterHistory.length > 0 && <div style={{ marginTop: 24 }}>
             <div className="section-title">Iteration History</div>
@@ -1398,28 +1407,28 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       )}
       </div>{/* end left column */}
 
-      {/* Right column: Thread */}
+      {/* Right column: Discussion */}
       <div style={{ position: "sticky", top: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>Discussion</span>
-          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>{ad.thread.length} messages</span>
-        </div>
-        <div style={{ background: "var(--bg-elevated)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-light)", padding: 14, display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 300 }}>
-          <div style={{ flex: 1, overflowY: "auto", marginBottom: 10 }}>
-            {ad.thread.length === 0 && <div style={{ color: "var(--text-muted)", fontSize: 12, textAlign: "center", padding: "20px 0" }}>No messages yet</div>}
+        <div style={{ background: "var(--bg-elevated)", borderRadius: 10, border: "1px solid var(--border-light)", display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", minHeight: 320 }}>
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border-light)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Discussion</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{ad.thread.length}</span>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px" }}>
+            {ad.thread.length === 0 && <div style={{ color: "var(--text-muted)", fontSize: 12, textAlign: "center", padding: "30px 0" }}>No messages yet</div>}
             {ad.thread.map((m, i) => (
-              <div key={i} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: m.from === userName ? "var(--accent)" : "var(--text-primary)" }}>{m.from}</span>
+              <div key={i} style={{ marginBottom: 12, padding: "8px 10px", background: m.from === userName ? "var(--accent-bg)" : "var(--bg-card)", borderRadius: 8, border: "1px solid var(--border-light)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: m.from === userName ? "var(--accent)" : "var(--text-primary)" }}>{m.from}</span>
                   <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{m.ts}</span>
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>{renderMentions(m.text)}</div>
               </div>
             ))}
           </div>
-          <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border-light)", position: "relative" }}>
             {showMentions && memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).length > 0 && (
-              <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 4, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)", maxHeight: 120, overflow: "auto", zIndex: 10 }}>
+              <div style={{ position: "absolute", bottom: "100%", left: 14, right: 14, marginBottom: 4, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, boxShadow: "var(--shadow-lg)", maxHeight: 120, overflow: "auto", zIndex: 10 }}>
                 {memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).map(m => (
                   <div key={m.userId} onClick={() => insertMention(m.name)} style={{ padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid var(--border-light)" }}
                     onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
@@ -1430,8 +1439,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               </div>
             )}
             <div style={{ display: "flex", gap: 6 }}>
-              <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Message... @ to mention" className="input" style={{ flex: 1, fontSize: 12, padding: "7px 10px" }} />
-              <button onClick={sendMsg} className="btn btn-primary btn-xs">Send</button>
+              <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Message... @ to mention" className="input" style={{ flex: 1, fontSize: 12, padding: "7px 10px", borderRadius: 8 }} />
+              <button onClick={sendMsg} className="btn btn-primary btn-xs" style={{ borderRadius: 8, padding: "7px 14px" }}>Send</button>
             </div>
           </div>
         </div>
