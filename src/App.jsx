@@ -2566,9 +2566,11 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── PIPELINE PAGE ── */}
         {page === "pipeline" && !openAd && (
-          <div className="animate-fade" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 40px)" }}>
+          <div className="animate-fade" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 40px)", overflow: "hidden" }}>
             {adsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}><div className="loading-dot" style={{ margin: "0 auto 12px" }} />Loading pipeline...</div>}
             {!adsLoading && <>
+            {/* Fixed header section */}
+            <div style={{ flexShrink: 0, overflow: "hidden" }}>
             {/* Needs attention */}
             {(() => {
               const adsNeedingAttention = ads.filter(a => a.stage !== "killed").filter(a => {
@@ -2612,7 +2614,6 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </p>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                {/* Role switch — only for founders (dev/testing) */}
                 {userRole === "founder" && <>
                   <div style={{ display: "flex", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)" }}>
                     <button onClick={() => setRole("founder")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "founder" ? "var(--accent-bg)" : "transparent", color: role === "founder" ? "var(--accent-light)" : "var(--text-muted)" }}>Founder</button>
@@ -2621,7 +2622,6 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                   </div>
                   {(role === "editor" || role === "strategist") && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
                 </>}
-
                 {role === "founder" && <>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button onClick={() => syncTripleWhale(false)} disabled={syncing} className={`btn btn-sm ${isTripleWhaleConfigured() ? "btn-success" : "btn-ghost"}`}>
@@ -2638,6 +2638,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </>}
               </div>
             </div>
+            </div>{/* end fixed header */}
 
             {/* Scrollable content area */}
             <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
