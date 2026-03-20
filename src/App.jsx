@@ -2566,7 +2566,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── PIPELINE PAGE ── */}
         {page === "pipeline" && !openAd && (
-          <div className="animate-fade">
+          <div className="animate-fade" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 40px)" }}>
             {adsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}><div className="loading-dot" style={{ margin: "0 auto 12px" }} />Loading pipeline...</div>}
             {!adsLoading && <>
             {/* Needs attention */}
@@ -2578,26 +2578,26 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               });
               if (adsNeedingAttention.length === 0) return null;
               return (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "6px 0", overflowX: "auto" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: "6px 0", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600, flexShrink: 0 }}>Needs attention:</span>
-                  {adsNeedingAttention.slice(0, 6).map(a => {
+                  {adsNeedingAttention.slice(0, 8).map(a => {
                     const overdue = getStaleItems(a, a.stage);
                     const deadlineOverdue = od(a.deadline);
-                    const reason = overdue.length > 0 ? `${overdue.length} overdue` : "past deadline";
+                    const reason = overdue.length > 0 ? `${overdue.length}` : "!";
                     return (
                       <button key={a.id} onClick={() => setOpenAd(a)}
-                        className="btn btn-xs" style={{ background: "var(--red-bg)", color: "var(--red)", border: "1px solid var(--red-border)", flexShrink: 0 }}>
-                        {a.name} <span style={{ opacity: 0.6, marginLeft: 2 }}>{reason}</span>
+                        className="btn btn-xs" style={{ background: "var(--red-bg)", color: "var(--red)", border: "1px solid var(--red-border)", fontSize: 10, padding: "2px 8px" }}>
+                        {a.name.length > 18 ? a.name.slice(0, 18) + "..." : a.name} <span style={{ opacity: 0.6 }}>{reason}</span>
                       </button>
                     );
                   })}
-                  {adsNeedingAttention.length > 6 && <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>+{adsNeedingAttention.length - 6} more</span>}
+                  {adsNeedingAttention.length > 8 && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>+{adsNeedingAttention.length - 8}</span>}
                 </div>
               );
             })()}
 
             {/* Header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 3 }}>
                   <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>Pipeline</h2>
@@ -2638,6 +2638,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </>}
               </div>
             </div>
+
+            {/* Scrollable content area */}
+            <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
 
             {/* Stage flow bar -- kanban only */}
             {pipelineView === "kanban" && (
@@ -2699,6 +2702,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {pipelineView === "sheet" && (
               <PipelineSheet ads={visibleAds} dispatch={dispatch} th={th} onOpenAd={setOpenAd} strategyData={strategyData} />
             )}
+
+            </div>{/* end scrollable content */}
             </>}
           </div>
         )}
