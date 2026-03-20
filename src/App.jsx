@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "./supabase.js";
 import { isTripleWhaleConfigured, setTripleWhaleConfig, getTripleWhaleConfig, validateApiKey, fetchAdSetMetrics, matchMetricsToAds, startAutoSync, stopAutoSync, isAutoSyncRunning, getAutoSyncIntervalMinutes } from "./tripleWhale.js";
 import { getApiKey, isConfigured, getAnalysisPrompt, getSelectedModel, isProxyConfigured } from "./apiKeys.js";
