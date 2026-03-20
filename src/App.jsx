@@ -66,15 +66,13 @@ function getStaleItems(ad, stage) {
   const now = Date.now();
   const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
   const staleItems = [];
-  // If no stageEnteredAt, treat as "just entered" (no stale items)
-  const stageEnteredAt = ad.stageEnteredAt;
-  if (!stageEnteredAt || stageEnteredAt < 1700000000000) return staleItems; // before ~2023 = invalid
+  const stageEnteredAt = ad.stageEnteredAt || now;
   for (const item of items) {
     if (ad.checklist?.[item.key]?.done) continue;
     const elapsed = now - stageEnteredAt;
     if (elapsed > TWO_DAYS) {
       const days = Math.floor(elapsed / (24 * 60 * 60 * 1000));
-      staleItems.push({ ...item, daysStale: days });
+      staleItems.push({ ...item, daysOverdue: days });
     }
   }
   return staleItems;
@@ -1389,7 +1387,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
         <div style={{ marginBottom: 6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
             <span style={{ fontSize: 10, color: cp.pct === 100 ? "var(--green)" : "var(--text-tertiary)" }}>{cp.done}/{cp.total} tasks</span>
-            {stale.length > 0 && <span style={{ fontSize: 9, color: "var(--red)" }}>{stale.length} stale</span>}
+            {stale.length > 0 && <span style={{ fontSize: 9, color: "var(--red)" }}>{stale.length} overdue</span>}
           </div>
           <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
             <div style={{ height: "100%", borderRadius: 2, width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : stale.length > 0 ? "var(--red)" : "var(--accent)", transition: "width 0.3s ease" }} />
@@ -2322,21 +2320,23 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {!adsLoading && <>
             {/* Needs attention */}
             {(() => {
-              // Group stale items by ad (deduplicate)
-              const adsNeedingAttention = ads.filter(a => a.stage !== "killed" && a.stage !== "live").filter(a => {
-                const stale = getStaleItems(a, a.stage);
-                return stale.length > 0;
+              const adsNeedingAttention = ads.filter(a => a.stage !== "killed").filter(a => {
+                const overdue = getStaleItems(a, a.stage);
+                const deadlineOverdue = od(a.deadline);
+                return overdue.length > 0 || deadlineOverdue;
               });
               if (adsNeedingAttention.length === 0) return null;
               return (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "6px 0", overflowX: "auto" }}>
                   <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600, flexShrink: 0 }}>Needs attention:</span>
                   {adsNeedingAttention.slice(0, 6).map(a => {
-                    const stale = getStaleItems(a, a.stage);
+                    const overdue = getStaleItems(a, a.stage);
+                    const deadlineOverdue = od(a.deadline);
+                    const reason = overdue.length > 0 ? `${overdue.length} overdue` : "past deadline";
                     return (
                       <button key={a.id} onClick={() => setOpenAd(a)}
                         className="btn btn-xs" style={{ background: "var(--red-bg)", color: "var(--red)", border: "1px solid var(--red-border)", flexShrink: 0 }}>
-                        {a.name} <span style={{ opacity: 0.7 }}>({stale.length})</span>
+                        {a.name} <span style={{ opacity: 0.6, marginLeft: 2 }}>{reason}</span>
                       </button>
                     );
                   })}

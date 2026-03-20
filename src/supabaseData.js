@@ -224,6 +224,8 @@ function rowToAd(row) {
     channelMatchedNames: d.channelMatchedNames || {},
     tiktokUrl: d.tiktokUrl || "",
     strategy: d.strategy || {},
+    checklist: d.checklist || {},
+    stageEnteredAt: d.stageEnteredAt || new Date(row.created_at || Date.now()).getTime(),
   };
 }
 
