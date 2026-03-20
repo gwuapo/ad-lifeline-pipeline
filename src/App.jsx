@@ -2484,7 +2484,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               </div>
             </div>
 
-            {/* Stage flow bar */}
+            {/* Stage flow bar -- kanban only */}
+            {pipelineView === "kanban" && (
             <div style={{ display: "flex", alignItems: "center", marginBottom: 16, padding: "8px 14px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
               {STAGES.filter(s => s.id !== "killed").map((s, i) => (
                 <div key={s.id} style={{ display: "flex", alignItems: "center", flex: 1 }}>
@@ -2499,6 +2500,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </div>
               ))}
             </div>
+            )}
 
             {/* Kanban View */}
             {pipelineView === "kanban" && <>
