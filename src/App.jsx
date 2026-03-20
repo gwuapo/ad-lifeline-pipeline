@@ -6,7 +6,7 @@ import { isApifyConfigured, scrapeTikTokComments } from "./apify.js";
 import { isTikTokConfigured, fetchAllAdComments, classifyCommentSentiment, startCommentAutoSync, stopCommentAutoSync } from "./tiktokComments.js";
 import { isMetaConfigured, fetchAllMetaAdComments, classifyMetaCommentSentiment } from "./metaComments.js";
 import { analyzeWinner, formatLearningsForContext } from "./flywheel.js";
-import { fetchWorkspaceLearnings, saveWorkspaceLearningsBatch } from "./supabaseData.js";
+import { fetchWorkspaceLearnings, saveWorkspaceLearningsBatch, fetchStrategyData } from "./supabaseData.js";
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
@@ -1359,26 +1359,34 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 
 const SHEET_STATUS_OPTIONS = ["Concept", "Scripted", "In Production", "Ready to Launch", "Live", "Winner", "Killed"];
 const SHEET_FORMAT_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
+const SHEET_GRABS_OPTIONS = ["Yes - Strong Hook", "Somewhat", "No - Weak", "Untested"];
 
-function PipelineSheet({ ads, dispatch, th, onOpenAd }) {
+function PipelineSheet({ ads, dispatch, th, onOpenAd, strategyData }) {
+  const avatarNames = (strategyData?.avatars || []).map(a => a.name).filter(Boolean);
+  const desireList = (strategyData?.desires || []).map(d => d.want).filter(Boolean);
+  const triggerList = (strategyData?.emotional_triggers || []).map(t => t.trigger).filter(Boolean);
+
   const updateStrategy = (adId, key, value) => {
     dispatch({ type: "UPDATE", id: adId, data: { strategy: { ...((ads.find(a => a.id === adId) || {}).strategy || {}), [key]: value } } });
   };
 
-  const COLS = "160px 90px 70px 60px 1fr 80px 1fr 1fr 80px 80px 80px 1fr 90px";
-  const HEADERS = ["Ad Name", "Stage", "Editor", "Batch", "Concept", "Format", "Hook / Headline", "Brief", "Deadline", "Checklist", "ROAS", "Notes", "Status"];
+  const cellS = { fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" };
+  const selS = { fontSize: 10, padding: "3px 4px", border: "none", background: "transparent" };
+  const roS = { padding: "0 6px", fontSize: 10, color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+
+  const COLS = "150px 90px 70px 60px 1fr 80px 110px 1fr 100px 110px 120px 100px 1fr 70px 1fr 80px 80px 80px 70px 90px 100px";
+  const HEADERS = ["Ad Name", "Stage", "Editor", "Batch", "Concept", "Format", "Avatar", "Hook / Headline", "Grabs Attn?", "Desire", "Trigger", "Objections?", "Why Not?", "Confidence", "Why It Should Work", "Deadline", "Checklist", "ROAS", "Results", "Key Learnings", "Status"];
+  const MW = 2200;
 
   return (
     <div>
       <div className="ads-lab-scroll" style={{ border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)" }}>
-        {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "8px 0", borderBottom: "2px solid var(--border)", minWidth: 1500, background: "var(--bg-elevated)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "8px 0", borderBottom: "2px solid var(--border)", minWidth: MW, background: "var(--bg-elevated)" }}>
           {HEADERS.map(h => (
-            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4, padding: "0 8px" }}>{h}</div>
+            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.3, padding: "0 6px" }}>{h}</div>
           ))}
         </div>
 
-        {/* Rows */}
         {ads.map((ad, i) => {
           const s = ad.strategy || {};
           const stg = STAGES.find(x => x.id === ad.stage);
@@ -1389,34 +1397,63 @@ function PipelineSheet({ ads, dispatch, th, onOpenAd }) {
           const cl = ad.stage === "live" ? CL(roas || null, th) : "none";
           const bg = i % 2 === 0 ? "transparent" : "var(--bg-elevated)";
           return (
-            <div key={ad.id} style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "4px 0", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: 1500, background: bg }}>
-              {/* Ad Name -- clickable */}
-              <div onClick={() => onOpenAd(ad)} style={{ padding: "0 8px", fontSize: 12, fontWeight: 600, color: "var(--accent)", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.name}>
-                {ad.name}
-              </div>
+            <div key={ad.id} style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "3px 0", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: MW, background: bg }}>
+              {/* Ad Name */}
+              <div onClick={() => onOpenAd(ad)} style={{ padding: "0 6px", fontSize: 11, fontWeight: 600, color: "var(--accent)", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.name}>{ad.name}</div>
               {/* Stage */}
-              <div style={{ padding: "0 8px" }}>
+              <div style={{ padding: "0 6px" }}>
                 <span style={{ fontSize: 10, padding: "1px 8px", borderRadius: "var(--radius-full)", background: stg.color + "15", color: stg.color, fontWeight: 500 }}>{stg.label}</span>
               </div>
               {/* Editor */}
-              <div style={{ padding: "0 8px", fontSize: 11, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.editor || "—"}</div>
+              <div style={{ ...roS, fontSize: 11, color: "var(--text-secondary)" }}>{ad.editor || "—"}</div>
               {/* Batch */}
-              <input className="input" value={s.batch || ""} onChange={e => updateStrategy(ad.id, "batch", e.target.value)} placeholder="#" style={{ fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" }} />
+              <input className="input" value={s.batch || ""} onChange={e => updateStrategy(ad.id, "batch", e.target.value)} placeholder="#" style={cellS} />
               {/* Concept */}
-              <input className="input" value={s.concept || ""} onChange={e => updateStrategy(ad.id, "concept", e.target.value)} placeholder="Concept..." style={{ fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" }} />
+              <input className="input" value={s.concept || ""} onChange={e => updateStrategy(ad.id, "concept", e.target.value)} placeholder="Concept..." style={cellS} />
               {/* Format */}
-              <select className="input" value={s.format || ad.type || ""} onChange={e => updateStrategy(ad.id, "format", e.target.value)} style={{ fontSize: 10, padding: "3px 4px", border: "none", background: "transparent" }}>
+              <select className="input" value={s.format || ad.type || ""} onChange={e => updateStrategy(ad.id, "format", e.target.value)} style={selS}>
                 <option value="">...</option>
                 {SHEET_FORMAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
-              {/* Hook */}
-              <input className="input" value={s.hook || ""} onChange={e => updateStrategy(ad.id, "hook", e.target.value)} placeholder="Hook..." style={{ fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" }} />
-              {/* Brief */}
-              <div style={{ padding: "0 6px", fontSize: 10, color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.brief}>{ad.brief || "—"}</div>
+              {/* Avatar */}
+              <select className="input" value={s.avatar || ""} onChange={e => updateStrategy(ad.id, "avatar", e.target.value)} style={selS}>
+                <option value="">...</option>
+                {avatarNames.map(a => <option key={a} value={a}>{a.length > 30 ? a.slice(0, 30) + "..." : a}</option>)}
+              </select>
+              {/* Hook / Headline */}
+              <input className="input" value={s.hook || ""} onChange={e => updateStrategy(ad.id, "hook", e.target.value)} placeholder="Hook..." style={cellS} />
+              {/* Grabs Attn? */}
+              <select className="input" value={s.grabs_attention || ""} onChange={e => updateStrategy(ad.id, "grabs_attention", e.target.value)} style={selS}>
+                <option value="">...</option>
+                {SHEET_GRABS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+              {/* Desire */}
+              <select className="input" value={s.desire || ""} onChange={e => updateStrategy(ad.id, "desire", e.target.value)} style={selS}>
+                <option value="">...</option>
+                {desireList.map(d => <option key={d} value={d}>{d.length > 30 ? d.slice(0, 30) + "..." : d}</option>)}
+              </select>
+              {/* Trigger */}
+              <select className="input" value={s.trigger || ""} onChange={e => updateStrategy(ad.id, "trigger", e.target.value)} style={selS}>
+                <option value="">...</option>
+                {triggerList.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              {/* Objections? */}
+              <select className="input" value={s.handles_objections || ""} onChange={e => updateStrategy(ad.id, "handles_objections", e.target.value)} style={selS}>
+                <option value="">...</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+                <option value="Partially">Partially</option>
+              </select>
+              {/* Why Not? */}
+              <input className="input" value={s.why_not || ""} onChange={e => updateStrategy(ad.id, "why_not", e.target.value)} placeholder="If no, why..." style={cellS} />
+              {/* Confidence */}
+              <input className="input" type="number" min="1" max="10" value={s.confidence || ""} onChange={e => updateStrategy(ad.id, "confidence", e.target.value)} placeholder="1-10" style={cellS} />
+              {/* Why It Should Work */}
+              <input className="input" value={s.why_work || ""} onChange={e => updateStrategy(ad.id, "why_work", e.target.value)} placeholder="Why it should work..." style={cellS} />
               {/* Deadline */}
-              <div style={{ padding: "0 8px", fontSize: 10, color: od(ad.deadline) ? "var(--red)" : "var(--text-secondary)" }}>{ad.deadline ? fd(ad.deadline) : "—"}</div>
+              <div style={{ padding: "0 6px", fontSize: 10, color: od(ad.deadline) ? "var(--red)" : "var(--text-secondary)" }}>{ad.deadline ? fd(ad.deadline) : "—"}</div>
               {/* Checklist */}
-              <div style={{ padding: "0 8px" }}>
+              <div style={{ padding: "0 6px" }}>
                 {cp.total > 0 ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <div style={{ flex: 1, height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
@@ -1427,13 +1464,15 @@ function PipelineSheet({ ads, dispatch, th, onOpenAd }) {
                 ) : <span style={{ fontSize: 10, color: "var(--text-muted)" }}>—</span>}
               </div>
               {/* ROAS */}
-              <div style={{ padding: "0 8px", fontSize: 11, fontWeight: 600, fontFamily: "var(--fm)", color: cl !== "none" ? CS[cl].c : "var(--text-muted)" }}>
+              <div style={{ padding: "0 6px", fontSize: 11, fontWeight: 600, fontFamily: "var(--fm)", color: cl !== "none" ? CS[cl].c : "var(--text-muted)" }}>
                 {ad.stage === "live" && roas > 0 ? `${roas}x` : "—"}
               </div>
-              {/* Notes */}
-              <div style={{ padding: "0 6px", fontSize: 10, color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.notes}>{ad.notes || "—"}</div>
+              {/* Results */}
+              <input className="input" value={s.results || ""} onChange={e => updateStrategy(ad.id, "results", e.target.value)} placeholder="Results..." style={cellS} />
+              {/* Key Learnings */}
+              <input className="input" value={s.learnings || ""} onChange={e => updateStrategy(ad.id, "learnings", e.target.value)} placeholder="Learnings..." style={cellS} />
               {/* Status */}
-              <select className="input" value={s.ad_status || ""} onChange={e => updateStrategy(ad.id, "ad_status", e.target.value)} style={{ fontSize: 10, padding: "3px 4px", border: "none", background: "transparent" }}>
+              <select className="input" value={s.ad_status || ""} onChange={e => updateStrategy(ad.id, "ad_status", e.target.value)} style={selS}>
                 <option value="">...</option>
                 {SHEET_STATUS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -2075,6 +2114,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [strategyData, setStrategyData] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(() => localStorage.getItem("al_auto_sync") !== "false");
   const [lastAutoSync, setLastAutoSync] = useState(null);
@@ -2091,13 +2131,15 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
     const load = async () => {
       try {
-        const [adsData, settings, members] = await Promise.all([
+        const [adsData, settings, members, stratData] = await Promise.all([
           fetchAds(activeWorkspaceId),
           getWorkspaceSettings(activeWorkspaceId),
           getWorkspaceMembers(activeWorkspaceId),
+          fetchStrategyData(activeWorkspaceId),
         ]);
         if (cancelled) return;
         setAds(adsData);
+        if (stratData) setStrategyData(stratData);
         setTh(settings);
         // Derive editor names from workspace members with editor role
         const editorNames = members.filter(m => m.role === "editor").map(m => m.editor_name || "Editor");
@@ -2542,7 +2584,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
             {/* Sheet View */}
             {pipelineView === "sheet" && (
-              <PipelineSheet ads={visibleAds} dispatch={dispatch} th={th} onOpenAd={setOpenAd} />
+              <PipelineSheet ads={visibleAds} dispatch={dispatch} th={th} onOpenAd={setOpenAd} strategyData={strategyData} />
             )}
             </>}
           </div>
