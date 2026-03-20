@@ -167,6 +167,8 @@ body {
   flex: 1;
   padding: 20px 28px;
   min-height: 100vh;
+  max-width: calc(100vw - var(--sidebar-width));
+  overflow-x: hidden;
 }
 
 /* ── SIDEBAR NAV ── */
@@ -448,5 +450,5 @@ select.input {
 @media (max-width: 900px) {
   .kanban-grid { grid-template-columns: repeat(2, 1fr); }
   .sidebar { display: none; }
-  .main-content { margin-left: 0; }
+  .main-content { margin-left: 0; max-width: 100vw; }
 }
