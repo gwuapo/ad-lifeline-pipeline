@@ -725,7 +725,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       </div>
 
       {/* Title row */}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 12 }}>
         {editingName ? (
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
@@ -741,83 +741,12 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         )}
       </div>
 
-      {/* Highlights -- Attio-style card grid */}
-      {(() => {
-        const hCardS = { background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "12px 14px" };
-        const hLabelS = { fontSize: 11, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 };
-        const hValS = { fontSize: 13, fontWeight: 600, color: "var(--text-primary)" };
-        return (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>
-            {/* Editor */}
-            <div style={hCardS} onClick={() => !isEditor && setEditingEditor(true)}>
-              <div style={hLabelS}><span style={{ fontSize: 13 }}>👤</span> Editor</div>
-              {editingEditor ? (
-                <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
-                  <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
-              ) : (
-                <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.editor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
-              )}
-            </div>
-            {/* Deadline */}
-            <div style={hCardS} onClick={() => !isEditor && setEditingDeadline(true)}>
-              <div style={hLabelS}><span style={{ fontSize: 13 }}>📅</span> Deadline</div>
-              {editingDeadline ? (
-                <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }} />
-              ) : (
-                <div style={{ ...hValS, color: over ? "var(--red)" : "var(--text-primary)", cursor: !isEditor ? "pointer" : "default" }}>{ad.deadline ? fd(ad.deadline) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
-              )}
-            </div>
-            {/* Stage */}
-            <div style={hCardS}>
-              <div style={hLabelS}><span style={{ fontSize: 13 }}>📊</span> Stage</div>
-              <div><span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: stg.color + "15", color: stg.color, fontWeight: 600 }}>{stg.label}</span></div>
-            </div>
-            {/* Type */}
-            <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
-              <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
-              {editingType ? (
-                <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
-                  {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : (
-                <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.type || "—"}</div>
-              )}
-            </div>
-            {/* ROAS (if live) */}
-            {ad.stage === "live" && la ? (
-              <div style={hCardS}>
-                <div style={hLabelS}><span style={{ fontSize: 13 }}>📈</span> ROAS</div>
-                <div style={{ ...hValS, color: cs.c }}>{adRoas}x</div>
-              </div>
-            ) : (
-              <div style={hCardS}>
-                <div style={hLabelS}><span style={{ fontSize: 13 }}>🔄</span> Iteration</div>
-                <div style={hValS}>{ad.iterations} / {ad.maxIter}</div>
-              </div>
-            )}
-            {/* CPA or Winner */}
-            {winner ? (
-              <div style={{ ...hCardS, borderColor: "var(--green-border)" }}>
-                <div style={hLabelS}><span style={{ fontSize: 13 }}>🏆</span> Verdict</div>
-                <div style={{ ...hValS, color: "var(--green)" }}>Winner ({gdays}d)</div>
-              </div>
-            ) : ad.stage === "live" && la ? (
-              <div style={hCardS}>
-                <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> CPA</div>
-                <div style={hValS}>{CUR} {la.cpa}</div>
-              </div>
-            ) : (
-              <div style={hCardS}>
-                <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Status</div>
-                <div style={hValS}>{ad.stage === "killed" ? "Killed" : "In progress"}</div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* Tabs -- directly under title */}
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`tab-btn ${tab === t.id ? "active" : ""}`}>{t.l}</button>)}
+      </div>
 
-      {/* Alert banners (compact, only when needed) */}
+      {/* Alert banners */}
       {gateErr && <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)" }}>{gateErr}</div>}
       {ad.stage === "live" && cl === "green" && (
         <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--green-bg)", borderLeft: "3px solid var(--green)", marginBottom: 12, fontSize: 12, color: "var(--green)" }}>
@@ -839,17 +768,88 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       )}
 
-      {/* Two-column: Left = tabs+content, Right = discussion */}
+      {/* Two-column: Left = content, Right = discussion */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, alignItems: "start" }}>
       <div>
-      {/* Tabs */}
-      <div className="tabs">
-        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`tab-btn ${tab === t.id ? "active" : ""}`}>{t.l}</button>)}
-      </div>
 
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
         <div className="animate-fade">
+          {/* Highlights -- Attio-style card grid */}
+          {(() => {
+            const hCardS = { background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "12px 14px" };
+            const hLabelS = { fontSize: 11, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 };
+            const hValS = { fontSize: 13, fontWeight: 600, color: "var(--text-primary)" };
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+                {/* Editor */}
+                <div style={hCardS} onClick={() => !isEditor && setEditingEditor(true)}>
+                  <div style={hLabelS}><span style={{ fontSize: 13 }}>👤</span> Editor</div>
+                  {editingEditor ? (
+                    <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                      <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.editor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
+                  )}
+                </div>
+                {/* Deadline */}
+                <div style={hCardS} onClick={() => !isEditor && setEditingDeadline(true)}>
+                  <div style={hLabelS}><span style={{ fontSize: 13 }}>📅</span> Deadline</div>
+                  {editingDeadline ? (
+                    <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }} />
+                  ) : (
+                    <div style={{ ...hValS, color: over ? "var(--red)" : "var(--text-primary)", cursor: !isEditor ? "pointer" : "default" }}>{ad.deadline ? fd(ad.deadline) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+                  )}
+                </div>
+                {/* Stage */}
+                <div style={hCardS}>
+                  <div style={hLabelS}><span style={{ fontSize: 13 }}>📊</span> Stage</div>
+                  <div><span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: stg.color + "15", color: stg.color, fontWeight: 600 }}>{stg.label}</span></div>
+                </div>
+                {/* Type */}
+                <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
+                  <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
+                  {editingType ? (
+                    <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                      {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.type || "—"}</div>
+                  )}
+                </div>
+                {/* ROAS or Iteration */}
+                {ad.stage === "live" && la ? (
+                  <div style={hCardS}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>📈</span> ROAS</div>
+                    <div style={{ ...hValS, color: cs.c }}>{adRoas}x</div>
+                  </div>
+                ) : (
+                  <div style={hCardS}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>🔄</span> Iteration</div>
+                    <div style={hValS}>{ad.iterations} / {ad.maxIter}</div>
+                  </div>
+                )}
+                {/* CPA or Winner or Status */}
+                {winner ? (
+                  <div style={{ ...hCardS, borderColor: "var(--green-border)" }}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>🏆</span> Verdict</div>
+                    <div style={{ ...hValS, color: "var(--green)" }}>Winner ({gdays}d)</div>
+                  </div>
+                ) : ad.stage === "live" && la ? (
+                  <div style={hCardS}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> CPA</div>
+                    <div style={hValS}>{CUR} {la.cpa}</div>
+                  </div>
+                ) : (
+                  <div style={hCardS}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Status</div>
+                    <div style={hValS}>{ad.stage === "killed" ? "Killed" : "In progress"}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {/* Checklist */}
           {(() => {
             const items = STAGE_CHECKLIST[ad.stage] || [];
