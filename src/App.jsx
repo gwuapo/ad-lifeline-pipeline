@@ -933,20 +933,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
-                <div style={rowS}>
+                <div style={{ ...rowS, borderBottom: "none" }}>
                   <div style={labelS}>Variable Tested</div>
                   <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={inputS}>
                     <option value="">—</option>
                     {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
-                <div style={{ ...rowS, borderBottom: "none" }}>
-                  <div style={labelS}>Voice Actor</div>
-                  <input list="voice-actors-list" value={s.voice_actor || ""} onChange={e => updateS("voice_actor", e.target.value)} className="input" placeholder="Select or type name..." style={inputS} />
-                  <datalist id="voice-actors-list">
-                    {[...new Set(allAds.map(a => a.strategy?.voice_actor).filter(Boolean))].map(v => <option key={v} value={v} />)}
-                  </datalist>
-                </div>
+
               </div>
             );
           })()}
