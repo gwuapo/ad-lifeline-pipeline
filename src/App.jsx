@@ -91,8 +91,8 @@ const VT = [
   { id: "proof", label: "Proof Block", desc: "Different proof arrangement" },
 ];
 
-const DT = { green: 15, yellow: 25 };
-const CL = (v, t) => v == null ? "none" : v <= t.green ? "green" : v <= t.yellow ? "yellow" : "red";
+const DT = { green: 2.0, yellow: 1.0 }; // ROAS thresholds: >= green = winner, >= yellow = medium, < yellow = losing
+const CL = (roas, t) => roas == null ? "none" : roas >= t.green ? "green" : roas >= t.yellow ? "yellow" : "red";
 const CS = {
   green: { l: "Winner", c: "var(--green)", bg: "var(--green-bg)" },
   yellow: { l: "Medium", c: "var(--yellow)", bg: "var(--yellow-bg)" },
@@ -117,7 +117,7 @@ const uid = () => ++_id;
 const lm = (a) => a.metrics?.length ? a.metrics[a.metrics.length - 1] : null;
 const fd = (d) => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
 const od = (d) => d ? new Date(d) < new Date("2026-02-12") : false;
-const gd = (a, t) => { let c = 0; for (let i = a.metrics.length - 1; i >= 0; i--) { if (a.metrics[i].cpa <= t.green) c++; else break; } return c; };
+const gd = (a, t) => { let c = 0; for (let i = a.metrics.length - 1; i >= 0; i--) { const r = a.metrics[i].roas ?? 0; if (r >= t.green) c++; else break; } return c; };
 const tm = (a) => {
   const m = a.metrics; if (!m.length) return null;
   return { spend: m.reduce((s, x) => s + x.spend, 0), conv: m.reduce((s, x) => s + x.conv, 0),
@@ -140,8 +140,9 @@ const bestChannel = (ad, th) => {
     const m = cm[ch.id];
     if (!m?.length) continue;
     const last = m[m.length - 1];
-    if (!last || !last.cpa) continue;
-    if (!best || last.cpa < best.cpa) best = { ch: ch.id, label: ch.label, color: ch.color, cpa: last.cpa, roas: last.roas || 0, metric: last };
+    if (!last) continue;
+    const roas = last.roas ?? 0;
+    if (!best || roas > best.roas) best = { ch: ch.id, label: ch.label, color: ch.color, cpa: last.cpa, roas, metric: last };
   }
   return best;
 };
@@ -443,7 +444,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   };
 
   const la = lm(ad), tot = tm(ad);
-  const cl = ad.stage === "live" ? CL(la?.cpa, th) : "none";
+  const adRoas = la?.roas ?? 0;
+  const cl = ad.stage === "live" ? CL(adRoas || null, th) : "none";
   const cs = CS[cl];
   const stg = STAGES.find(s => s.id === ad.stage);
   const over = od(ad.deadline);
@@ -669,7 +671,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     { label: "Status", val: stg.label, badge: true, badgeColor: stg.color },
     { label: "Type", val: ad.type },
     ...(ad.iterations > 0 ? [{ label: "Iteration", val: `${ad.iterations} / ${ad.maxIter}` }] : []),
-    ...(ad.stage === "live" && la ? [{ label: "CPA", val: `${CUR} ${la.cpa}`, color: cs.c }] : []),
+    ...(ad.stage === "live" && la ? [{ label: "ROAS", val: `${adRoas}x`, color: cs.c }, { label: "CPA", val: `${CUR} ${la.cpa}` }] : []),
     ...(winner ? [{ label: "Verdict", val: `Winner (${gdays}d)`, color: "var(--green)" }] : []),
   ];
 
@@ -744,7 +746,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             const st = STAGES.find(x => x.id === s);
             return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "30" }}>{st.icon} {st.label}</button>;
           })}
-          {ad.iterations >= ad.maxIter && ad.stage === "live" && CL(la?.cpa, th) === "red" && (
+          {ad.iterations >= ad.maxIter && ad.stage === "live" && cl === "red" && (
             <button onClick={doKill} className="btn btn-danger btn-xs">Kill Ad</button>
           )}
         </div>
@@ -1015,7 +1017,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             const chId = (ad.channelIds || {})[ch.id];
             const chTot = tmCh(chm);
             const chLast = chm.length ? chm[chm.length - 1] : null;
-            const chCl = chLast ? CL(chLast.cpa, th) : "none";
+            const chCl = chLast ? CL(chLast.roas ?? 0, th) : "none";
             const chCs = CS[chCl];
             if (!chId?.trim() && !chmRaw.length) return null;
             return (
@@ -1036,11 +1038,11 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     </div>
                   ))}</div>}
                 {chm.length > 0 && <div>
-                  <div style={{ fontSize: 9.5, color: "var(--text-tertiary)", fontWeight: 600, textTransform: "uppercase", marginBottom: 5 }}>CPA Trend</div>
+                  <div style={{ fontSize: 9.5, color: "var(--text-tertiary)", fontWeight: 600, textTransform: "uppercase", marginBottom: 5 }}>ROAS Trend</div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 55 }}>
-                    {chm.map((m, i) => { const mx = Math.max(...chm.map(x => x.cpa)); const h = mx > 0 ? Math.max(8, (m.cpa / mx) * 45) : 8; const lv = CL(m.cpa, th); const col = CS[lv].c;
+                    {chm.map((m, i) => { const r = m.roas ?? 0; const mx = Math.max(...chm.map(x => x.roas ?? 0), 0.01); const h = Math.max(8, (r / mx) * 45); const lv = CL(r, th); const col = CS[lv].c;
                       return <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-                        <span style={{ fontSize: 8.5, color: col, fontFamily: "var(--fm)", fontWeight: 600 }}>{CUR} {m.cpa}</span>
+                        <span style={{ fontSize: 8.5, color: col, fontFamily: "var(--fm)", fontWeight: 600 }}>{r}x</span>
                         <div style={{ width: "100%", height: h, background: col, opacity: 0.2, borderRadius: "3px 3px 0 0" }} />
                         <span style={{ fontSize: 7.5, color: "var(--text-muted)" }}>{fd(m.date)}</span>
                       </div>; })}
@@ -1051,7 +1053,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr 1fr", gap: 3, padding: "5px 0", borderBottom: "1px solid var(--border)", color: "var(--text-tertiary)", fontWeight: 600 }}>
                       <span>Date</span><span>CPA</span><span>Spend</span><span>Conv</span><span>CTR</span><span>CPM</span><span>ROAS</span>
                     </div>
-                    {[...chm].reverse().map((m, i) => { const lv = CL(m.cpa, th); const col = CS[lv].c; return (
+                    {[...chm].reverse().map((m, i) => { const lv = CL(m.roas ?? 0, th); const col = CS[lv].c; return (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr 1fr", gap: 3, padding: "4px 0", borderBottom: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
                         <span style={{ color: "var(--text-tertiary)" }}>{fd(m.date)}</span>
                         <span style={{ color: col, fontWeight: 600 }}>{CUR} {m.cpa}</span>
@@ -1312,7 +1314,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 function PCard({ ad, th, onClick, onMove, onIterate }) {
   const bc = bestChannel(ad, th);
   const la = bc ? bc.metric : lm(ad);
-  const cl = ad.stage === "live" ? CL(la?.cpa, th) : "none", cs = CS[cl];
+  const adRoas = bc?.roas ?? la?.roas ?? 0;
+  const cl = ad.stage === "live" ? CL(adRoas || null, th) : "none", cs = CS[cl];
   const ix = SO.indexOf(ad.stage), ov = od(ad.deadline), gdays = gd(ad, th);
   const unresolvedRevs = ad.revisionRequests?.filter(r => !r.resolved).length || 0;
   const hasIds = hasAnyChId(ad.channelIds);
@@ -1352,13 +1355,14 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
 
       {ad.stage === "live" && la && bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
         <span style={{ color: bc.color, fontSize: 9.5, fontWeight: 600 }}>{bc.label} </span>
-        <span style={{ color: "var(--text-tertiary)" }}>CPA: </span>
-        <span style={{ color: cs.c, fontWeight: 700 }}>{CUR} {la.cpa}</span>
-        {la.roas > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 6 }}>ROAS: <span style={{ color: la.roas >= 2 ? "var(--green)" : "var(--yellow)", fontWeight: 700 }}>{la.roas}x</span></span>}
+        <span style={{ color: "var(--text-tertiary)" }}>ROAS: </span>
+        <span style={{ color: cs.c, fontWeight: 700 }}>{adRoas}x</span>
+        {la.cpa > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 6 }}>CPA: {CUR} {la.cpa}</span>}
         <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
       </div>}
       {ad.stage === "live" && la && !bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
-        <span style={{ color: "var(--text-tertiary)" }}>CPA: </span><span style={{ color: cs.c, fontWeight: 700 }}>{CUR} {la.cpa}</span>
+        <span style={{ color: "var(--text-tertiary)" }}>ROAS: </span><span style={{ color: cs.c, fontWeight: 700 }}>{adRoas}x</span>
+        {la.cpa > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 6 }}>CPA: {CUR} {la.cpa}</span>}
         <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
       </div>}
 
@@ -1525,7 +1529,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
         {editors.map(name => {
           const all = ads.filter(a => a.editor === name && a.stage !== "killed");
           const live = all.filter(a => a.stage === "live");
-          const winners = live.filter(a => { const l = lm(a); return l && CL(l.cpa, th) === "green" && gd(a, th) >= 5; });
+          const winners = live.filter(a => { const l = lm(a); return l && CL(l.roas ?? 0, th) === "green" && gd(a, th) >= 5; });
           const overdueN = all.filter(a => od(a.deadline)).length;
           const completed = all.filter(a => a.stage === "live" || a.finalApproved);
           const winRate = completed.length > 0 ? Math.round((winners.length / completed.length) * 100) : 0;
@@ -1790,7 +1794,8 @@ function LearningsPage({ ads, workspaceLearnings, th }) {
   const winners = ads.filter(a => {
     const bc = bestChannel(a, th);
     const la = bc ? bc.metric : lm(a);
-    return la?.cpa && CL(la.cpa, th) === "green";
+    const r = bc?.roas ?? la?.roas ?? 0;
+    return r > 0 && CL(r, th) === "green";
   });
   const autoCount = combined.filter(l => l.source === "auto").length;
   const manualCount = combined.filter(l => l.source !== "auto").length;
@@ -2092,8 +2097,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       if (a.stage !== "live") return false;
       const bc = bestChannel(a, th);
       const la = bc ? bc.metric : lm(a);
-      if (!la?.cpa) return false;
-      return CL(la.cpa, th) === "green" && !analyzedWinnersRef.current.has(a.id);
+      const r = bc?.roas ?? la?.roas ?? 0;
+      if (!r) return false;
+      return CL(r, th) === "green" && !analyzedWinnersRef.current.has(a.id);
     });
     if (winners.length === 0) return;
 
@@ -2226,8 +2232,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
   const visibleAds = (role === "editor" || role === "strategist") ? ads.filter(a => a.editor === editorName && a.stage !== "killed") : ads.filter(a => a.stage !== "killed");
   const live = visibleAds.filter(a => a.stage === "live");
-  const win = live.filter(a => CL(lm(a)?.cpa, th) === "green").length;
-  const lose = live.filter(a => CL(lm(a)?.cpa, th) === "red").length;
+  const win = live.filter(a => { const l = lm(a); return CL(l?.roas ?? 0, th) === "green"; }).length;
+  const lose = live.filter(a => { const l = lm(a); return CL(l?.roas ?? 0, th) === "red"; }).length;
   const spend = visibleAds.reduce((s, a) => s + a.metrics.reduce((ss, m) => ss + m.spend, 0), 0);
   const learns = visibleAds.reduce((s, a) => s + a.learnings.length, 0);
   const killed = ads.filter(a => a.stage === "killed").length;

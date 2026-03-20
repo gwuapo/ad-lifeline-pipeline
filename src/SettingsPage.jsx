@@ -410,7 +410,7 @@ function IntegrationsTab() {
   return (
     <div>
       <IntCard title="Triple Whale (Metrics)" statusOk={!!twConf.apiKey} status={twConf.apiKey ? "Connected" : "Not configured"}>
-        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Pull ad-level CPA, spend, conversions from Triple Whale.</p>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Pull ad-level ROAS, CPA, spend, conversions from Triple Whale.</p>
         <label className="label" style={{ marginTop: 0 }}>API Key</label>
         <input type="password" value={twKey} onChange={e => setTwKey(e.target.value)} className="input" placeholder="tw_api_..." />
         <label className="label">Shop Domain</label>
@@ -511,26 +511,26 @@ function PipelineTab({ thresholds, setThresholds }) {
 
   return (
     <div>
-      {/* CPA Thresholds */}
+      {/* ROAS Thresholds */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="section-title">CPA Thresholds</div>
-        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>Ads auto-classify based on latest CPA against these thresholds.</p>
+        <div className="section-title">ROAS Thresholds</div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>Ads auto-classify based on latest ROAS from Triple Whale data. Higher ROAS = better.</p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <label className="label" style={{ marginTop: 0 }}>
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--green)", marginRight: 5 }} />Green (Winner) &le;
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--green)", marginRight: 5 }} />Green (Winner) &ge;
             </label>
-            <input type="number" step="0.01" value={g} onChange={e => setG(+e.target.value)} className="input" />
+            <input type="number" step="0.1" value={g} onChange={e => setG(+e.target.value)} className="input" placeholder="e.g. 2.0" />
           </div>
           <div>
             <label className="label" style={{ marginTop: 0 }}>
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--yellow)", marginRight: 5 }} />Yellow (Medium) &le;
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--yellow)", marginRight: 5 }} />Yellow (Medium) &ge;
             </label>
-            <input type="number" step="0.01" value={y} onChange={e => setY(+e.target.value)} className="input" />
+            <input type="number" step="0.1" value={y} onChange={e => setY(+e.target.value)} className="input" placeholder="e.g. 1.0" />
           </div>
         </div>
         <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", margin: "8px 0 14px" }}>
-          <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--red)", marginRight: 5 }} />Red (Losing) = above yellow
+          <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--red)", marginRight: 5 }} />Red (Losing) = below yellow
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={saveThresholds} className="btn btn-primary btn-sm">Save Thresholds</button>
