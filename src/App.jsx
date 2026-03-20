@@ -393,7 +393,7 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab }) {
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab, strategyData }) {
   const [tab, setTab] = useState(initialTab || "overview");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [msg, setMsg] = useState("");
@@ -672,11 +672,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     return map[type] || map.action;
   };
 
+  const [editingEditor, setEditingEditor] = useState(false);
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [editingType, setEditingType] = useState(false);
+  const [eType, setEType] = useState(ad.type || "");
+  const TYPE_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
+
   const metaRows = [
-    { label: "Editor", val: ad.editor || "Unassigned" },
-    { label: "Due date", val: ad.deadline ? fd(ad.deadline) : "No deadline", color: over ? "var(--red)" : undefined },
     { label: "Status", val: stg.label, badge: true, badgeColor: stg.color },
-    { label: "Type", val: ad.type },
     ...(ad.iterations > 0 ? [{ label: "Iteration", val: `${ad.iterations} / ${ad.maxIter}` }] : []),
     ...(ad.stage === "live" && la ? [{ label: "ROAS", val: `${adRoas}x`, color: cs.c }, { label: "CPA", val: `${CUR} ${la.cpa}` }] : []),
     ...(winner ? [{ label: "Verdict", val: `Winner (${gdays}d)`, color: "var(--green)" }] : []),
@@ -729,17 +732,60 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       </div>
 
-      {/* Metadata table */}
-      <div style={{ marginBottom: 24 }}>
+      {/* Inline-editable metadata */}
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24, fontSize: 13 }}>
+        {/* Editor */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>Editor:</span>
+          {editingEditor ? (
+            <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ width: "auto", padding: "2px 8px", fontSize: 12 }}>
+              <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+          ) : (
+            <span style={{ color: "var(--text-primary)", fontWeight: 500, cursor: !isEditor ? "pointer" : "default" }} onClick={() => !isEditor && setEditingEditor(true)}>
+              {ad.editor || "Unassigned"}{!isEditor && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>✎</span>}
+            </span>
+          )}
+        </div>
+        <span style={{ color: "var(--border)" }}>·</span>
+        {/* Deadline */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>Due:</span>
+          {editingDeadline ? (
+            <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ width: "auto", padding: "2px 8px", fontSize: 12 }} />
+          ) : (
+            <span style={{ color: over ? "var(--red)" : "var(--text-primary)", fontWeight: 500, cursor: !isEditor ? "pointer" : "default" }} onClick={() => !isEditor && setEditingDeadline(true)}>
+              {ad.deadline ? fd(ad.deadline) : "No deadline"}{!isEditor && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>✎</span>}
+            </span>
+          )}
+        </div>
+        <span style={{ color: "var(--border)" }}>·</span>
+        {/* Type */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>Type:</span>
+          {editingType ? (
+            <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ width: "auto", padding: "2px 8px", fontSize: 12 }}>
+              {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          ) : (
+            <span style={{ color: "var(--text-primary)", fontWeight: 500, cursor: !isEditor ? "pointer" : "default" }} onClick={() => !isEditor && setEditingType(true)}>
+              {ad.type || "—"}{!isEditor && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>✎</span>}
+            </span>
+          )}
+        </div>
+        {/* Status badge + remaining meta */}
         {metaRows.map((r, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", padding: "8px 0", borderBottom: i < metaRows.length - 1 ? "1px solid var(--border-light)" : "none" }}>
-            <div style={{ width: 120, flexShrink: 0, fontSize: 13, color: "var(--text-tertiary)", fontWeight: 450 }}>{r.label}</div>
-            <div style={{ flex: 1, fontSize: 13, color: r.color || "var(--text-primary)", fontWeight: 500 }}>
+          <React.Fragment key={i}>
+            <span style={{ color: "var(--border)" }}>·</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "var(--text-tertiary)", fontWeight: 450 }}>{r.label}:</span>
               {r.badge ? (
-                <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "var(--radius-sm)", background: r.badgeColor + "12", color: r.badgeColor, fontSize: 12, fontWeight: 600 }}>{r.val}</span>
-              ) : r.val}
+                <span style={{ display: "inline-block", padding: "1px 8px", borderRadius: "var(--radius-full)", background: r.badgeColor + "15", color: r.badgeColor, fontSize: 11, fontWeight: 600 }}>{r.val}</span>
+              ) : (
+                <span style={{ color: r.color || "var(--text-primary)", fontWeight: 500 }}>{r.val}</span>
+              )}
             </div>
-          </div>
+          </React.Fragment>
         ))}
       </div>
 
@@ -831,6 +877,62 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             );
           })()}
 
+          {/* Strategy fields */}
+          {(() => {
+            const s = ad.strategy || {};
+            const avatarNames = (strategyData?.avatars || []).map(a => a.name).filter(Boolean);
+            const desireList = (strategyData?.desires || []).map(d => d.want).filter(Boolean);
+            const updateS = (key, value) => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...s, [key]: value } } });
+            const AD_FORMAT_OPTS = ["Single Static", "Video", "Carousel"];
+            const VARIABLE_OPTS = ["Hook", "Lead", "Unique Mechanism", "Body", "Close"];
+            const fieldStyle = { fontSize: 12, padding: "6px 10px" };
+            return (
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 10 }}>
+                  Ad Strategy
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Avatar</div>
+                    <select value={s.avatar || ""} onChange={e => updateS("avatar", e.target.value)} className="input" style={fieldStyle}>
+                      <option value="">Select avatar...</option>
+                      {avatarNames.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Desire Targeted</div>
+                    <select value={s.desire || ""} onChange={e => updateS("desire", e.target.value)} className="input" style={fieldStyle}>
+                      <option value="">Optional...</option>
+                      {desireList.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Ad Concept</div>
+                    <input value={s.concept || ""} onChange={e => updateS("concept", e.target.value)} className="input" placeholder="Describe the concept..." style={fieldStyle} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Ad Angle</div>
+                    <input value={s.angle || ""} onChange={e => updateS("angle", e.target.value)} className="input" placeholder="e.g. Fear-based, aspirational..." style={fieldStyle} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Ad Format</div>
+                    <select value={s.ad_format || ""} onChange={e => updateS("ad_format", e.target.value)} className="input" style={fieldStyle}>
+                      <option value="">Select format...</option>
+                      {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Variable Tested</div>
+                    <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={fieldStyle}>
+                      <option value="">Select variable...</option>
+                      {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Description -- Brief */}
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Brief</div>
@@ -843,19 +945,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" placeholder="Internal notes..." />
           </div>
 
-          {/* Editable fields row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>Editor</div>
-              <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
-                <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>Deadline</div>
-              <input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} className="input" />
-            </div>
-          </div>
+
 
           {/* TikTok URL */}
           {!isEditor && <div style={{ marginBottom: 24 }}>
@@ -1360,6 +1450,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 const SHEET_STATUS_OPTIONS = ["Concept", "Scripted", "In Production", "Ready to Launch", "Live", "Winner", "Killed"];
 const SHEET_FORMAT_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
 const SHEET_GRABS_OPTIONS = ["Yes - Strong Hook", "Somewhat", "No - Weak", "Untested"];
+const SHEET_AD_FORMAT_OPTIONS = ["Single Static", "Video", "Carousel"];
+const SHEET_VARIABLE_OPTIONS = ["Hook", "Lead", "Unique Mechanism", "Body", "Close"];
 
 function PipelineSheet({ ads, dispatch, th, onOpenAd, strategyData }) {
   const avatarNames = (strategyData?.avatars || []).map(a => a.name).filter(Boolean);
@@ -1374,9 +1466,9 @@ function PipelineSheet({ ads, dispatch, th, onOpenAd, strategyData }) {
   const selS = { fontSize: 10, padding: "3px 4px", border: "none", background: "transparent" };
   const roS = { padding: "0 6px", fontSize: 10, color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 
-  const COLS = "150px 90px 70px 60px 1fr 80px 110px 1fr 100px 110px 120px 100px 1fr 70px 1fr 80px 80px 80px 70px 90px 100px";
-  const HEADERS = ["Ad Name", "Stage", "Editor", "Batch", "Concept", "Format", "Avatar", "Hook / Headline", "Grabs Attn?", "Desire", "Trigger", "Objections?", "Why Not?", "Confidence", "Why It Should Work", "Deadline", "Checklist", "ROAS", "Results", "Key Learnings", "Status"];
-  const MW = 2200;
+  const COLS = "150px 90px 70px 60px 1fr 80px 110px 1fr 110px 100px 110px 120px 100px 1fr 70px 1fr 100px 100px 80px 80px 80px 70px 90px 100px";
+  const HEADERS = ["Ad Name", "Stage", "Editor", "Batch", "Concept", "Format", "Avatar", "Hook / Headline", "Ad Angle", "Grabs Attn?", "Desire", "Trigger", "Objections?", "Why Not?", "Confidence", "Why It Should Work", "Ad Format", "Variable Tested", "Deadline", "Checklist", "ROAS", "Results", "Key Learnings", "Status"];
+  const MW = 2600;
 
   return (
     <div>
@@ -1422,6 +1514,8 @@ function PipelineSheet({ ads, dispatch, th, onOpenAd, strategyData }) {
               </select>
               {/* Hook / Headline */}
               <input className="input" value={s.hook || ""} onChange={e => updateStrategy(ad.id, "hook", e.target.value)} placeholder="Hook..." style={cellS} />
+              {/* Ad Angle */}
+              <input className="input" value={s.angle || ""} onChange={e => updateStrategy(ad.id, "angle", e.target.value)} placeholder="Angle..." style={cellS} />
               {/* Grabs Attn? */}
               <select className="input" value={s.grabs_attention || ""} onChange={e => updateStrategy(ad.id, "grabs_attention", e.target.value)} style={selS}>
                 <option value="">...</option>
@@ -1450,6 +1544,16 @@ function PipelineSheet({ ads, dispatch, th, onOpenAd, strategyData }) {
               <input className="input" type="number" min="1" max="10" value={s.confidence || ""} onChange={e => updateStrategy(ad.id, "confidence", e.target.value)} placeholder="1-10" style={cellS} />
               {/* Why It Should Work */}
               <input className="input" value={s.why_work || ""} onChange={e => updateStrategy(ad.id, "why_work", e.target.value)} placeholder="Why it should work..." style={cellS} />
+              {/* Ad Format */}
+              <select className="input" value={s.ad_format || ""} onChange={e => updateStrategy(ad.id, "ad_format", e.target.value)} style={selS}>
+                <option value="">...</option>
+                {SHEET_AD_FORMAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+              {/* Variable Tested */}
+              <select className="input" value={s.variable_tested || ""} onChange={e => updateStrategy(ad.id, "variable_tested", e.target.value)} style={selS}>
+                <option value="">...</option>
+                {SHEET_VARIABLE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
               {/* Deadline */}
               <div style={{ padding: "0 6px", fontSize: 10, color: od(ad.deadline) ? "var(--red)" : "var(--text-secondary)" }}>{ad.deadline ? fd(ad.deadline) : "—"}</div>
               {/* Checklist */}
@@ -2448,7 +2552,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── AD EXPANDED VIEW ── */}
         {page === "pipeline" && openAd && (
-          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} />
+          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} strategyData={strategyData} />
         )}
 
         {/* ── PIPELINE PAGE ── */}
