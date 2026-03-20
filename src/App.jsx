@@ -675,6 +675,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [editingEditor, setEditingEditor] = useState(false);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [editingType, setEditingType] = useState(false);
+  const [editingVA, setEditingVA] = useState(false);
   const [eType, setEType] = useState(ad.type || "");
   const TYPE_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
 
@@ -807,6 +808,16 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>📊</span> Stage</div>
                   <div><span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: stg.color + "15", color: stg.color, fontWeight: 600 }}>{stg.label}</span></div>
                 </div>
+                {/* Voice Actor */}
+                <div style={hCardS} onClick={() => !editingVA && setEditingVA(true)}>
+                  <div style={hLabelS}><span style={{ fontSize: 13 }}>🎙️</span> Voice Actor</div>
+                  {editingVA ? (
+                    <div><input list="va-list-hl" value={ad.strategy?.voice_actor || ""} onChange={e => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...(ad.strategy || {}), voice_actor: e.target.value } } })} onBlur={() => setEditingVA(false)} autoFocus className="input" placeholder="Select or type..." style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                    <datalist id="va-list-hl">{[...new Set(allAds.map(a => a.strategy?.voice_actor).filter(Boolean))].map(v => <option key={v} value={v} />)}</datalist></div>
+                  ) : (
+                    <div style={{ ...hValS, cursor: "pointer" }}>{ad.strategy?.voice_actor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
+                  )}
+                </div>
                 {/* Type */}
                 <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
@@ -818,19 +829,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>{ad.type || "—"}</div>
                   )}
                 </div>
-                {/* ROAS or Iteration */}
-                {ad.stage === "live" && la ? (
-                  <div style={hCardS}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>📈</span> ROAS</div>
-                    <div style={{ ...hValS, color: cs.c }}>{adRoas}x</div>
-                  </div>
-                ) : (
-                  <div style={hCardS}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>🔄</span> Iteration</div>
-                    <div style={hValS}>{ad.iterations} / {ad.maxIter}</div>
-                  </div>
-                )}
-                {/* CPA or Winner or Status */}
+                {/* ROAS / CPA / Winner / Status */}
                 {winner ? (
                   <div style={{ ...hCardS, borderColor: "var(--green-border)" }}>
                     <div style={hLabelS}><span style={{ fontSize: 13 }}>🏆</span> Verdict</div>
@@ -838,8 +837,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   </div>
                 ) : ad.stage === "live" && la ? (
                   <div style={hCardS}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> CPA</div>
-                    <div style={hValS}>{CUR} {la.cpa}</div>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>📈</span> ROAS</div>
+                    <div style={{ ...hValS, color: cs.c }}>{adRoas}x · {CUR} {la.cpa} CPA</div>
                   </div>
                 ) : (
                   <div style={hCardS}>
