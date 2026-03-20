@@ -66,7 +66,9 @@ function getStaleItems(ad, stage) {
   const now = Date.now();
   const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
   const staleItems = [];
-  const stageEnteredAt = ad.stageEnteredAt || ad.createdAt || 0;
+  // If no stageEnteredAt, treat as "just entered" (no stale items)
+  const stageEnteredAt = ad.stageEnteredAt;
+  if (!stageEnteredAt || stageEnteredAt < 1700000000000) return staleItems; // before ~2023 = invalid
   for (const item of items) {
     if (ad.checklist?.[item.key]?.done) continue;
     const elapsed = now - stageEnteredAt;
@@ -803,10 +805,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   Checklist &middot; {cp.done}/{cp.total}
                 </div>
                 {stale.length > 0 && (
-                  <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 10, fontSize: 12, color: "var(--red)", lineHeight: 1.6 }}>
-                    {stale.map(s => (
-                      <div key={s.key}>{s.label} -- {s.daysStale}d stale</div>
-                    ))}
+                  <div style={{ fontSize: 11, color: "var(--red)", marginBottom: 8 }}>
+                    {stale.length} overdue task{stale.length > 1 ? "s" : ""}
                   </div>
                 )}
                 {items.map((item, i) => {
@@ -2320,22 +2320,27 @@ export default function App({ session, userRole, userName, workspaces, activeWor
           <div className="animate-fade">
             {adsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}><div className="loading-dot" style={{ margin: "0 auto 12px" }} />Loading pipeline...</div>}
             {!adsLoading && <>
-            {/* Stale reminders */}
+            {/* Needs attention */}
             {(() => {
-              const allStale = ads.filter(a => a.stage !== "killed" && a.stage !== "live").flatMap(a => {
+              // Group stale items by ad (deduplicate)
+              const adsNeedingAttention = ads.filter(a => a.stage !== "killed" && a.stage !== "live").filter(a => {
                 const stale = getStaleItems(a, a.stage);
-                return stale.map(s => ({ adName: a.name, adId: a.id, ...s }));
+                return stale.length > 0;
               });
-              if (allStale.length === 0) return null;
+              if (adsNeedingAttention.length === 0) return null;
               return (
-                <div style={{ padding: "10px 14px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 16, fontSize: 12, color: "var(--red)", lineHeight: 1.7 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Stale tasks need attention:</div>
-                  {allStale.slice(0, 5).map((s, i) => (
-                    <div key={i} style={{ cursor: "pointer" }} onClick={() => { const a = ads.find(x => x.id === s.adId); if (a) setOpenAd(a); }}>
-                      <span style={{ fontWeight: 500 }}>{s.adName}</span> -- {s.label} ({s.daysStale}d stale)
-                    </div>
-                  ))}
-                  {allStale.length > 5 && <div style={{ color: "var(--text-muted)", marginTop: 2 }}>+{allStale.length - 5} more</div>}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "6px 0", overflowX: "auto" }}>
+                  <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600, flexShrink: 0 }}>Needs attention:</span>
+                  {adsNeedingAttention.slice(0, 6).map(a => {
+                    const stale = getStaleItems(a, a.stage);
+                    return (
+                      <button key={a.id} onClick={() => setOpenAd(a)}
+                        className="btn btn-xs" style={{ background: "var(--red-bg)", color: "var(--red)", border: "1px solid var(--red-border)", flexShrink: 0 }}>
+                        {a.name} <span style={{ opacity: 0.7 }}>({stale.length})</span>
+                      </button>
+                    );
+                  })}
+                  {adsNeedingAttention.length > 6 && <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>+{adsNeedingAttention.length - 6} more</span>}
                 </div>
               );
             })()}
