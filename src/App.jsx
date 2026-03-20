@@ -663,8 +663,18 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     return map[type] || map.action;
   };
 
+  const metaRows = [
+    { label: "Editor", val: ad.editor || "Unassigned" },
+    { label: "Due date", val: ad.deadline ? fd(ad.deadline) : "No deadline", color: over ? "var(--red)" : undefined },
+    { label: "Status", val: stg.label, badge: true, badgeColor: stg.color },
+    { label: "Type", val: ad.type },
+    ...(ad.iterations > 0 ? [{ label: "Iteration", val: `${ad.iterations} / ${ad.maxIter}` }] : []),
+    ...(ad.stage === "live" && la ? [{ label: "CPA", val: `${CUR} ${la.cpa}`, color: cs.c }] : []),
+    ...(winner ? [{ label: "Verdict", val: `Winner (${gdays}d)`, color: "var(--green)" }] : []),
+  ];
+
   return (
-    <div className="animate-fade" style={{ maxWidth: 960 }}>
+    <div className="animate-fade" style={{ maxWidth: 720 }}>
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
@@ -682,56 +692,54 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       )}
 
       {/* Breadcrumb */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
-        <button onClick={onClose} className="btn btn-ghost btn-xs" style={{ padding: "4px 8px", gap: 4 }}>
-          <span style={{ fontSize: 14 }}>←</span> Pipeline
-        </button>
-        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>/</span>
-        <span style={{ color: "var(--text-tertiary)", fontSize: 12 }}>{stg.label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20, fontSize: 13, color: "var(--text-tertiary)" }}>
+        <span style={{ cursor: "pointer", color: "var(--accent-light)" }} onClick={onClose}>Pipeline</span>
+        <span style={{ color: "var(--text-muted)" }}>&gt;</span>
+        <span>{stg.label}</span>
       </div>
 
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-          {editingName ? (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, marginRight: 12 }}>
-              <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
-                className="input" autoFocus style={{ fontSize: 22, fontWeight: 600, padding: "6px 10px", flex: 1 }} />
-              <button onClick={saveName} className="btn btn-primary btn-sm">Save</button>
-              <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-sm">Cancel</button>
-            </div>
-          ) : (
-            <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)", cursor: role === "founder" ? "pointer" : "default", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0 }}
-              onClick={() => { if (role === "founder") setEditingName(true); }}
-              title={role === "founder" ? "Click to rename" : ""}>
-              {ad.name}
-            </h1>
-          )}
+      {/* Title */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        {editingName ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+            <input value={eName} onChange={e => setEName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setEditingName(false); setEName(ad.name); } }}
+              className="input" autoFocus style={{ fontSize: 24, fontWeight: 600, padding: "4px 8px", flex: 1 }} />
+            <button onClick={saveName} className="btn btn-primary btn-sm">Save</button>
+            <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-sm">Cancel</button>
+          </div>
+        ) : (
+          <h1 style={{ fontSize: 26, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0, cursor: role === "founder" ? "pointer" : "default" }}
+            onClick={() => { if (role === "founder") setEditingName(true); }}>
+            {ad.name}
+          </h1>
+        )}
+        <div style={{ display: "flex", gap: 4 }}>
           {role === "founder" && !editingName && (
-            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)" }} title="Delete ad">🗑</button>
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)", fontSize: 14 }}>...</button>
           )}
         </div>
+      </div>
 
-        {/* Metadata row */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="badge" style={{ background: stg.color + "10", color: stg.color, border: `1px solid ${stg.color}22` }}>{stg.label}</span>
-          <span className="badge">{ad.type}</span>
-          {ad.editor && <span className="badge">@ {ad.editor}</span>}
-          {ad.deadline && !over && <span className="badge">Due {fd(ad.deadline)}</span>}
-          {over && <span className="badge badge-red">Overdue</span>}
-          {ad.stage === "live" && la && <span className="badge" style={{ background: cs.bg, color: cs.c }}>{cs.l} {CUR} {la.cpa}</span>}
-          {ad.iterations > 0 && <span className="badge badge-yellow">Iter {ad.iterations}/{ad.maxIter}</span>}
-          {winner && <span className="badge badge-green">Winner ({gdays}d)</span>}
-        </div>
+      {/* Metadata table */}
+      <div style={{ marginBottom: 24 }}>
+        {metaRows.map((r, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", padding: "8px 0", borderBottom: i < metaRows.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+            <div style={{ width: 120, flexShrink: 0, fontSize: 13, color: "var(--text-tertiary)", fontWeight: 450 }}>{r.label}</div>
+            <div style={{ flex: 1, fontSize: 13, color: r.color || "var(--text-primary)", fontWeight: 500 }}>
+              {r.badge ? (
+                <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "var(--radius-sm)", background: r.badgeColor + "12", color: r.badgeColor, fontSize: 12, fontWeight: 600 }}>{r.val}</span>
+              ) : r.val}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Gate error */}
-      {gateErr && <div className="card-flat" style={{ background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 10, fontSize: 12.5, color: "var(--red-light)" }}>🚫 {gateErr}</div>}
+      {gateErr && <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12.5, color: "var(--red)" }}>{gateErr}</div>}
 
       {/* Stage movement -- founder only */}
       {ad.stage !== "killed" && role === "founder" && (
-        <div style={{ display: "flex", gap: 4, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginRight: 2 }}>Move to:</span>
+        <div style={{ display: "flex", gap: 6, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
           {SO.filter(s => s !== ad.stage).map(s => {
             const st = STAGES.find(x => x.id === s);
             return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "30" }}>{st.icon} {st.label}</button>;
@@ -742,195 +750,146 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       )}
 
-      {/* Alerts */}
+      {/* Alerts (compact) */}
       {ad.stage === "live" && cl === "green" && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--green-bg)", borderLeft: "3px solid var(--green)", marginBottom: 10, fontSize: 12.5, color: "var(--green)" }}>
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--green-bg)", borderLeft: "3px solid var(--green)", marginBottom: 12, fontSize: 12.5, color: "var(--green)" }}>
           {winner ? "Confirmed winner (5+ days). Scale aggressively via variations." : `${gdays}/5 green days to confirm winner.`}
         </div>
       )}
       {ad.stage === "live" && cl === "red" && role === "founder" && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 10, fontSize: 12.5, color: "var(--red)" }}>
-          <div>Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached -- kill or pivot." : "Run analysis then iterate."}</div>
-          {ad.iterations < ad.maxIter && <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <button onClick={analyze} disabled={busy} className="btn btn-ghost btn-sm">{busy ? "Analyzing..." : "Run AI Analysis"}</button>
-            <button onClick={doIter} className="btn btn-danger btn-sm">Iterate</button>
-          </div>}
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12.5, color: "var(--red)" }}>
+          Above red threshold. Iteration {ad.iterations}/{ad.maxIter}. {ad.iterations >= ad.maxIter ? "Max reached -- kill or pivot." : "Run analysis then iterate."}
+          {ad.iterations < ad.maxIter && <span style={{ marginLeft: 8 }}>
+            <button onClick={analyze} disabled={busy} className="btn btn-ghost btn-xs" style={{ fontSize: 11 }}>{busy ? "Analyzing..." : "Run AI Analysis"}</button>
+            <button onClick={doIter} className="btn btn-danger btn-xs" style={{ marginLeft: 4 }}>Iterate</button>
+          </span>}
         </div>
       )}
       {ad.stage === "killed" && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 10, fontSize: 12.5, color: "var(--red)" }}>
-          Killed -- ad archived after {ad.iterations} iterations. Learnings preserved.
-        </div>
-      )}
-      {ad.revisionRequests.filter(r => !r.resolved).length > 0 && (
-        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--yellow-bg)", borderLeft: "3px solid var(--yellow)", marginBottom: 10, fontSize: 12.5, color: "var(--yellow)" }}>
-          {ad.revisionRequests.filter(r => !r.resolved).length} unresolved revision request(s)
+        <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12.5, color: "var(--red)" }}>
+          Killed -- ad archived after {ad.iterations} iterations.
         </div>
       )}
 
       {/* Tabs */}
-      <div className="tabs" style={{ flexWrap: "wrap" }}>
+      <div className="tabs">
         {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`tab-btn ${tab === t.id ? "active" : ""}`}>{t.l}</button>)}
       </div>
 
       {/* ── OVERVIEW ── */}
       {tab === "overview" && (
         <div className="animate-fade">
-          {/* Stage Checklist */}
+          {/* Checklist subtasks */}
           {(() => {
             const items = STAGE_CHECKLIST[ad.stage] || [];
             const stale = getStaleItems(ad, ad.stage);
             const cp = getChecklistProgress(ad, ad.stage);
             if (items.length === 0) return null;
             return (
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div className="section-title" style={{ margin: 0 }}>{stg.label} Checklist</div>
-                  <span style={{ fontSize: 12, color: cp.pct === 100 ? "var(--green)" : "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{cp.done}/{cp.total}</span>
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 10 }}>
+                  Checklist &middot; {cp.done}/{cp.total}
                 </div>
-                {/* Stale warnings */}
                 {stale.length > 0 && (
-                  <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)", lineHeight: 1.6 }}>
-                    {stale.map((s, i) => (
-                      <div key={s.key}>{s.label} -- stale for {s.daysStale} days. {
-                        s.key.includes("vo") ? "Did you record it?" :
-                        s.key.includes("video") ? "Did you forget to submit?" :
-                        s.key.includes("hook") ? "Why are hook visuals still pending?" :
-                        s.key.includes("script") ? "Is the script still being written?" :
-                        "Why is this still incomplete?"
-                      }</div>
+                  <div style={{ padding: "8px 12px", borderRadius: "var(--radius-md)", background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 10, fontSize: 12, color: "var(--red)", lineHeight: 1.6 }}>
+                    {stale.map(s => (
+                      <div key={s.key}>{s.label} -- {s.daysStale}d stale</div>
                     ))}
                   </div>
                 )}
-                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                  {items.map((item, i) => {
-                    const checked = ad.checklist?.[item.key]?.done;
-                    const doneAt = ad.checklist?.[item.key]?.doneAt;
-                    const isStale = stale.some(s => s.key === item.key);
-                    return (
-                      <div key={item.key} style={{
-                        display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
-                        borderBottom: i < items.length - 1 ? "1px solid var(--border-light)" : "none",
-                        background: isStale ? "var(--red-bg)" : checked ? "var(--green-bg)" : "transparent",
-                        cursor: "pointer",
-                        transition: "background 0.15s ease",
-                      }}
-                        onClick={() => dispatch({ type: "TOGGLE_CHECKLIST", id: ad.id, key: item.key })}
-                        onMouseEnter={e => { if (!checked && !isStale) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                        onMouseLeave={e => { if (!checked && !isStale) e.currentTarget.style.background = "transparent"; }}
-                      >
-                        <div style={{
-                          width: 18, height: 18, borderRadius: "var(--radius-xs)", flexShrink: 0,
-                          border: checked ? "none" : "1.5px solid var(--border)",
-                          background: checked ? "var(--green)" : "transparent",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          transition: "all 0.15s ease",
-                        }}>
-                          {checked && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 450, color: checked ? "var(--green)" : "var(--text-primary)", textDecoration: checked ? "line-through" : "none" }}>
-                            {item.label}
-                          </div>
-                          {doneAt && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
-                            Completed {new Date(doneAt).toLocaleDateString()}
-                          </div>}
-                        </div>
-                        <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "capitalize" }}>{item.role}</span>
+                {items.map((item, i) => {
+                  const checked = ad.checklist?.[item.key]?.done;
+                  return (
+                    <div key={item.key}
+                      onClick={() => dispatch({ type: "TOGGLE_CHECKLIST", id: ad.id, key: item.key })}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", cursor: "pointer", borderBottom: i < items.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                      <div style={{
+                        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                        border: checked ? "none" : "1.5px solid var(--text-muted)",
+                        background: checked ? "var(--accent)" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {checked && <span style={{ color: "#fff", fontSize: 10, fontWeight: 700 }}>✓</span>}
                       </div>
-                    );
-                  })}
-                </div>
-                {/* Progress bar */}
-                <div style={{ marginTop: 8, height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", borderRadius: 2, width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : stale.length > 0 ? "var(--red)" : "var(--accent)", transition: "width 0.3s ease" }} />
-                </div>
+                      <span style={{ fontSize: 13, color: checked ? "var(--text-muted)" : "var(--text-primary)", textDecoration: checked ? "line-through" : "none", flex: 1 }}>
+                        {item.label}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
 
-          {/* Two-column layout */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-            {/* Left column -- Assignment & Content */}
+          {/* Description -- Brief */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Brief</div>
+            <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" placeholder="Ad brief..." />
+          </div>
+
+          {/* Notes */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Notes</div>
+            <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" placeholder="Internal notes..." />
+          </div>
+
+          {/* Editable fields row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
             <div>
-              <div className="section-title">Details</div>
-              <div className="card" style={{ padding: "20px", marginBottom: 16 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-                  <div>
-                    <label className="label" style={{ marginTop: 0 }}>Editor</label>
-                    <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
-                      <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label" style={{ marginTop: 0 }}>Deadline</label>
-                    <input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} className="input" />
-                  </div>
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label className="label" style={{ marginTop: 0 }}>Brief</label>
-                  <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label className="label" style={{ marginTop: 0 }}>Notes</label>
-                  <textarea value={en} onChange={e => setEn(e.target.value)} rows={2} className="input" />
-                </div>
-                {!isEditor && <div>
-                  <label className="label" style={{ marginTop: 0 }}>TikTok Video URL</label>
-                  <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
-                </div>}
-              </div>
-
-              <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>Editor</div>
+              <select disabled={isEditor} value={ee} onChange={e => setEe(e.target.value)} className="input">
+                <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
             </div>
-
-            {/* Right column -- Ad Sets & Actions */}
             <div>
-              {/* Ad Set IDs */}
-              {!isEditor && <>
-                <div className="section-title">Ad Set IDs</div>
-                <div className="card" style={{ padding: "20px", marginBottom: 16 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {CHANNELS.map(ch => {
-                      const hasId = eChIds[ch.id]?.trim();
-                      const chm = (ad.channelMetrics || {})[ch.id] || [];
-                      const matchedName = (ad.channelMatchedNames || {})[ch.id];
-                      const wasAutoMatched = hasId && matchedName;
-                      const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
-                      return (
-                        <div key={ch.id}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                            <span style={{ fontSize: 11, color: ch.color, fontWeight: 500 }}>{ch.label}</span>
-                            {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 9, color: "var(--green)" }}>synced</span>}
-                            {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>pending</span>}
-                          </div>
-                          <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched by name" />
-                          {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
-                            Matched: <span style={{ color: "var(--accent-light)", fontWeight: 500 }}>{matchedName}</span>
-                          </div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>}
-
-              {/* Approval actions */}
-              {!isEditor && <>
-                <div className="section-title">Workflow</div>
-                <div className="card" style={{ padding: "20px" }}>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {[["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
-                      <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
-                        className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
-                        style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
-                        {ad[k] ? "✓ " : ""}{label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>}
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>Deadline</div>
+              <input disabled={isEditor} type="date" value={eDl} onChange={e => setEDl(e.target.value)} className="input" />
             </div>
+          </div>
+
+          {/* TikTok URL */}
+          {!isEditor && <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>TikTok Video URL</div>
+            <input value={tiktokUrl} onChange={e => setTiktokUrl(e.target.value)} className="input" placeholder="https://www.tiktok.com/@user/video/123..." />
+          </div>}
+
+          {/* Ad Set IDs */}
+          {!isEditor && <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 8 }}>Ad Set IDs</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {CHANNELS.map(ch => {
+                const hasId = eChIds[ch.id]?.trim();
+                const chm = (ad.channelMetrics || {})[ch.id] || [];
+                const matchedName = (ad.channelMatchedNames || {})[ch.id];
+                const wasAutoMatched = hasId && matchedName;
+                const status = hasId ? (chm.length > 0 ? (wasAutoMatched ? "auto_synced" : "synced") : "linked") : (chm.length > 0 ? "auto" : null);
+                return (
+                  <div key={ch.id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: ch.color, fontWeight: 500 }}>{ch.label}</span>
+                      {(status === "synced" || status === "auto_synced" || status === "auto") && <span style={{ fontSize: 9, color: "var(--green)" }}>synced</span>}
+                      {status === "linked" && <span style={{ fontSize: 9, color: "var(--yellow)" }}>pending</span>}
+                    </div>
+                    <input value={eChIds[ch.id]} onChange={e => setEChIds(p => ({ ...p, [ch.id]: e.target.value }))} className="input" placeholder="Auto-matched" />
+                    {wasAutoMatched && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
+                      Matched: <span style={{ color: "var(--accent-light)", fontWeight: 500 }}>{matchedName}</span>
+                    </div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>}
+
+          {/* Save + Workflow */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
+            {!isEditor && [["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
+              <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
+                className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
+                style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
+                {ad[k] ? "✓ " : ""}{label}
+              </button>
+            ))}
           </div>
 
           {ad.iterHistory.length > 0 && <div style={{ marginTop: 24 }}>
