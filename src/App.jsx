@@ -431,6 +431,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [revText, setRevText] = useState("");
   const [draftName, setDraftName] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
+  const [draftType, setDraftType] = useState("video"); // "script" or "video"
+  const [scriptDraftName, setScriptDraftName] = useState("");
+  const [scriptDraftUrl, setScriptDraftUrl] = useState("");
   const [gateErr, setGateErr] = useState(null);
   const [mDateFrom, setMDateFrom] = useState("");
   const [mDateTo, setMDateTo] = useState("");
@@ -630,7 +633,12 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const createVar = () => { if (!vf.name.trim()) return; dispatch({ type: "CREATE_VAR", pid: ad.id, name: vf.name.trim(), brief: vf.brief.trim(), type: ad.type, vt: vm.id }); setVm(null); setVf({ name: "", brief: "" }); };
   const doIter = () => { const last = ad.analyses[ad.analyses.length - 1]; dispatch({ type: "ITERATE", id: ad.id, reason: last?.nextIterationPlan || last?.summary || "Based on metrics" }); };
   const doKill = () => dispatch({ type: "KILL", id: ad.id });
-  const submitDraft = () => { if (!draftName.trim()) return; dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft: { id: uid(), name: draftName.trim(), url: draftUrl.trim() || null, version: ad.drafts.length + 1, ts: now(), status: "in-review" } }); setDraftName(""); setDraftUrl(""); };
+  const submitDraft = (type, name, url) => {
+    if (!name.trim()) return;
+    dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft: { id: uid(), name: name.trim(), url: url.trim() || null, draftType: type, version: ad.drafts.filter(d => d.draftType === type || (!d.draftType && type === "video")).length + 1, ts: now(), status: "in-review" } });
+    if (type === "video") { setDraftName(""); setDraftUrl(""); }
+    else { setScriptDraftName(""); setScriptDraftUrl(""); }
+  };
   const requestRevision = () => { if (!revText.trim()) return; dispatch({ type: "ADD_REVISION", id: ad.id, rev: { id: uid(), from: "Adolf", text: revText.trim(), ts: now(), resolved: false } }); setRevText(""); };
   const resolveRevision = (rid) => dispatch({ type: "RESOLVE_REVISION", id: ad.id, rid });
   const approveDraft = (did) => dispatch({ type: "APPROVE_DRAFT", id: ad.id, did });
@@ -648,7 +656,6 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     { id: "drafts", l: `Drafts (${ad.drafts.length})` },
     { id: "metrics", l: `Metrics (${ad.metrics.length})` },
     { id: "comments", l: `Comments (${ad.comments.length})` },
-    { id: "thread", l: `Thread (${ad.thread.length})` },
     { id: "analysis", l: `Analysis (${ad.analyses.length})` },
     { id: "learnings", l: `Learnings (${ad.learnings.length})` },
   ];
@@ -676,7 +683,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   ];
 
   return (
-    <div className="animate-fade" style={{ maxWidth: 720 }}>
+    <div className="animate-fade" style={{ maxWidth: 1080 }}>
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
@@ -773,6 +780,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
         </div>
       )}
 
+      {/* Two-column: Left = tabs+content, Right = thread */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, alignItems: "start" }}>
+      <div>
       {/* Tabs */}
       <div className="tabs">
         {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`tab-btn ${tab === t.id ? "active" : ""}`}>{t.l}</button>)}
@@ -882,17 +892,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             </div>
           </div>}
 
-          {/* Save + Workflow */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
-            {!isEditor && [["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
-              <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
-                className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
-                style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
-                {ad[k] ? "✓ " : ""}{label}
-              </button>
-            ))}
-          </div>
+          <button onClick={save} className="btn btn-primary btn-sm">Save Changes</button>
 
           {ad.iterHistory.length > 0 && <div style={{ marginTop: 24 }}>
             <div className="section-title">Iteration History</div>
@@ -935,56 +935,103 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       {/* ── DRAFTS ── */}
       {tab === "drafts" && (
         <div className="animate-fade">
-          <div className="section-title">Draft Versions</div>
-          {ad.drafts.length === 0 && <div className="empty-state">No drafts submitted yet</div>}
-          {ad.drafts.map(d => (
-            <div key={d.id} className="card-flat" style={{ marginBottom: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 14 }}>📄</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.name}</span>
-                  <span className="badge">v{d.version}</span>
-                  <span className={`badge ${d.status === "approved" ? "badge-green" : d.status === "revision-requested" ? "badge-yellow" : "badge-accent"}`}>{d.status}</span>
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
-                  {d.status === "in-review" && role === "founder" && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
-                </div>
-              </div>
-              {d.url && <div style={{ marginTop: 5 }}>
-                <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent-light)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
-                  onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"}
-                  onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}>
-                  🔗 {d.url.length > 60 ? d.url.slice(0, 60) + "..." : d.url}
-                </a>
-              </div>}
+          {/* Approval workflow buttons */}
+          {!isEditor && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+              {[["briefApproved", "Approve Brief", "var(--accent)"], ["draftSubmitted", "Mark Draft Submitted", "var(--yellow)"], ["finalApproved", "Approve Final", "var(--green)"]].map(([k, label, col]) => (
+                <button key={k} onClick={() => dispatch({ type: "UPDATE", id: ad.id, data: { [k]: !ad[k] } })}
+                  className={`btn btn-sm ${ad[k] ? "" : "btn-ghost"}`}
+                  style={ad[k] ? { background: col + "10", borderColor: col + "30", color: col } : {}}>
+                  {ad[k] ? "✓ " : ""}{label}
+                </button>
+              ))}
             </div>
-          ))}
-          <div className="card-flat" style={{ marginTop: 14 }}>
-            <div className="section-title">Submit Draft</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div>
-                <label className="label" style={{ marginTop: 0 }}>File Name</label>
-                <input value={draftName} onChange={e => setDraftName(e.target.value)} className="input" placeholder="e.g. ad_draft_v2.mp4" />
+          )}
+
+          {/* ── SCRIPT DRAFTS (hidden from editors) ── */}
+          {!isEditor && (
+            <div style={{ marginBottom: 24 }}>
+              <div className="section-title">Script / Copy Drafts</div>
+              {(() => {
+                const scriptDrafts = ad.drafts.filter(d => d.draftType === "script");
+                return scriptDrafts.length === 0 ? (
+                  <div className="empty-state" style={{ marginBottom: 10 }}>No script drafts yet</div>
+                ) : scriptDrafts.map(d => (
+                  <div key={d.id} className="card-flat" style={{ marginBottom: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13 }}>📝</span>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{d.name}</span>
+                        <span className="badge">v{d.version}</span>
+                        <span className={`badge ${d.status === "approved" ? "badge-green" : "badge-accent"}`}>{d.status}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 10, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
+                        {d.status === "in-review" && role === "founder" && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                      </div>
+                    </div>
+                    {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", marginTop: 4, display: "inline-block" }}>🔗 View</a>}
+                  </div>
+                ));
+              })()}
+              <div className="card-flat" style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <input value={scriptDraftName} onChange={e => setScriptDraftName(e.target.value)} className="input" placeholder="Script name, e.g. Whistleblower_v2_script.doc" />
+                  <input value={scriptDraftUrl} onChange={e => setScriptDraftUrl(e.target.value)} className="input" placeholder="URL (Google Docs, Dropbox, etc.)" />
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={() => submitDraft("script", scriptDraftName, scriptDraftUrl)} className="btn btn-primary btn-sm" style={{ opacity: scriptDraftName.trim() ? 1 : 0.4 }}>Submit Script Draft</button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="label" style={{ marginTop: 0 }}>File URL <span style={{ fontWeight: 400, textTransform: "none", color: "var(--text-muted)" }}>(Google Drive, Dropbox, etc.)</span></label>
-                <input value={draftUrl} onChange={e => setDraftUrl(e.target.value)} className="input" placeholder="https://drive.google.com/file/d/..." />
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button onClick={submitDraft} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4 }}>Submit Draft</button>
+            </div>
+          )}
+
+          {/* ── VIDEO / EDIT DRAFTS (visible to everyone) ── */}
+          <div style={{ marginBottom: 24 }}>
+            <div className="section-title">Video / Edit Drafts</div>
+            {(() => {
+              const videoDrafts = ad.drafts.filter(d => d.draftType === "video" || !d.draftType);
+              return videoDrafts.length === 0 ? (
+                <div className="empty-state" style={{ marginBottom: 10 }}>No video drafts yet</div>
+              ) : videoDrafts.map(d => (
+                <div key={d.id} className="card-flat" style={{ marginBottom: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>🎬</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{d.name}</span>
+                      <span className="badge">v{d.version}</span>
+                      <span className={`badge ${d.status === "approved" ? "badge-green" : d.status === "revision-requested" ? "badge-yellow" : "badge-accent"}`}>{d.status}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
+                      {d.status === "in-review" && role === "founder" && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                    </div>
+                  </div>
+                  {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", marginTop: 4, display: "inline-block" }}>🔗 View</a>}
+                </div>
+              ));
+            })()}
+            <div className="card-flat" style={{ marginTop: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input value={draftName} onChange={e => setDraftName(e.target.value)} className="input" placeholder="File name, e.g. whistleblower_edit_v2.mp4" />
+                <input value={draftUrl} onChange={e => setDraftUrl(e.target.value)} className="input" placeholder="URL (Google Drive, Dropbox, Frame.io, etc.)" />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button onClick={() => submitDraft("video", draftName, draftUrl)} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4 }}>Submit Video Draft</button>
+                </div>
               </div>
             </div>
           </div>
-          <div style={{ marginTop: 18 }}>
+
+          {/* ── REVISION REQUESTS ── */}
+          <div>
             <div className="section-title">Revision Requests</div>
             {ad.revisionRequests.length === 0 && <div className="empty-state">No revision requests</div>}
             {ad.revisionRequests.map(r => (
-              <div key={r.id} className="card-flat" style={{ marginBottom: 6, borderColor: r.resolved ? "var(--green-border)" : "var(--yellow-border)", background: r.resolved ? "var(--green-bg)" : "var(--yellow-bg)" }}>
+              <div key={r.id} className="card-flat" style={{ marginBottom: 6, borderLeft: r.resolved ? "3px solid var(--green)" : "3px solid var(--yellow)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-primary)" }}>{r.from}</span>
                   <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                    <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{r.ts}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{r.ts}</span>
                     <span className={`badge ${r.resolved ? "badge-green" : "badge-yellow"}`}>{r.resolved ? "Resolved" : "Open"}</span>
                     {!r.resolved && <button onClick={() => resolveRevision(r.id)} className="btn btn-success btn-xs">✓</button>}
                   </div>
@@ -1165,48 +1212,6 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
       )}
 
       {/* ── THREAD (team discussion) ── */}
-      {tab === "thread" && (
-        <div className="animate-fade">
-          <div style={{ maxHeight: 360, overflow: "auto", marginBottom: 12 }}>
-            {ad.thread.length === 0 && <div className="empty-state">No messages yet. Start a discussion about this ad.</div>}
-            <div className="stagger">
-              {ad.thread.map((m, i) => <div key={i} className="card-flat" style={{ marginBottom: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: m.from === "You" || m.from === "Adolf" ? "var(--accent-light)" : "var(--text-primary)" }}>{m.from}</span>
-                  <span style={{ fontSize: 10.5, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{m.ts}</span>
-                </div>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{renderMentions(m.text)}</div>
-              </div>)}
-            </div>
-          </div>
-          <div style={{ position: "relative" }}>
-            {showMentions && memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).length > 0 && (
-              <div style={{
-                position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 4,
-                background: "var(--bg-card)", border: "1px solid var(--border)",
-                borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)",
-                maxHeight: 160, overflow: "auto", zIndex: 10,
-              }}>
-                {memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).map(m => (
-                  <div key={m.userId} onClick={() => insertMention(m.name)} style={{
-                    padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-                    borderBottom: "1px solid var(--border-light)", transition: "background 0.1s",
-                  }} onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-primary)" }}>{m.name}</span>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "capitalize" }}>{m.role}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 6 }}>
-              <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Write a message... use @ to mention" className="input" style={{ flex: 1 }} />
-              <button onClick={sendMsg} className="btn btn-primary btn-sm">Send</button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
       {/* ── ANALYSIS ── */}
       {tab === "analysis" && (
         <div className="animate-fade">
@@ -1303,6 +1308,47 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           </div>}
         </div>
       )}
+      </div>{/* end left column */}
+
+      {/* Right column: Thread */}
+      <div style={{ position: "sticky", top: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Discussion</span>
+          <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>{ad.thread.length} messages</span>
+        </div>
+        <div style={{ background: "var(--bg-elevated)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-light)", padding: 14, display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 300 }}>
+          <div style={{ flex: 1, overflowY: "auto", marginBottom: 10 }}>
+            {ad.thread.length === 0 && <div style={{ color: "var(--text-muted)", fontSize: 12, textAlign: "center", padding: "20px 0" }}>No messages yet</div>}
+            {ad.thread.map((m, i) => (
+              <div key={i} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: m.from === userName ? "var(--accent)" : "var(--text-primary)" }}>{m.from}</span>
+                  <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{m.ts}</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>{renderMentions(m.text)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            {showMentions && memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).length > 0 && (
+              <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 4, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-lg)", maxHeight: 120, overflow: "auto", zIndex: 10 }}>
+                {memberNames.filter(m => m.name.toLowerCase().includes(mentionFilter)).map(m => (
+                  <div key={m.userId} onClick={() => insertMention(m.name)} style={{ padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid var(--border-light)" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{m.name}</span>
+                    <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "capitalize" }}>{m.role}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={msg} onChange={handleMsgChange} onKeyDown={e => { if (e.key === "Enter") { sendMsg(); setShowMentions(false); } if (e.key === "Escape") setShowMentions(false); }} placeholder="Message... @ to mention" className="input" style={{ flex: 1, fontSize: 12, padding: "7px 10px" }} />
+              <button onClick={sendMsg} className="btn btn-primary btn-xs">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>{/* end grid */}
     </div>
   );
 }
