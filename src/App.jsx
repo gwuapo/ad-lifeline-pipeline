@@ -2297,7 +2297,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
               <div>
-                <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--text-primary)", margin: 0, marginBottom: 3, letterSpacing: "-0.01em" }}>Pipeline</h2>
+                <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, marginBottom: 3, letterSpacing: "-0.02em" }}>Pipeline</h2>
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
                   {visibleAds.length} ads · {CUR} {spend.toLocaleString()} total spend
                   {killed > 0 && <span> · {killed} killed</span>}
@@ -2358,12 +2358,12 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                     onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
                     onDragLeave={() => setDragOver(null)}
                     onDrop={e => { e.preventDefault(); if (did.current != null) tryMove(did.current, stage.id); did.current = null; setDragOver(null); }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px 8px", borderBottom: "1px solid var(--border-light)" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: stage.color }} />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{stage.label}</span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, padding: "2px 4px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color }} />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{stage.label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", background: "var(--bg-badge)", padding: "0 7px", borderRadius: "var(--radius-full)", fontFamily: "var(--fm)" }}>{stageAds.length}</span>
                       </div>
-                      <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{stageAds.length}</span>
                     </div>
                     {stageAds.length === 0 && <div className="empty-state">Drop ads here</div>}
                     <div className="stagger">
