@@ -1354,6 +1354,101 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 // ════════════════════════════════════════════════
 // PIPELINE CARD
 // ════════════════════════════════════════════════
+// PIPELINE SHEET VIEW
+// ════════════════════════════════════════════════
+
+const SHEET_STATUS_OPTIONS = ["Concept", "Scripted", "In Production", "Ready to Launch", "Live", "Winner", "Killed"];
+const SHEET_FORMAT_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
+
+function PipelineSheet({ ads, dispatch, th, onOpenAd }) {
+  const updateStrategy = (adId, key, value) => {
+    dispatch({ type: "UPDATE", id: adId, data: { strategy: { ...((ads.find(a => a.id === adId) || {}).strategy || {}), [key]: value } } });
+  };
+
+  const COLS = "160px 90px 70px 60px 1fr 80px 1fr 1fr 80px 80px 80px 1fr 90px";
+  const HEADERS = ["Ad Name", "Stage", "Editor", "Batch", "Concept", "Format", "Hook / Headline", "Brief", "Deadline", "Checklist", "ROAS", "Notes", "Status"];
+
+  return (
+    <div>
+      <div className="ads-lab-scroll" style={{ border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)" }}>
+        {/* Header */}
+        <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "8px 0", borderBottom: "2px solid var(--border)", minWidth: 1500, background: "var(--bg-elevated)" }}>
+          {HEADERS.map(h => (
+            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4, padding: "0 8px" }}>{h}</div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {ads.map((ad, i) => {
+          const s = ad.strategy || {};
+          const stg = STAGES.find(x => x.id === ad.stage);
+          const cp = getChecklistProgress(ad, ad.stage);
+          const bc = bestChannel(ad, th);
+          const la = bc ? bc.metric : lm(ad);
+          const roas = bc?.roas ?? la?.roas ?? 0;
+          const cl = ad.stage === "live" ? CL(roas || null, th) : "none";
+          const bg = i % 2 === 0 ? "transparent" : "var(--bg-elevated)";
+          return (
+            <div key={ad.id} style={{ display: "grid", gridTemplateColumns: COLS, gap: 0, padding: "4px 0", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: 1500, background: bg }}>
+              {/* Ad Name -- clickable */}
+              <div onClick={() => onOpenAd(ad)} style={{ padding: "0 8px", fontSize: 12, fontWeight: 600, color: "var(--accent)", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.name}>
+                {ad.name}
+              </div>
+              {/* Stage */}
+              <div style={{ padding: "0 8px" }}>
+                <span style={{ fontSize: 10, padding: "1px 8px", borderRadius: "var(--radius-full)", background: stg.color + "15", color: stg.color, fontWeight: 500 }}>{stg.label}</span>
+              </div>
+              {/* Editor */}
+              <div style={{ padding: "0 8px", fontSize: 11, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.editor || "—"}</div>
+              {/* Batch */}
+              <input className="input" value={s.batch || ""} onChange={e => updateStrategy(ad.id, "batch", e.target.value)} placeholder="#" style={{ fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" }} />
+              {/* Concept */}
+              <input className="input" value={s.concept || ""} onChange={e => updateStrategy(ad.id, "concept", e.target.value)} placeholder="Concept..." style={{ fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" }} />
+              {/* Format */}
+              <select className="input" value={s.format || ad.type || ""} onChange={e => updateStrategy(ad.id, "format", e.target.value)} style={{ fontSize: 10, padding: "3px 4px", border: "none", background: "transparent" }}>
+                <option value="">...</option>
+                {SHEET_FORMAT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+              {/* Hook */}
+              <input className="input" value={s.hook || ""} onChange={e => updateStrategy(ad.id, "hook", e.target.value)} placeholder="Hook..." style={{ fontSize: 10, padding: "3px 6px", border: "none", background: "transparent" }} />
+              {/* Brief */}
+              <div style={{ padding: "0 6px", fontSize: 10, color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.brief}>{ad.brief || "—"}</div>
+              {/* Deadline */}
+              <div style={{ padding: "0 8px", fontSize: 10, color: od(ad.deadline) ? "var(--red)" : "var(--text-secondary)" }}>{ad.deadline ? fd(ad.deadline) : "—"}</div>
+              {/* Checklist */}
+              <div style={{ padding: "0 8px" }}>
+                {cp.total > 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <div style={{ flex: 1, height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : "var(--accent)", borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{cp.done}/{cp.total}</span>
+                  </div>
+                ) : <span style={{ fontSize: 10, color: "var(--text-muted)" }}>—</span>}
+              </div>
+              {/* ROAS */}
+              <div style={{ padding: "0 8px", fontSize: 11, fontWeight: 600, fontFamily: "var(--fm)", color: cl !== "none" ? CS[cl].c : "var(--text-muted)" }}>
+                {ad.stage === "live" && roas > 0 ? `${roas}x` : "—"}
+              </div>
+              {/* Notes */}
+              <div style={{ padding: "0 6px", fontSize: 10, color: "var(--text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.notes}>{ad.notes || "—"}</div>
+              {/* Status */}
+              <select className="input" value={s.ad_status || ""} onChange={e => updateStrategy(ad.id, "ad_status", e.target.value)} style={{ fontSize: 10, padding: "3px 4px", border: "none", background: "transparent" }}>
+                <option value="">...</option>
+                {SHEET_STATUS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          );
+        })}
+
+        {ads.length === 0 && <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>No ads in pipeline</div>}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8 }}>{ads.length} ad{ads.length !== 1 ? "s" : ""} in lab · Click ad name to open</div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════
 
 function PCard({ ad, th, onClick, onMove, onIterate }) {
   const bc = bestChannel(ad, th);
@@ -1976,6 +2071,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [editorProfiles, setEditorProfiles] = useState({});
   const setPage = (p) => { setPageRaw(p); if (presenceRef.current) presenceRef.current.updatePage(p); };
   const handleSignOut = () => supabase.auth.signOut();
+  const [pipelineView, setPipelineView] = useState("kanban"); // "kanban" or "sheet"
   const [dragOver, setDragOver] = useState(null);
   const [gateMsg, setGateMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -2348,7 +2444,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
               <div>
-                <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, marginBottom: 3, letterSpacing: "-0.02em" }}>Pipeline</h2>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 3 }}>
+                  <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>Pipeline</h2>
+                  <div className="tabs" style={{ marginBottom: 0, display: "inline-flex" }}>
+                    <button onClick={() => setPipelineView("kanban")} className={`tab-btn ${pipelineView === "kanban" ? "active" : ""}`}>Kanban</button>
+                    <button onClick={() => setPipelineView("sheet")} className={`tab-btn ${pipelineView === "sheet" ? "active" : ""}`}>Sheet</button>
+                  </div>
+                </div>
                 <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
                   {visibleAds.length} ads · {CUR} {spend.toLocaleString()} total spend
                   {killed > 0 && <span> · {killed} killed</span>}
@@ -2398,7 +2500,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               ))}
             </div>
 
-            {/* Kanban */}
+            {/* Kanban View */}
+            {pipelineView === "kanban" && <>
             <div className="kanban-grid">
               {STAGES.filter(s => s.id !== "killed").map(stage => {
                 const stageAds = visibleAds.filter(a => a.stage === stage.id);
@@ -2428,13 +2531,17 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 );
               })}
             </div>
-
-            {/* Threshold rules */}
             <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 11, color: "var(--text-muted)", flexWrap: "wrap" }}>
-              <span><span style={{ color: "var(--green)" }}>●</span> {"<="} ${th.green} Scale</span>
-              <span><span style={{ color: "var(--yellow)" }}>●</span> {"<="} ${th.yellow} Monitor</span>
-              <span><span style={{ color: "var(--red)" }}>●</span> {">"} ${th.yellow} Iterate/Kill</span>
+              <span><span style={{ color: "var(--green)" }}>●</span> ROAS &ge; {th.green}x Scale</span>
+              <span><span style={{ color: "var(--yellow)" }}>●</span> ROAS &ge; {th.yellow}x Monitor</span>
+              <span><span style={{ color: "var(--red)" }}>●</span> ROAS &lt; {th.yellow}x Iterate/Kill</span>
             </div>
+            </>}
+
+            {/* Sheet View */}
+            {pipelineView === "sheet" && (
+              <PipelineSheet ads={visibleAds} dispatch={dispatch} th={th} onOpenAd={setOpenAd} />
+            )}
             </>}
           </div>
         )}
