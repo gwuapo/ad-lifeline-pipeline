@@ -9,8 +9,13 @@ CRITICAL LANGUAGE RULE: Detect the language of the ad script.
 
 const JSON_INSTRUCTION = `
 IMPORTANT: You MUST respond with ONLY valid JSON, no markdown, no code fences, no explanation.
-The JSON must have exactly this structure:
+
+If the script is in Arabic, include English translations for each item:
+{"primaryTexts": [{"ar": "Arabic text", "en": "English translation"}, ...], "headlines": [{"ar": "Arabic text", "en": "English translation"}, ...]}
+
+If the script is in English (no translations needed):
 {"primaryTexts": ["text1", "text2", ...], "headlines": ["headline1", "headline2", ...]}
+
 Do NOT wrap in \`\`\`json or any other formatting. Just raw JSON.`;
 
 const DEFAULT_PRESETS = [
@@ -195,14 +200,19 @@ export default function AdCopyPage({ ads }) {
     setGenerating(false);
   };
 
-  const copyToClipboard = (text, idx, type) => {
+  const getText = (item) => typeof item === "string" ? item : item?.ar || item?.text || "";
+  const getTranslation = (item) => typeof item === "object" ? item?.en || "" : "";
+  const isTranslated = (items) => items?.length > 0 && typeof items[0] === "object" && items[0]?.ar;
+
+  const copyToClipboard = (item, idx, type) => {
+    const text = getText(item);
     navigator.clipboard.writeText(text);
     setCopiedIdx(`${type}-${idx}`);
     setTimeout(() => setCopiedIdx(null), 1500);
   };
 
   const copyAll = (items, type) => {
-    navigator.clipboard.writeText(items.join("\n\n"));
+    navigator.clipboard.writeText(items.map(getText).join("\n\n"));
     setCopiedIdx(`all-${type}`);
     setTimeout(() => setCopiedIdx(null), 1500);
   };
@@ -334,11 +344,14 @@ export default function AdCopyPage({ ads }) {
                 {copiedIdx === "all-pt" ? "Copied!" : "Copy All"}
               </button>
             </div>
-            {results.primaryTexts.map((text, i) => (
+            {results.primaryTexts.map((item, i) => (
               <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderBottom: i < results.primaryTexts.length - 1 ? "1px solid var(--border-light)" : "none" }}>
                 <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--fm)", width: 20, flexShrink: 0, paddingTop: 2 }}>{i + 1}</span>
-                <div style={{ flex: 1, fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>{text}</div>
-                <button onClick={() => copyToClipboard(text, i, "pt")} className="btn btn-ghost btn-xs" style={{ flexShrink: 0, fontSize: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, direction: isTranslated(results.primaryTexts) ? "rtl" : "ltr" }}>{getText(item)}</div>
+                  {getTranslation(item) && <div style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4, fontStyle: "italic", direction: "ltr" }}>{getTranslation(item)}</div>}
+                </div>
+                <button onClick={() => copyToClipboard(item, i, "pt")} className="btn btn-ghost btn-xs" style={{ flexShrink: 0, fontSize: 10 }}>
                   {copiedIdx === `pt-${i}` ? "✓" : "Copy"}
                 </button>
               </div>
@@ -353,11 +366,14 @@ export default function AdCopyPage({ ads }) {
                 {copiedIdx === "all-hl" ? "Copied!" : "Copy All"}
               </button>
             </div>
-            {results.headlines.map((text, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: i < results.headlines.length - 1 ? "1px solid var(--border-light)" : "none" }}>
-                <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--fm)", width: 20, flexShrink: 0 }}>{i + 1}</span>
-                <div style={{ flex: 1, fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>{text}</div>
-                <button onClick={() => copyToClipboard(text, i, "hl")} className="btn btn-ghost btn-xs" style={{ flexShrink: 0, fontSize: 10 }}>
+            {results.headlines.map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0", borderBottom: i < results.headlines.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--fm)", width: 20, flexShrink: 0, paddingTop: 2 }}>{i + 1}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, direction: isTranslated(results.headlines) ? "rtl" : "ltr" }}>{getText(item)}</div>
+                  {getTranslation(item) && <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2, fontStyle: "italic", direction: "ltr" }}>{getTranslation(item)}</div>}
+                </div>
+                <button onClick={() => copyToClipboard(item, i, "hl")} className="btn btn-ghost btn-xs" style={{ flexShrink: 0, fontSize: 10 }}>
                   {copiedIdx === `hl-${i}` ? "✓" : "Copy"}
                 </button>
               </div>
