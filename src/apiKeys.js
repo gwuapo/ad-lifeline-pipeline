@@ -137,8 +137,23 @@ const OPENAI_MODELS = [
 const MODEL_KEYS = { gemini: "al_gemini_model", claude: "al_claude_model", openai: "al_openai_model" };
 const MODEL_DEFAULTS = { gemini: "gemini-2.5-flash", claude: "claude-sonnet-4-6", openai: "gpt-4o" };
 
+const VALID_MODEL_IDS = {
+  gemini: new Set(GEMINI_MODELS.map(m => m.id)),
+  claude: new Set(CLAUDE_MODELS.map(m => m.id)),
+  openai: new Set(OPENAI_MODELS.map(m => m.id)),
+};
+
 export function getSelectedModel(service) {
-  return localStorage.getItem(MODEL_KEYS[service] || MODEL_KEYS.gemini) || MODEL_DEFAULTS[service] || MODEL_DEFAULTS.gemini;
+  const stored = localStorage.getItem(MODEL_KEYS[service] || MODEL_KEYS.gemini);
+  const fallback = MODEL_DEFAULTS[service] || MODEL_DEFAULTS.gemini;
+  if (!stored) return fallback;
+  // Validate stored model still exists in our list
+  const validSet = VALID_MODEL_IDS[service];
+  if (validSet && !validSet.has(stored)) {
+    localStorage.removeItem(MODEL_KEYS[service]);
+    return fallback;
+  }
+  return stored;
 }
 
 export function setSelectedModel(service, modelId) {
