@@ -15,6 +15,7 @@ import StrategyPage from "./StrategyPage.jsx";
 import CommissionDashboard from "./CommissionDashboard.jsx";
 import SplitTestPage from "./SplitTestPage.jsx";
 import AudioRecordingPage from "./AudioRecordingPage.jsx";
+import AdCopyPage from "./AdCopyPage.jsx";
 import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
@@ -2782,6 +2783,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── AUDIO RECORDING PAGE ── */}
         {page === "audio" && <AudioRecordingPage activeWorkspaceId={activeWorkspaceId} session={session} />}
+
+        {/* ── AD COPY PAGE ── */}
+        {page === "adcopy" && <AdCopyPage ads={ads} />}
 
         {/* ── SETTINGS PAGE ── */}
         {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
