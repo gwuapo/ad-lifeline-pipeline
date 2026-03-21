@@ -308,9 +308,14 @@ export default function AdCopyPage({ ads }) {
 
       {/* Generate button */}
       <div style={{ marginBottom: 20 }}>
-        <button onClick={generate} disabled={generating || !script.trim()} className="btn btn-primary" style={{ padding: "10px 28px", fontSize: 14 }}>
-          {generating ? "Generating..." : `Generate with "${activePreset.name}"`}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={generate} disabled={generating || !script.trim()} className="btn btn-primary" style={{ padding: "10px 28px", fontSize: 14 }}>
+            {generating ? "Generating..." : `Generate with "${activePreset.name}"`}
+          </button>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            Using: {getApiKey("gemini") ? getSelectedModel("gemini") : getApiKey("claude") ? getSelectedModel("claude") : "No AI configured"}
+          </span>
+        </div>
         {error && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 8 }}>{error}</div>}
       </div>
 
