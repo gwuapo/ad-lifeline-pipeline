@@ -1,12 +1,25 @@
 import { useState, useRef } from "react";
 import { getApiKey, getSelectedModel } from "./apiKeys.js";
 
+const ARABIC_LANG_RULE = `
+CRITICAL LANGUAGE RULE: Detect the language of the ad script.
+- If the script is in Arabic, ALL generated copy MUST be in Saudi-dialect Arabic (اللهجة السعودية). Use natural Saudi expressions, slang, and phrasing that resonates with Saudi audiences. Do NOT use formal/MSA Arabic or Egyptian dialect.
+- If the script is in English, generate in English.
+- Match the exact language of the input script.`;
+
+const JSON_INSTRUCTION = `
+IMPORTANT: You MUST respond with ONLY valid JSON, no markdown, no code fences, no explanation.
+The JSON must have exactly this structure:
+{"primaryTexts": ["text1", "text2", ...], "headlines": ["headline1", "headline2", ...]}
+Do NOT wrap in \`\`\`json or any other formatting. Just raw JSON.`;
+
 const DEFAULT_PRESETS = [
   {
     id: "clickbait",
     name: "Clickbait One-Liners",
     description: "Short, punchy, curiosity-driven copy that stops the scroll",
     prompt: `You are an expert direct-response copywriter. Given the ad script below, generate ad copy variations.
+${ARABIC_LANG_RULE}
 
 Rules:
 - Primary texts should be 1-2 short sentences max, curiosity-driven, scroll-stopping
@@ -16,15 +29,14 @@ Rules:
 - Do NOT use generic filler or clichés
 
 Generate exactly 20 primary texts and 20 headlines.
-
-Output format (strict JSON):
-{"primaryTexts": ["...", ...], "headlines": ["...", ...]}`,
+${JSON_INSTRUCTION}`,
   },
   {
     id: "mini-lead",
     name: "Mini Lead / Story",
     description: "Longer form copy that reads like a mini advertorial or story lead",
     prompt: `You are an expert direct-response copywriter. Given the ad script below, generate ad copy variations.
+${ARABIC_LANG_RULE}
 
 Rules:
 - Primary texts should be 3-5 sentences, storytelling style, mini-lead format
@@ -34,15 +46,14 @@ Rules:
 - Match the emotional triggers and avatar from the script
 
 Generate exactly 20 primary texts and 20 headlines.
-
-Output format (strict JSON):
-{"primaryTexts": ["...", ...], "headlines": ["...", ...]}`,
+${JSON_INSTRUCTION}`,
   },
   {
     id: "benefit",
     name: "Benefit-Driven",
     description: "Focus on outcomes, transformations, and what the viewer gets",
     prompt: `You are an expert direct-response copywriter. Given the ad script below, generate ad copy variations.
+${ARABIC_LANG_RULE}
 
 Rules:
 - Primary texts should lead with the #1 benefit or transformation
@@ -52,9 +63,7 @@ Rules:
 - No fluff, every word earns its place
 
 Generate exactly 20 primary texts and 20 headlines.
-
-Output format (strict JSON):
-{"primaryTexts": ["...", ...], "headlines": ["...", ...]}`,
+${JSON_INSTRUCTION}`,
   },
 ];
 
@@ -105,30 +114,35 @@ export default function AdCopyPage({ ads }) {
     setResults(null);
 
     const fullPrompt = `${activePreset.prompt}\n\nAD SCRIPT:\n${script.trim()}`;
+    const useGemini = !!geminiKey;
+    const aiModel = useGemini ? getSelectedModel("gemini") : getSelectedModel("claude");
+    setError(null);
 
     try {
-      let parsed;
+      let rawText = "";
 
-      if (geminiKey) {
-        const model = getSelectedModel("gemini");
+      if (useGemini) {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts: [{ text: fullPrompt }] }],
-              generationConfig: { temperature: 0.9, maxOutputTokens: 4000 },
+              generationConfig: { temperature: 0.9, maxOutputTokens: 8192, responseMimeType: "application/json" },
             }),
           }
         );
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(`Gemini API error (${res.status}): ${errData?.error?.message || res.statusText}`);
+        }
         const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("AI returned invalid format. Try again.");
-        parsed = JSON.parse(jsonMatch[0]);
+        rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!rawText && data?.candidates?.[0]?.finishReason) {
+          throw new Error(`Gemini stopped: ${data.candidates[0].finishReason}. Try a shorter script.`);
+        }
       } else {
-        const model = getSelectedModel("claude");
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -138,26 +152,41 @@ export default function AdCopyPage({ ads }) {
             "anthropic-dangerous-direct-browser-access": "true",
           },
           body: JSON.stringify({
-            model,
-            max_tokens: 4000,
+            model: aiModel,
+            max_tokens: 8192,
             messages: [{ role: "user", content: fullPrompt }],
           }),
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(`Claude API error (${res.status}): ${errData?.error?.message || res.statusText}`);
+        }
         const data = await res.json();
-        const text = data?.content?.[0]?.text || "";
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("AI returned invalid format. Try again.");
-        parsed = JSON.parse(jsonMatch[0]);
+        rawText = data?.content?.[0]?.text || "";
       }
 
+      if (!rawText.trim()) throw new Error("AI returned empty response. Try again.");
+
+      // Parse JSON -- strip markdown fences if present
+      let jsonStr = rawText.trim();
+      jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("[AdCopy] Raw AI response:", rawText);
+        throw new Error("AI didn't return valid JSON. Check console for raw response.");
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
       if (!parsed.primaryTexts?.length || !parsed.headlines?.length) {
-        throw new Error("AI response missing primaryTexts or headlines");
+        throw new Error("AI response missing primaryTexts or headlines arrays");
       }
 
       setResults({
         primaryTexts: parsed.primaryTexts,
         headlines: parsed.headlines,
         preset: activePreset.name,
+        model: aiModel,
         ts: new Date().toLocaleString(),
       });
     } catch (e) {
@@ -289,7 +318,7 @@ export default function AdCopyPage({ ads }) {
       {results && (
         <div className="animate-fade">
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 14 }}>
-            Generated with <span style={{ color: "var(--accent)", fontWeight: 500 }}>{results.preset}</span> · {results.ts}
+            Generated with <span style={{ color: "var(--accent)", fontWeight: 500 }}>{results.preset}</span> · {results.model} · {results.ts}
           </div>
 
           {/* Primary Texts */}
