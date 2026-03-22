@@ -149,7 +149,28 @@ function parseJsonResponse(text, label) {
     console.error(`[LPBuilder] Raw ${label} response:`, text);
     throw new Error(`${label} didn't return valid JSON. Check console.`);
   }
-  return JSON.parse(match[0]);
+  try {
+    return JSON.parse(match[0]);
+  } catch (e) {
+    // Truncated JSON -- try to repair by closing open arrays/objects
+    console.warn(`[LPBuilder] JSON parse failed, attempting repair:`, e.message);
+    let repaired = match[0];
+    // Remove trailing incomplete string/value (after last comma or bracket)
+    repaired = repaired.replace(/,\s*"[^"]*$/, "").replace(/,\s*$/, "");
+    // Count and close unclosed brackets
+    const opens = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
+    const braces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
+    for (let i = 0; i < opens; i++) repaired += "]";
+    for (let i = 0; i < braces; i++) repaired += "}";
+    try {
+      const result = JSON.parse(repaired);
+      console.log("[LPBuilder] JSON repaired successfully");
+      return result;
+    } catch (e2) {
+      console.error(`[LPBuilder] Raw ${label} response:`, text);
+      throw new Error(`${label} returned truncated/invalid JSON. The response may have been cut off. Try again or use a shorter prompt.`);
+    }
+  }
 }
 
 async function callGemini(prompt) {
