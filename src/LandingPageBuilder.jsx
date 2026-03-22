@@ -170,9 +170,37 @@ async function callGemini(prompt) {
   return parseJsonResponse(text, "Gemini");
 }
 
+async function callClaudeAPI(prompt) {
+  const key = getApiKey("claude");
+  if (!key) return null;
+  const model = getSelectedModel("claude");
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({ model, max_tokens: 16000, messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(`Claude error (${res.status}): ${e?.error?.message || res.statusText}`); }
+  const data = await res.json();
+  const text = data?.content?.[0]?.text || "";
+  return parseJsonResponse(text, "Claude");
+}
+
 async function callAI(prompt) {
-  const key = getApiKey("gemini");
-  if (!key) throw new Error("Gemini API key required for Landing Page Builder. Go to Settings and add your Gemini key. (Claude has CORS issues with large requests from the browser.)");
+  const claudeKey = getApiKey("claude");
+  const geminiKey = getApiKey("gemini");
+  if (!claudeKey && !geminiKey) throw new Error("Configure an AI API key in Settings (Claude or Gemini)");
+  if (claudeKey) {
+    try { return await callClaudeAPI(prompt); } catch (e) {
+      console.warn("[LPBuilder] Claude failed, trying Gemini:", e.message);
+      if (geminiKey) return await callGemini(prompt);
+      throw e;
+    }
+  }
   return await callGemini(prompt);
 }
 
