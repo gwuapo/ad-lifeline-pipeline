@@ -141,9 +141,38 @@ function getKBContent(workspaceId, presetId) {
 
 // ── Claude API Call ──
 
-async function callClaude(prompt) {
+function parseJsonResponse(text, label) {
+  if (!text.trim()) throw new Error(`${label} returned empty response`);
+  let jsonStr = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  const match = jsonStr.match(/\{[\s\S]*\}/);
+  if (!match) {
+    console.error(`[LPBuilder] Raw ${label} response:`, text);
+    throw new Error(`${label} didn't return valid JSON. Check console.`);
+  }
+  return JSON.parse(match[0]);
+}
+
+async function callGemini(prompt) {
+  const key = getApiKey("gemini");
+  if (!key) return null;
+  const model = getSelectedModel("gemini");
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.8, maxOutputTokens: 16384, responseMimeType: "application/json" },
+    }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(`Gemini error (${res.status}): ${e?.error?.message || res.statusText}`); }
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  return parseJsonResponse(text, "Gemini");
+}
+
+async function callClaudeAPI(prompt) {
   const key = getApiKey("claude");
-  if (!key) throw new Error("Claude API key not configured in Settings");
+  if (!key) return null;
   const model = getSelectedModel("claude");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -155,20 +184,25 @@ async function callClaude(prompt) {
     },
     body: JSON.stringify({ model, max_tokens: 16000, messages: [{ role: "user", content: prompt }] }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Claude error (${res.status}): ${err?.error?.message || res.statusText}`);
-  }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(`Claude error (${res.status}): ${e?.error?.message || res.statusText}`); }
   const data = await res.json();
   const text = data?.content?.[0]?.text || "";
-  if (!text.trim()) throw new Error("Claude returned empty response");
-  let jsonStr = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-  const match = jsonStr.match(/\{[\s\S]*\}/);
-  if (!match) {
-    console.error("[LPBuilder] Raw Claude response:", text);
-    throw new Error("Claude didn't return valid JSON. Check console.");
+  return parseJsonResponse(text, "Claude");
+}
+
+async function callAI(prompt) {
+  const geminiKey = getApiKey("gemini");
+  const claudeKey = getApiKey("claude");
+  if (!geminiKey && !claudeKey) throw new Error("Configure an AI API key in Settings (Gemini or Claude)");
+  // Try Gemini first (no CORS issues), fall back to Claude
+  if (geminiKey) {
+    try { return await callGemini(prompt); } catch (e) {
+      console.warn("[LPBuilder] Gemini failed, trying Claude:", e.message);
+      if (claudeKey) return await callClaudeAPI(prompt);
+      throw e;
+    }
   }
-  return JSON.parse(match[0]);
+  return await callClaudeAPI(prompt);
 }
 
 // ── Styles ──
@@ -428,7 +462,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     setTimeout(() => addLog("Building creative angles for " + activePreset.name + "..."), 1500);
     setTimeout(() => addLog("Generating 5 unique landing page concepts..."), 3500);
     try {
-      const result = await callClaude(IDEA_PROMPT(activePreset, buildContextString()));
+      const result = await callAI(IDEA_PROMPT(activePreset, buildContextString()));
       const newIdeas = result.ideas || [];
       addLog("Generated " + newIdeas.length + " ideas. Done!");
       setIdeas(newIdeas);
@@ -445,7 +479,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     addLog("Generating more creative angles...");
     setTimeout(() => addLog("Exploring unconventional approaches..."), 2000);
     try {
-      const result = await callClaude(IDEA_PROMPT(activePreset, buildContextString()) + "\n\nGenerate 5 DIFFERENT ideas from the previous batch. Be more creative and unconventional.");
+      const result = await callAI(IDEA_PROMPT(activePreset, buildContextString()) + "\n\nGenerate 5 DIFFERENT ideas from the previous batch. Be more creative and unconventional.");
       const merged = [...(ideas || []), ...(result.ideas || [])];
       addLog("Added " + (result.ideas?.length || 0) + " new ideas. Done!");
       setIdeas(merged);
@@ -466,7 +500,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       const prompt = feedback
         ? STRUCTURE_PROMPT(activePreset, buildContextString(), selectedIdea) + `\n\nIMPORTANT: The user reviewed a previous structure and wants revisions. Here is their feedback:\n"${feedback}"\n\nHere is the previous structure:\n${JSON.stringify(structure)}\n\nRevise the structure based on their feedback while keeping the overall approach intact.`
         : STRUCTURE_PROMPT(activePreset, buildContextString(), selectedIdea);
-      const result = await callClaude(prompt);
+      const result = await callAI(prompt);
       addLog("Structure ready — " + (result.sections?.length || 0) + " sections, ~" + (result.total_estimated_words || "?") + " words. Done!");
       setStructure(result);
       setStructureFeedback("");
@@ -479,16 +513,22 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   const generateCopy = async (feedback) => {
     setLoading(true); setError(null);
     setProgressLog([]);
-    addLog(feedback ? "Revising copy with your feedback..." : "Loading knowledge base materials...");
-    setTimeout(() => addLog("Writing production-ready copy section by section..."), 2500);
-    setTimeout(() => addLog("Crafting headlines and hooks..."), 5000);
-    setTimeout(() => addLog("Refining calls-to-action and transitions..."), 8000);
-    setTimeout(() => addLog("Polishing tone and flow..."), 12000);
+    const secCount = structure?.sections?.length || 0;
+    const wordCount = structure?.total_estimated_words || "2000+";
+    addLog(feedback ? "Revising copy with your feedback..." : "Preparing to write full landing page copy...");
+    setTimeout(() => addLog("Loading knowledge base and swipe files into context..."), 1500);
+    setTimeout(() => addLog(`Writing ${secCount} sections (~${wordCount} words) — this takes 30-60 seconds...`), 3000);
+    setTimeout(() => addLog("Section 1: Hero / headline copy..."), 6000);
+    setTimeout(() => addLog("Writing body sections and proof elements..."), 10000);
+    setTimeout(() => addLog("Crafting calls-to-action and transitions..."), 15000);
+    setTimeout(() => addLog("Polishing tone, flow, and closing sections..."), 22000);
+    setTimeout(() => addLog("Almost done — finalizing output..."), 30000);
+    setTimeout(() => addLog("Still working — large pages take a bit longer..."), 45000);
     try {
       const kb = loadKBContent();
-      const result = await callClaude(FULL_COPY_PROMPT(activePreset, buildContextString(), selectedIdea, structure, kb, feedback));
+      const result = await callAI(FULL_COPY_PROMPT(activePreset, buildContextString(), selectedIdea, structure, kb, feedback));
       const newVersion = copyVersion + 1;
-      addLog("Full copy written — v" + newVersion + ". Done!");
+      addLog("Full copy written — v" + newVersion + ", " + (result.sections?.length || 0) + " sections. Done!");
       setFullCopy(result);
       setCopyVersion(newVersion);
       setCopyFeedback("");
