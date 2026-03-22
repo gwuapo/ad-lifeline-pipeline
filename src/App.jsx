@@ -935,11 +935,26 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
-                <div style={{ ...rowS, borderBottom: "none" }}>
+                <div style={rowS}>
                   <div style={labelS}>Variable Tested</div>
                   <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={inputS}>
                     <option value="">—</option>
                     {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div style={rowS}>
+                  <div style={labelS}>Big Idea</div>
+                  <input value={s.big_idea || ""} onChange={e => updateS("big_idea", e.target.value)} className="input" placeholder="The one big idea..." style={inputS} />
+                </div>
+                <div style={{ ...rowS, borderBottom: "none" }}>
+                  <div style={labelS}>Awareness Level</div>
+                  <select value={s.awareness_level || ""} onChange={e => updateS("awareness_level", e.target.value)} className="input" style={inputS}>
+                    <option value="">—</option>
+                    <option value="Unaware">Unaware</option>
+                    <option value="Problem-Aware">Problem-Aware</option>
+                    <option value="Solution-Aware">Solution-Aware</option>
+                    <option value="Product-Aware">Product-Aware</option>
+                    <option value="Most Aware">Most Aware</option>
                   </select>
                 </div>
 
@@ -951,6 +966,12 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Brief</div>
             <textarea disabled={isEditor} value={eb} onChange={e => setEb(e.target.value)} rows={3} className="input" placeholder="Ad brief..." style={{ border: "none", background: "transparent", padding: 0, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, resize: "vertical" }} />
+          </div>
+
+          {/* Ad Script */}
+          <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Ad Script</div>
+            <textarea value={ad.strategy?.ad_script || ""} onChange={e => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...(ad.strategy || {}), ad_script: e.target.value } } })} rows={6} className="input" placeholder="Paste your ad script / VSL script here..." style={{ border: "none", background: "transparent", padding: 0, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, resize: "vertical" }} />
           </div>
 
           {/* Notes */}

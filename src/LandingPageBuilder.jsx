@@ -217,10 +217,13 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     const s = ad.strategy || {};
     setContext(prev => ({
       ...prev,
+      script: s.ad_script || prev.script,
       brief: ad.brief || prev.brief,
       avatar: s.avatar || prev.avatar,
       concept: s.concept || prev.concept,
       angle: s.angle || prev.angle,
+      bigIdea: s.big_idea || prev.bigIdea,
+      awareness: s.awareness_level || prev.awareness,
     }));
   };
 
