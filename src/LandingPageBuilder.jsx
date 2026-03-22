@@ -170,9 +170,89 @@ const labelS = { fontSize: 11, fontWeight: 600, textTransform: "uppercase", lett
 const stepLabelS = { display: "flex", alignItems: "center", gap: 8, marginBottom: 16 };
 const stepNumS = (active) => ({ width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, background: active ? "var(--accent)" : "var(--border)", color: active ? "#fff" : "var(--text-muted)" });
 
+// ── Project CRUD ──
+
+async function fetchProjects(workspaceId) {
+  const { data, error } = await supabase.from("landing_page_projects").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false });
+  if (error) { console.error("Fetch LP projects:", error); return []; }
+  return data || [];
+}
+
+async function createProject(workspaceId, name, presetType) {
+  const { data, error } = await supabase.from("landing_page_projects").insert({ workspace_id: workspaceId, name, preset_type: presetType }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+async function saveProject(project) {
+  const { id, ...fields } = project;
+  fields.updated_at = new Date().toISOString();
+  const { error } = await supabase.from("landing_page_projects").update(fields).eq("id", id);
+  if (error) console.error("Save LP project:", error);
+}
+
+async function deleteProject(id) {
+  const { error } = await supabase.from("landing_page_projects").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ── Main Component ──
 
 export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyData }) {
+  // Project list vs detail
+  const [projects, setProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [showNew, setShowNew] = useState(false);
+
+  // Load projects
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    setProjectsLoading(true);
+    fetchProjects(activeWorkspaceId).then(p => { setProjects(p); setProjectsLoading(false); });
+  }, [activeWorkspaceId]);
+
+  const openProject = (proj) => {
+    setActiveProject(proj);
+    setStep(proj.step || "setup");
+    setPresetType(proj.preset_type || "advertorial");
+    setContext(proj.context || { script: "", brief: "", avatar: "", concept: "", angle: "", bigIdea: "", awareness: "Problem-Aware", sophistication: "3 — Unique mechanism", audience: "" });
+    setIdeas(proj.ideas || null);
+    setSelectedIdea(proj.selected_idea || null);
+    setStructure(proj.structure || null);
+    setFullCopy(proj.full_copy || null);
+    setCopyVersion(proj.copy_version || 0);
+    setBuildLogs(proj.build_logs || []);
+    setBuildStatus(proj.build_status || null);
+  };
+
+  const persistProject = async (updates) => {
+    if (!activeProject) return;
+    const updated = { ...activeProject, ...updates };
+    setActiveProject(updated);
+    await saveProject(updated);
+  };
+
+  const handleCreateProject = async () => {
+    const name = newName.trim() || "Untitled LP";
+    try {
+      const proj = await createProject(activeWorkspaceId, name, "advertorial");
+      setProjects(prev => [proj, ...prev]);
+      openProject(proj);
+      setShowNew(false);
+      setNewName("");
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteProject = async (id) => {
+    try {
+      await deleteProject(id);
+      setProjects(prev => prev.filter(p => p.id !== id));
+      if (activeProject?.id === id) setActiveProject(null);
+    } catch (e) { console.error(e); }
+  };
+
   // Step: setup → ideas → structure → copy → build
   const [step, setStep] = useState("setup");
 
@@ -297,9 +377,11 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     setLoading(true); setError(null);
     try {
       const result = await callClaude(IDEA_PROMPT(activePreset, buildContextString()));
-      setIdeas(result.ideas || []);
+      const newIdeas = result.ideas || [];
+      setIdeas(newIdeas);
       setSelectedIdea(null);
       setStep("ideas");
+      persistProject({ step: "ideas", ideas: newIdeas, selected_idea: null, context, preset_type: presetType });
     } catch (e) { setError(e.message); }
     setLoading(false);
   };
@@ -308,7 +390,9 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     setLoading(true); setError(null);
     try {
       const result = await callClaude(IDEA_PROMPT(activePreset, buildContextString()) + "\n\nGenerate 5 DIFFERENT ideas from the previous batch. Be more creative and unconventional.");
-      setIdeas(prev => [...(prev || []), ...(result.ideas || [])]);
+      const merged = [...(ideas || []), ...(result.ideas || [])];
+      setIdeas(merged);
+      persistProject({ ideas: merged });
     } catch (e) { setError(e.message); }
     setLoading(false);
   };
@@ -320,6 +404,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       const result = await callClaude(STRUCTURE_PROMPT(activePreset, buildContextString(), selectedIdea));
       setStructure(result);
       setStep("structure");
+      persistProject({ step: "structure", structure: result, selected_idea: selectedIdea });
     } catch (e) { setError(e.message); }
     setLoading(false);
   };
@@ -329,23 +414,29 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     try {
       const kb = await loadKBContent();
       const result = await callClaude(FULL_COPY_PROMPT(activePreset, buildContextString(), selectedIdea, structure, kb, feedback));
+      const newVersion = copyVersion + 1;
       setFullCopy(result);
-      setCopyVersion(v => v + 1);
+      setCopyVersion(newVersion);
       setCopyFeedback("");
       setStep("copy");
+      persistProject({ step: "copy", full_copy: result, copy_version: newVersion });
     } catch (e) { setError(e.message); }
     setLoading(false);
   };
 
   const startBuild = async () => {
+    const logs = [{ ts: new Date().toLocaleTimeString(), text: "Submitting to Manus...", status: "loading" }];
     setBuildStatus("starting");
-    setBuildLogs([{ ts: new Date().toLocaleTimeString(), text: "Submitting to Manus...", status: "loading" }]);
+    setBuildLogs(logs);
     setStep("build");
+    persistProject({ step: "build", build_status: "starting", build_logs: logs });
     try {
       await submitBuildJob({ copy: fullCopy, swipeFiles: presetFiles, presetType: presetType });
     } catch (e) {
-      setBuildLogs(prev => [...prev, { ts: new Date().toLocaleTimeString(), text: e.message, status: "error" }]);
+      const errLogs = [...logs, { ts: new Date().toLocaleTimeString(), text: e.message, status: "error" }];
+      setBuildLogs(errLogs);
       setBuildStatus("error");
+      persistProject({ build_status: "error", build_logs: errLogs });
     }
   };
 
@@ -361,8 +452,71 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
 
   return (
     <div className="animate-fade" style={{ maxWidth: 960 }}>
-      <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Landing Page Builder</h2>
-      <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 20px" }}>Create congruent pre-landers, advertorials, and PDPs from your ad strategy</p>
+      {/* ── PROJECT LIST ── */}
+      {!activeProject && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+            <div>
+              <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Landing Pages</h2>
+              <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>{projects.length} project{projects.length !== 1 ? "s" : ""}</p>
+            </div>
+            <button onClick={() => setShowNew(true)} className="btn btn-primary btn-sm">+ New Landing Page</button>
+          </div>
+
+          {showNew && (
+            <div style={cardS}>
+              <div style={labelS}>New Project</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleCreateProject()} className="input" placeholder="Project name..." autoFocus style={{ flex: 1, fontSize: 13 }} />
+                <button onClick={handleCreateProject} className="btn btn-primary btn-sm">Create</button>
+                <button onClick={() => { setShowNew(false); setNewName(""); }} className="btn btn-ghost btn-sm">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {projectsLoading && <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)", fontSize: 13 }}>Loading projects...</div>}
+
+          {!projectsLoading && projects.length === 0 && !showNew && (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>🌐</div>
+              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>No landing pages yet</div>
+              <div style={{ fontSize: 12 }}>Create your first project to get started</div>
+            </div>
+          )}
+
+          {projects.map(proj => {
+            const preset = PRESET_TYPES.find(p => p.id === proj.preset_type) || PRESET_TYPES[1];
+            const stepInfo = STEPS.find(s => s.id === proj.step) || STEPS[0];
+            const stepN = STEPS.findIndex(s => s.id === proj.step) + 1;
+            return (
+              <div key={proj.id} onClick={() => openProject(proj)} style={{
+                ...cardS, cursor: "pointer", display: "flex", alignItems: "center", gap: 14, transition: "border-color 0.15s",
+              }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "var(--accent)"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border-light)"}>
+                <div style={{ fontSize: 24 }}>{preset.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {preset.name} · Step {stepN}/5: {stepInfo.label} · {new Date(proj.updated_at || proj.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <button onClick={e => { e.stopPropagation(); handleDeleteProject(proj.id); }} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)", fontSize: 11 }}>×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── PROJECT DETAIL ── */}
+      {activeProject && (
+        <div>
+      {/* Back + title */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <button onClick={() => { persistProject({ context, preset_type: presetType }); setActiveProject(null); }} className="btn btn-ghost btn-xs" style={{ fontSize: 12 }}>← Back</button>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>{activeProject.name}</h2>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{activePreset.name}</span>
+      </div>
 
       {/* Step progress */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 24 }}>
@@ -627,6 +781,8 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
           <button onClick={() => setStep("copy")} className="btn btn-ghost btn-sm">← Back to Copy</button>
         </div>
       )}
+      </div>
+      )}{/* end activeProject */}
     </div>
   );
 }
