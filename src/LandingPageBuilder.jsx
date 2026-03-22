@@ -329,6 +329,10 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   // Generation state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [progressLog, setProgressLog] = useState([]);
+  const [structureFeedback, setStructureFeedback] = useState("");
+
+  const addLog = (text) => setProgressLog(prev => [...prev, { ts: new Date().toLocaleTimeString(), text }]);
 
   // Ideas
   const [ideas, setIdeas] = useState(null);
@@ -419,52 +423,78 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
 
   const generateIdeas = async () => {
     setLoading(true); setError(null);
+    setProgressLog([]);
+    addLog("Analyzing your ad context and strategy...");
+    setTimeout(() => addLog("Building creative angles for " + activePreset.name + "..."), 1500);
+    setTimeout(() => addLog("Generating 5 unique landing page concepts..."), 3500);
     try {
       const result = await callClaude(IDEA_PROMPT(activePreset, buildContextString()));
       const newIdeas = result.ideas || [];
+      addLog("Generated " + newIdeas.length + " ideas. Done!");
       setIdeas(newIdeas);
       setSelectedIdea(null);
       setStep("ideas");
       persistProject({ step: "ideas", ideas: newIdeas, selected_idea: null, context, preset_type: presetType });
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); addLog("Error: " + e.message); }
     setLoading(false);
   };
 
   const generateMoreIdeas = async () => {
     setLoading(true); setError(null);
+    setProgressLog([]);
+    addLog("Generating more creative angles...");
+    setTimeout(() => addLog("Exploring unconventional approaches..."), 2000);
     try {
       const result = await callClaude(IDEA_PROMPT(activePreset, buildContextString()) + "\n\nGenerate 5 DIFFERENT ideas from the previous batch. Be more creative and unconventional.");
       const merged = [...(ideas || []), ...(result.ideas || [])];
+      addLog("Added " + (result.ideas?.length || 0) + " new ideas. Done!");
       setIdeas(merged);
       persistProject({ ideas: merged });
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); addLog("Error: " + e.message); }
     setLoading(false);
   };
 
-  const generateStructure = async () => {
+  const generateStructure = async (feedback) => {
     if (!selectedIdea) return;
     setLoading(true); setError(null);
+    setProgressLog([]);
+    addLog(feedback ? "Revising structure with your feedback..." : "Analyzing chosen idea and page type...");
+    setTimeout(() => addLog(feedback ? "Applying your revision notes..." : "Mapping out section flow and hierarchy..."), 2000);
+    setTimeout(() => addLog("Defining key elements for each section..."), 4000);
+    setTimeout(() => addLog("Estimating word counts and page length..."), 6000);
     try {
-      const result = await callClaude(STRUCTURE_PROMPT(activePreset, buildContextString(), selectedIdea));
+      const prompt = feedback
+        ? STRUCTURE_PROMPT(activePreset, buildContextString(), selectedIdea) + `\n\nIMPORTANT: The user reviewed a previous structure and wants revisions. Here is their feedback:\n"${feedback}"\n\nHere is the previous structure:\n${JSON.stringify(structure)}\n\nRevise the structure based on their feedback while keeping the overall approach intact.`
+        : STRUCTURE_PROMPT(activePreset, buildContextString(), selectedIdea);
+      const result = await callClaude(prompt);
+      addLog("Structure ready — " + (result.sections?.length || 0) + " sections, ~" + (result.total_estimated_words || "?") + " words. Done!");
       setStructure(result);
+      setStructureFeedback("");
       setStep("structure");
       persistProject({ step: "structure", structure: result, selected_idea: selectedIdea });
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); addLog("Error: " + e.message); }
     setLoading(false);
   };
 
   const generateCopy = async (feedback) => {
     setLoading(true); setError(null);
+    setProgressLog([]);
+    addLog(feedback ? "Revising copy with your feedback..." : "Loading knowledge base materials...");
+    setTimeout(() => addLog("Writing production-ready copy section by section..."), 2500);
+    setTimeout(() => addLog("Crafting headlines and hooks..."), 5000);
+    setTimeout(() => addLog("Refining calls-to-action and transitions..."), 8000);
+    setTimeout(() => addLog("Polishing tone and flow..."), 12000);
     try {
       const kb = loadKBContent();
       const result = await callClaude(FULL_COPY_PROMPT(activePreset, buildContextString(), selectedIdea, structure, kb, feedback));
       const newVersion = copyVersion + 1;
+      addLog("Full copy written — v" + newVersion + ". Done!");
       setFullCopy(result);
       setCopyVersion(newVersion);
       setCopyFeedback("");
       setStep("copy");
       persistProject({ step: "copy", full_copy: result, copy_version: newVersion });
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); addLog("Error: " + e.message); }
     setLoading(false);
   };
 
@@ -587,6 +617,22 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       </div>
 
       {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 14, fontSize: 12, color: "var(--red)" }}>{error}</div>}
+
+      {/* Progress log */}
+      {loading && progressLog.length > 0 && (
+        <div style={{ ...cardS, borderLeft: "3px solid var(--accent)", marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--accent)", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.2s ease-in-out infinite" }} />
+            Working...
+          </div>
+          {progressLog.map((log, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "3px 0", opacity: i === progressLog.length - 1 ? 1 : 0.6 }}>
+              <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)", flexShrink: 0 }}>{log.ts}</span>
+              <span style={{ fontSize: 12, color: log.text.startsWith("Error") ? "var(--red)" : "var(--text-secondary)" }}>{log.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── STEP 1: SETUP ── */}
       {step === "setup" && (
@@ -763,11 +809,19 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setStep("ideas")} className="btn btn-ghost btn-sm">← Back</button>
-            <button onClick={() => generateCopy(null)} disabled={loading} className="btn btn-primary" style={{ padding: "10px 28px" }}>
-              {loading ? "Writing Full Copy..." : "Approve & Write Copy →"}
-            </button>
+          {/* Feedback / revise */}
+          <div style={{ ...cardS, marginTop: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 6 }}>Revisions (optional)</div>
+            <textarea value={structureFeedback} onChange={e => setStructureFeedback(e.target.value)} rows={2} className="input" placeholder="e.g. 'Add a FAQ section', 'Make the hero shorter', 'Add more social proof'..." style={{ fontSize: 12, marginBottom: 8, resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setStep("ideas")} className="btn btn-ghost btn-sm">← Back</button>
+              <button onClick={() => generateStructure(structureFeedback || null)} disabled={loading} className="btn btn-ghost btn-sm" style={{ borderColor: "var(--border)" }}>
+                {loading ? "Revising..." : structureFeedback.trim() ? "Revise Structure" : "Regenerate Structure"}
+              </button>
+              <button onClick={() => generateCopy(null)} disabled={loading} className="btn btn-primary" style={{ padding: "10px 28px" }}>
+                {loading ? "Writing Full Copy..." : "Approve & Write Copy →"}
+              </button>
+            </div>
           </div>
         </div>
       )}
