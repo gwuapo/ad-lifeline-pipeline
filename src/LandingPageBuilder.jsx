@@ -72,6 +72,8 @@ Rules:
 - CTAs must be specific and action-oriented
 - Include placeholder markers for images: [IMAGE: description]
 - Write naturally, not robotically
+- Write in PLAIN TEXT only. Use line breaks for paragraphs. Do NOT use HTML tags.
+- Use ** for bold emphasis and ## for headlines if needed, but NO <h2>, <p>, <div>, <strong>, <ul>, <li> or any HTML.
 
 AD CONTEXT:
 ${context}
@@ -90,10 +92,17 @@ ${knowledgeBase ? `REFERENCE KNOWLEDGE BASE (use principles and patterns from th
 
 ${feedback ? `USER FEEDBACK ON PREVIOUS VERSION (address ALL of these):\n${feedback}\n` : ""}
 
-CRITICAL LANGUAGE RULE: If the ad context is in Arabic, write ALL copy in Saudi-dialect Arabic (اللهجة السعودية). Natural Saudi expressions. NOT formal Arabic or Egyptian dialect.
+CRITICAL LANGUAGE RULE: If the ad context is in Arabic or the product is targeting an Arabic market:
+1. Write the FIRST version of each section in Saudi-dialect Arabic (اللهجة السعودية). Natural Saudi expressions. NOT formal Arabic or Egyptian dialect.
+2. Then write a SECOND version which is the English translation of that same section.
+3. Include BOTH versions in each section's output.
+
+If the context is in English, just write one version in English.
+
+For each section, also count the approximate number of words in the copy.
 
 Respond with ONLY valid JSON, no markdown fences:
-{"sections": [{"section_name": "...", "copy": "full copy text for this section..."}, ...]}`;
+{"sections": [{"section_name": "...", "copy_ar": "Saudi Arabic copy (or empty string if English only)", "copy_en": "English copy or English translation", "word_count": 150}, ...], "total_word_count": 2000}`;
 
 // ── Knowledge Base Helpers ──
 
@@ -887,14 +896,41 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       )}
 
       {/* ── STEP 4: FULL COPY ── */}
-      {step === "copy" && fullCopy && (
+      {step === "copy" && fullCopy && (() => {
+        const sections = fullCopy.sections || [];
+        const hasArabic = sections.some(s => s.copy_ar && s.copy_ar.trim());
+        const totalWords = fullCopy.total_word_count || sections.reduce((sum, s) => sum + (s.word_count || 0), 0);
+        // Support old format (single "copy" field) and new format (copy_ar + copy_en)
+        const getCopy = (sec) => sec.copy_ar || sec.copy_en || sec.copy || "";
+        const getEn = (sec) => sec.copy_en || "";
+        return (
         <div className="animate-fade">
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>Version {copyVersion} · {fullCopy.sections?.length || 0} sections</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Version {copyVersion} · {sections.length} sections · ~{totalWords.toLocaleString()} words</div>
+            <button onClick={() => { const text = sections.map(s => `## ${s.section_name}\n${hasArabic ? getCopy(s) + "\n\n--- English ---\n" + getEn(s) : getCopy(s)}`).join("\n\n---\n\n"); navigator.clipboard.writeText(text); }} className="btn btn-ghost btn-xs" style={{ fontSize: 10 }}>Copy All</button>
+          </div>
           <div style={cardS}>
-            {(fullCopy.sections || []).map((sec, i) => (
-              <div key={i} style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 6, borderBottom: "1px solid var(--border-light)", paddingBottom: 6 }}>{sec.section_name}</div>
-                <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{sec.copy}</div>
+            {sections.map((sec, i) => (
+              <div key={i} style={{ marginBottom: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, borderBottom: "1px solid var(--border-light)", paddingBottom: 6 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{sec.section_name}</div>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{sec.word_count ? `~${sec.word_count}w` : ""}</span>
+                </div>
+                {hasArabic && getCopy(sec) && (
+                  <div style={{ direction: "rtl", textAlign: "right", marginBottom: 14 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--accent)", marginBottom: 4, direction: "ltr", textAlign: "left" }}>Arabic (Saudi)</div>
+                    <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{getCopy(sec)}</div>
+                  </div>
+                )}
+                {getEn(sec) && hasArabic && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-tertiary)", marginBottom: 4 }}>English Translation</div>
+                    <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{getEn(sec)}</div>
+                  </div>
+                )}
+                {!hasArabic && (
+                  <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{getCopy(sec)}</div>
+                )}
               </div>
             ))}
           </div>
@@ -917,7 +953,8 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── STEP 5: BUILD ── */}
       {step === "build" && (
