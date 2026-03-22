@@ -98,8 +98,17 @@ Respond with ONLY valid JSON, no markdown fences:
 // ── Knowledge Base Helpers ──
 
 const KB_BUCKET = "landing-pages";
+let _bucketChecked = false;
+
+async function ensureBucket() {
+  if (_bucketChecked) return;
+  // Try to create the bucket (will silently fail if it already exists)
+  await supabase.storage.createBucket(KB_BUCKET, { public: false, fileSizeLimit: 10485760 }).catch(() => {});
+  _bucketChecked = true;
+}
 
 async function uploadKBFile(workspaceId, presetId, file) {
+  await ensureBucket();
   const path = `${workspaceId}/${presetId}/${Date.now()}_${file.name}`;
   const { error } = await supabase.storage.from(KB_BUCKET).upload(path, file);
   if (error) throw error;
