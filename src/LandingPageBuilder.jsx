@@ -394,6 +394,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   const [error, setError] = useState(null);
   const [progressLog, setProgressLog] = useState([]);
   const [structureFeedback, setStructureFeedback] = useState("");
+  const [showDebug, setShowDebug] = useState(false);
 
   const addLog = (text) => setProgressLog(prev => [...prev, { ts: new Date().toLocaleTimeString(), text }]);
 
@@ -812,10 +813,34 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
             </div>
           </div>
 
+          {/* Debug: what AI sees */}
+          <div style={{ marginBottom: 12 }}>
+            <button onClick={() => setShowDebug(d => !d)} className="btn btn-ghost btn-xs" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              {showDebug ? "Hide" : "Preview"} what AI receives
+            </button>
+          </div>
+          {showDebug && (() => {
+            const ctx = buildContextString();
+            const kb = loadKBContent();
+            return (
+              <div style={{ ...cardS, borderLeft: "3px solid var(--yellow)", fontSize: 11, maxHeight: 400, overflowY: "auto" }}>
+                <div style={{ fontWeight: 700, color: "var(--yellow)", marginBottom: 8 }}>AI will receive this context:</div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>Ad Context ({ctx.length} chars):</div>
+                  <pre style={{ whiteSpace: "pre-wrap", color: "var(--text-secondary)", fontSize: 11, lineHeight: 1.5, margin: 0 }}>{ctx || "(empty -- fill in the fields above)"}</pre>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>Knowledge Base ({kb.length} chars, {globalFiles.length + presetFiles.length} files):</div>
+                  <pre style={{ whiteSpace: "pre-wrap", color: "var(--text-secondary)", fontSize: 11, lineHeight: 1.5, margin: 0 }}>{kb ? kb.slice(0, 2000) + (kb.length > 2000 ? `\n\n... (${kb.length - 2000} more chars)` : "") : "(no files uploaded)"}</pre>
+                </div>
+              </div>
+            );
+          })()}
+
           <button onClick={generateIdeas} disabled={loading || !context.script.trim()} className="btn btn-primary" style={{ padding: "10px 28px", fontSize: 14 }}>
             {loading ? "Generating Ideas..." : `Generate ${activePreset.name} Ideas`}
           </button>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 12 }}>Using: Claude ({getSelectedModel("claude")})</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 12 }}>Using: {getApiKey("claude") ? `Claude (${getSelectedModel("claude")})` : `Gemini (${getSelectedModel("gemini")})`}</span>
         </div>
       )}
 
