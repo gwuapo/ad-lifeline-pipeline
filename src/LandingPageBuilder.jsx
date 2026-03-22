@@ -568,19 +568,67 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
     setLoading(false);
   };
 
+  const addBuildLog = (text, status = "loading") => {
+    const entry = { ts: new Date().toLocaleTimeString(), text, status };
+    setBuildLogs(prev => [...prev, entry]);
+    return entry;
+  };
+
   const startBuild = async () => {
-    const logs = [{ ts: new Date().toLocaleTimeString(), text: "Submitting to Manus...", status: "loading" }];
     setBuildStatus("starting");
-    setBuildLogs(logs);
+    setBuildLogs([]);
     setStep("build");
-    persistProject({ step: "build", build_status: "starting", build_logs: logs });
+    addBuildLog("Submitting build task to Manus...");
+
     try {
-      await submitBuildJob({ copy: fullCopy, swipeFiles: presetFiles, presetType: presetType });
+      const kb = loadKBContent();
+      const job = await submitBuildJob({ copy: fullCopy, swipeFiles: presetFiles, presetType, knowledgeBase: kb });
+      addBuildLog(`Task created: ${job.title || job.taskId}`, "done");
+      if (job.taskUrl) addBuildLog(`Track live: ${job.taskUrl}`, "done");
+      setBuildStatus("running");
+      persistProject({ step: "build", build_status: "running", build_logs: [{ text: "Task: " + job.taskId }] });
+
+      // Poll for completion
+      addBuildLog("Manus is building your page...");
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes at 5s intervals
+      const poll = async () => {
+        attempts++;
+        try {
+          const result = await getJobStatus(job.taskId);
+          if (result.status === "completed") {
+            addBuildLog("Build complete!", "done");
+            const files = result.output.filter(o => o.fileUrl);
+            if (files.length) {
+              files.forEach(f => addBuildLog(`File: ${f.fileName || "page"} — ${f.fileUrl}`, "done"));
+            }
+            const textOutput = result.output.filter(o => o.text).map(o => o.text).join("\n");
+            if (textOutput) addBuildLog("Manus output received", "done");
+            if (job.shareUrl) addBuildLog(`Share link: ${job.shareUrl}`, "done");
+            setBuildStatus("complete");
+            persistProject({ build_status: "complete" });
+            return;
+          }
+          if (result.status === "failed") {
+            addBuildLog(`Build failed: ${result.error || "Unknown error"}`, "error");
+            setBuildStatus("error");
+            persistProject({ build_status: "error" });
+            return;
+          }
+          // Still running
+          if (attempts % 6 === 0) addBuildLog(`Still building... (${Math.round(attempts * 5 / 60)}min elapsed)`);
+          if (attempts < maxAttempts) setTimeout(poll, 5000);
+          else { addBuildLog("Polling timed out. Check Manus dashboard for status.", "error"); setBuildStatus("error"); }
+        } catch (e) {
+          addBuildLog(`Poll error: ${e.message}`, "error");
+          if (attempts < maxAttempts) setTimeout(poll, 10000);
+        }
+      };
+      setTimeout(poll, 5000);
     } catch (e) {
-      const errLogs = [...logs, { ts: new Date().toLocaleTimeString(), text: e.message, status: "error" }];
-      setBuildLogs(errLogs);
+      addBuildLog(e.message, "error");
       setBuildStatus("error");
-      persistProject({ build_status: "error", build_logs: errLogs });
+      persistProject({ build_status: "error" });
     }
   };
 
@@ -985,8 +1033,13 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       {step === "build" && (
         <div className="animate-fade">
           <div style={cardS}>
-            <div style={labelS}>Build Status</div>
-            <div style={{ minHeight: 200 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={labelS}>Build Status</div>
+              {buildStatus === "running" && <span style={{ fontSize: 10, color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.2s ease-in-out infinite" }} /> Building...</span>}
+              {buildStatus === "complete" && <span style={{ fontSize: 10, color: "var(--green)" }}>Complete</span>}
+              {buildStatus === "error" && <span style={{ fontSize: 10, color: "var(--red)" }}>Failed</span>}
+            </div>
+            <div style={{ minHeight: 160, maxHeight: 400, overflowY: "auto" }}>
               {buildLogs.map((log, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
                   <div style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, marginTop: 1,
@@ -996,7 +1049,11 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
                     {log.status === "done" ? "✓" : log.status === "error" ? "✗" : "⋯"}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, color: log.status === "error" ? "var(--red)" : "var(--text-primary)" }}>{log.text}</div>
+                    <div style={{ fontSize: 12, color: log.status === "error" ? "var(--red)" : "var(--text-primary)", wordBreak: "break-all" }}>
+                      {log.text.startsWith("http") || log.text.includes("https://") ? (
+                        <a href={log.text.match(/https?:\/\/[^\s]+/)?.[0] || log.text} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>{log.text}</a>
+                      ) : log.text}
+                    </div>
                     <div style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{log.ts}</div>
                   </div>
                 </div>
@@ -1005,9 +1062,28 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
             </div>
           </div>
 
-          {buildStatus === "error" && (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              Manus API is not yet connected. Once you provide API credentials, builds will work automatically.
+          {buildStatus === "error" && !isManusConfigured() && (
+            <div style={{ ...cardS, borderLeft: "3px solid var(--yellow)" }}>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                Manus API key not configured. Go to <strong>Settings → Integrations</strong> and add your Manus API key to enable page building.
+              </div>
+            </div>
+          )}
+
+          {buildStatus === "complete" && (
+            <div style={cardS}>
+              <div style={labelS}>Send Feedback to Manus</div>
+              <textarea value={buildFeedback} onChange={e => setBuildFeedback(e.target.value)} className="input" rows={2} placeholder="e.g. 'Make the CTA button larger', 'Change the hero background to dark'..." style={{ fontSize: 12, marginBottom: 8 }} />
+              <button onClick={async () => {
+                if (!buildFeedback.trim()) return;
+                addBuildLog("Sending feedback to Manus...");
+                setBuildStatus("running");
+                try {
+                  const result = await sendBuildFeedback(buildLogs.find(l => l.text.includes("Task:"))?.text?.split("Task: ")[1] || "", buildFeedback);
+                  addBuildLog("Feedback sent, Manus is revising...", "done");
+                  setBuildFeedback("");
+                } catch (e) { addBuildLog("Feedback error: " + e.message, "error"); setBuildStatus("complete"); }
+              }} disabled={!buildFeedback.trim() || buildStatus === "running"} className="btn btn-primary btn-sm">Send Revision</button>
             </div>
           )}
 
