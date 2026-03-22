@@ -184,6 +184,12 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
             name = profile?.display_name || "";
           } catch {}
         }
+        if (!name) {
+          try {
+            const { data: rpcName } = await supabase.rpc("get_display_name_by_user_id", { uid: m.user_id });
+            name = rpcName || "";
+          } catch {}
+        }
         if (!name && m.user_id === currentUserId) {
           name = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "";
         }
