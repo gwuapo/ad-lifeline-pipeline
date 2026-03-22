@@ -201,14 +201,15 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
     setInviting(true); setResult(null);
     try {
       const data = await sendInvite(activeWorkspaceId, email.trim(), inviteRole);
-      setResult({ ok: true, msg: data.message });
+      setResult({ ok: true, msg: data.message || "Invite sent!" });
       setEmail("");
       loadTeam();
     } catch (e) {
-      if (e.message?.includes("duplicate") || e.message?.includes("unique") || e.message?.includes("already")) {
-        setResult({ ok: false, msg: "This person is already a member or has a pending invite." });
+      const msg = e.message || "Failed to send invite";
+      if (msg.includes("duplicate") || msg.includes("unique")) {
+        setResult({ ok: false, msg: "This email already has a pending invite. Try revoking the old invite first, then re-invite." });
       } else {
-        setResult({ ok: false, msg: e.message || "Failed to send invite" });
+        setResult({ ok: false, msg });
       }
     }
     setInviting(false);

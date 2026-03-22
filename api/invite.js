@@ -45,7 +45,7 @@ export default async function handler(req, res) {
 
   try {
     // Check if user already exists in auth
-    const { data: { users } } = await supabase.auth.admin.listUsers();
+    const { data: { users } } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
     const existingUser = users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
 
     if (existingUser) {
@@ -77,14 +77,35 @@ export default async function handler(req, res) {
     });
 
     if (inviteErr) {
-      if (inviteErr.message?.includes("already been registered")) {
-        return res.status(409).json({ error: "User already has an account. Try refreshing." });
+      if (inviteErr.message?.includes("already been registered") || inviteErr.message?.includes("already been invited")) {
+        // User exists in auth but wasn't found in listUsers (edge case) or was already invited
+        // Try to find them and add directly
+        const { data: { users: retryUsers } } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const retryUser = retryUsers?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+        if (retryUser) {
+          await supabase
+            .from("workspace_members")
+            .upsert({ workspace_id: workspaceId, user_id: retryUser.id, role, editor_name: role === "editor" ? (retryUser.user_metadata?.display_name || email.split("@")[0]) : null }, { onConflict: "workspace_id,user_id" });
+          await supabase
+            .from("workspace_invites")
+            .update({ status: "accepted", accepted_at: new Date().toISOString() })
+            .match({ workspace_id: workspaceId, email: email.toLowerCase() });
+          return res.status(200).json({ status: "added", message: `${email} added to workspace (existing account).` });
+        }
+        // If still not found, re-send via magic link as fallback
+        const { error: magicErr } = await supabase.auth.admin.generateLink({ type: "magiclink", email, options: { redirectTo: `${req.headers.origin || process.env.APP_URL || "https://ads.nexusholdings.io"}` } });
+        if (magicErr) console.error("Magic link fallback:", magicErr);
+        // Reset invite to pending so it can be accepted on login
+        await supabase
+          .from("workspace_invites")
+          .upsert({ workspace_id: workspaceId, email: email.toLowerCase(), role, invited_by: caller.id, status: "pending" }, { onConflict: "workspace_id,email" });
+        return res.status(200).json({ status: "re-invited", message: `Re-invite sent to ${email}. They should check their email or log in.` });
       }
       throw inviteErr;
     }
 
     // Store pending invite in our table
-    const { error: pendingErr } = await supabase
+    await supabase
       .from("workspace_invites")
       .upsert({
         workspace_id: workspaceId,
@@ -93,8 +114,6 @@ export default async function handler(req, res) {
         invited_by: caller.id,
         status: "pending",
       }, { onConflict: "workspace_id,email" });
-
-    if (pendingErr) console.error("Failed to store invite record:", pendingErr);
 
     return res.status(200).json({
       status: "invited",
