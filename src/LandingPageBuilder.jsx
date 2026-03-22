@@ -97,38 +97,46 @@ Respond with ONLY valid JSON, no markdown fences:
 
 // ── Knowledge Base Helpers ──
 
-const KB_BUCKET = "landing-pages";
-let _bucketChecked = false;
+// ── Knowledge Base (localStorage) ──
+// Stores file name + extracted text content per workspace/preset
 
-async function ensureBucket() {
-  if (_bucketChecked) return;
-  // Try to create the bucket (will silently fail if it already exists)
-  await supabase.storage.createBucket(KB_BUCKET, { public: false, fileSizeLimit: 10485760 }).catch(() => {});
-  _bucketChecked = true;
+const KB_STORAGE_KEY = "al_lp_kb";
+
+function getKBStore() {
+  try { return JSON.parse(localStorage.getItem(KB_STORAGE_KEY) || "{}"); } catch { return {}; }
+}
+
+function setKBStore(store) {
+  localStorage.setItem(KB_STORAGE_KEY, JSON.stringify(store));
+}
+
+function kbKey(workspaceId, presetId) { return `${workspaceId}/${presetId}`; }
+
+function listKBFiles(workspaceId, presetId) {
+  const store = getKBStore();
+  return store[kbKey(workspaceId, presetId)] || [];
 }
 
 async function uploadKBFile(workspaceId, presetId, file) {
-  await ensureBucket();
-  const path = `${workspaceId}/${presetId}/${Date.now()}_${file.name}`;
-  const { error } = await supabase.storage.from(KB_BUCKET).upload(path, file);
-  if (error) throw error;
-  return path;
+  const text = await file.text();
+  const entry = { id: Date.now() + "_" + Math.random().toString(36).slice(2, 8), name: file.name, content: text.slice(0, 50000) };
+  const store = getKBStore();
+  const key = kbKey(workspaceId, presetId);
+  store[key] = [...(store[key] || []), entry];
+  setKBStore(store);
+  return entry.id;
 }
 
-async function listKBFiles(workspaceId, presetId) {
-  const { data, error } = await supabase.storage.from(KB_BUCKET).list(`${workspaceId}/${presetId}`);
-  if (error) return [];
-  return (data || []).map(f => ({ name: f.name, path: `${workspaceId}/${presetId}/${f.name}` }));
+function deleteKBFile(workspaceId, presetId, fileId) {
+  const store = getKBStore();
+  const key = kbKey(workspaceId, presetId);
+  store[key] = (store[key] || []).filter(f => f.id !== fileId);
+  setKBStore(store);
 }
 
-async function deleteKBFile(path) {
-  await supabase.storage.from(KB_BUCKET).remove([path]);
-}
-
-async function downloadKBText(path) {
-  const { data, error } = await supabase.storage.from(KB_BUCKET).download(path);
-  if (error) return "";
-  return await data.text();
+function getKBContent(workspaceId, presetId) {
+  const files = listKBFiles(workspaceId, presetId);
+  return files.map(f => `--- ${f.name} ---\n${f.content}`).join("\n\n");
 }
 
 // ── Claude API Call ──
@@ -246,6 +254,8 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [editingProjName, setEditingProjName] = useState(false);
+  const [editName, setEditName] = useState("");
 
   // Load projects
   useEffect(() => {
@@ -342,8 +352,8 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   // Load KB files
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    listKBFiles(activeWorkspaceId, "global").then(setGlobalFiles).catch(() => {});
-    listKBFiles(activeWorkspaceId, presetType).then(setPresetFiles).catch(() => {});
+    setGlobalFiles(listKBFiles(activeWorkspaceId, "global"));
+    setPresetFiles(listKBFiles(activeWorkspaceId, presetType));
   }, [activeWorkspaceId, presetType]);
 
   const handleAdSelect = (adId) => {
@@ -386,36 +396,23 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       for (const file of files) {
         await uploadKBFile(activeWorkspaceId, target, file);
       }
-      if (target === "global") {
-        setGlobalFiles(await listKBFiles(activeWorkspaceId, "global"));
-      } else {
-        setPresetFiles(await listKBFiles(activeWorkspaceId, presetType));
-      }
+      setGlobalFiles(listKBFiles(activeWorkspaceId, "global"));
+      setPresetFiles(listKBFiles(activeWorkspaceId, presetType));
     } catch (err) { setError(err.message); }
     setUploading(false);
     e.target.value = "";
   };
 
-  const handleDeleteFile = async (path, target) => {
-    await deleteKBFile(path);
-    if (target === "global") {
-      setGlobalFiles(await listKBFiles(activeWorkspaceId, "global"));
-    } else {
-      setPresetFiles(await listKBFiles(activeWorkspaceId, presetType));
-    }
+  const handleDeleteFile = (fileId, target) => {
+    deleteKBFile(activeWorkspaceId, target, fileId);
+    setGlobalFiles(listKBFiles(activeWorkspaceId, "global"));
+    setPresetFiles(listKBFiles(activeWorkspaceId, presetType));
   };
 
-  const loadKBContent = async () => {
-    const allFiles = [...globalFiles, ...presetFiles];
-    if (allFiles.length === 0) return "";
-    const texts = [];
-    for (const f of allFiles.slice(0, 10)) {
-      try {
-        const t = await downloadKBText(f.path);
-        if (t.trim()) texts.push(`--- ${f.name} ---\n${t.slice(0, 5000)}`);
-      } catch {}
-    }
-    return texts.join("\n\n");
+  const loadKBContent = () => {
+    const global = getKBContent(activeWorkspaceId, "global");
+    const preset = getKBContent(activeWorkspaceId, presetType);
+    return [global, preset].filter(Boolean).join("\n\n");
   };
 
   // ── Step Actions ──
@@ -459,7 +456,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   const generateCopy = async (feedback) => {
     setLoading(true); setError(null);
     try {
-      const kb = await loadKBContent();
+      const kb = loadKBContent();
       const result = await callClaude(FULL_COPY_PROMPT(activePreset, buildContextString(), selectedIdea, structure, kb, feedback));
       const newVersion = copyVersion + 1;
       setFullCopy(result);
@@ -563,7 +560,18 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       {/* Back + title */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <button onClick={() => { persistProject({ context, preset_type: presetType }); setActiveProject(null); }} className="btn btn-ghost btn-xs" style={{ fontSize: 12 }}>← Back</button>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>{activeProject.name}</h2>
+        {editingProjName ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => {
+              if (e.key === "Enter") { const n = editName.trim(); if (n) { persistProject({ name: n }); setActiveProject(p => ({ ...p, name: n })); setProjects(ps => ps.map(p => p.id === activeProject.id ? { ...p, name: n } : p)); } setEditingProjName(false); }
+              if (e.key === "Escape") setEditingProjName(false);
+            }} autoFocus className="input" style={{ fontSize: 18, fontWeight: 700, padding: "2px 8px", width: 260 }} />
+            <button onClick={() => { const n = editName.trim(); if (n) { persistProject({ name: n }); setActiveProject(p => ({ ...p, name: n })); setProjects(ps => ps.map(p => p.id === activeProject.id ? { ...p, name: n } : p)); } setEditingProjName(false); }} className="btn btn-primary btn-xs">Save</button>
+            <button onClick={() => setEditingProjName(false)} className="btn btn-ghost btn-xs">Cancel</button>
+          </div>
+        ) : (
+          <h2 onClick={() => { setEditName(activeProject.name); setEditingProjName(true); }} style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em", cursor: "pointer", borderBottom: "1px dashed transparent" }} onMouseEnter={e => e.currentTarget.style.borderBottomColor = "var(--text-muted)"} onMouseLeave={e => e.currentTarget.style.borderBottomColor = "transparent"}>{activeProject.name}</h2>
+        )}
         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{activePreset.name}</span>
       </div>
 
@@ -588,7 +596,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
             <div style={labelS}>Landing Page Type</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {PRESET_TYPES.map(p => (
-                <div key={p.id} onClick={() => setPresetType(p.id)} style={{
+                <div key={p.id} onClick={() => { setPresetType(p.id); persistProject({ preset_type: p.id }); }} style={{
                   padding: "12px 14px", borderRadius: 8, cursor: "pointer", transition: "all 0.15s",
                   border: presetType === p.id ? "1.5px solid var(--accent)" : "1px solid var(--border-light)",
                   background: presetType === p.id ? "var(--accent-bg)" : "var(--bg-card)",
@@ -663,7 +671,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
                 {globalFiles.map(f => (
                   <div key={f.path} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
                     <span style={{ fontSize: 11, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{f.name}</span>
-                    <button onClick={() => handleDeleteFile(f.path, "global")} className="btn btn-ghost btn-xs" style={{ fontSize: 9, color: "var(--red)" }}>×</button>
+                    <button onClick={() => handleDeleteFile(f.id, "global")} className="btn btn-ghost btn-xs" style={{ fontSize: 9, color: "var(--red)" }}>×</button>
                   </div>
                 ))}
                 <label className="btn btn-ghost btn-xs" style={{ marginTop: 6, cursor: "pointer" }}>
@@ -678,7 +686,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
                 {presetFiles.map(f => (
                   <div key={f.path} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
                     <span style={{ fontSize: 11, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{f.name}</span>
-                    <button onClick={() => handleDeleteFile(f.path, presetType)} className="btn btn-ghost btn-xs" style={{ fontSize: 9, color: "var(--red)" }}>×</button>
+                    <button onClick={() => handleDeleteFile(f.id, presetType)} className="btn btn-ghost btn-xs" style={{ fontSize: 9, color: "var(--red)" }}>×</button>
                   </div>
                 ))}
                 <label className="btn btn-ghost btn-xs" style={{ marginTop: 6, cursor: "pointer" }}>
