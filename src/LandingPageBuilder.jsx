@@ -249,16 +249,19 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
 
   // Load projects
   useEffect(() => {
-    if (!activeWorkspaceId) return;
+    if (!activeWorkspaceId) { setProjectsLoading(false); return; }
     setProjectsLoading(true);
-    fetchProjects(activeWorkspaceId).then(p => { setProjects(p); setProjectsLoading(false); });
+    fetchProjects(activeWorkspaceId)
+      .then(p => { setProjects(p); setProjectsLoading(false); })
+      .catch(e => { console.error("Load LP projects:", e); setProjects([]); setProjectsLoading(false); });
   }, [activeWorkspaceId]);
 
   const openProject = (proj) => {
     setActiveProject(proj);
     setStep(proj.step || "setup");
     setPresetType(proj.preset_type || "advertorial");
-    setContext(proj.context || { script: "", brief: "", avatar: "", concept: "", angle: "", bigIdea: "", awareness: "Problem-Aware", sophistication: "3 — Unique mechanism", audience: "" });
+    const defaultCtx = { script: "", brief: "", avatar: "", concept: "", angle: "", bigIdea: "", awareness: "Problem-Aware", sophistication: "3 — Unique mechanism", audience: "" };
+    setContext({ ...defaultCtx, ...(proj.context || {}) });
     setIdeas(proj.ideas || null);
     setSelectedIdea(proj.selected_idea || null);
     setStructure(proj.structure || null);
@@ -283,7 +286,10 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
       openProject(proj);
       setShowNew(false);
       setNewName("");
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error("Create LP project:", e);
+      setError("Failed to create project: " + e.message);
+    }
   };
 
   const handleDeleteProject = async (id) => {
@@ -331,7 +337,7 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
   const [buildStatus, setBuildStatus] = useState(null);
   const [buildFeedback, setBuildFeedback] = useState("");
 
-  const activePreset = PRESET_TYPES.find(p => p.id === presetType);
+  const activePreset = PRESET_TYPES.find(p => p.id === presetType) || PRESET_TYPES[1];
 
   // Load KB files
   useEffect(() => {
@@ -493,6 +499,8 @@ export default function LandingPageBuilder({ ads, activeWorkspaceId, strategyDat
 
   return (
     <div className="animate-fade" style={{ maxWidth: 960 }}>
+      {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 14, fontSize: 12, color: "var(--red)" }}>{error}</div>}
+
       {/* ── PROJECT LIST ── */}
       {!activeProject && (
         <div>
