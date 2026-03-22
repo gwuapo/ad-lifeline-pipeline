@@ -172,19 +172,55 @@ const stepNumS = (active) => ({ width: 24, height: 24, borderRadius: "50%", disp
 
 // ── Project CRUD ──
 
+// Project storage -- tries Supabase first, falls back to localStorage
+const LS_KEY = "al_lp_projects";
+let _useLocal = false;
+
+function getLocalProjects(workspaceId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    return all.filter(p => p.workspace_id === workspaceId);
+  } catch { return []; }
+}
+function setLocalProjects(projects) {
+  localStorage.setItem(LS_KEY, JSON.stringify(projects));
+}
+
 async function fetchProjects(workspaceId) {
   const { data, error } = await supabase.from("landing_page_projects").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false });
-  if (error) { console.error("Fetch LP projects:", error); return []; }
+  if (error) {
+    console.warn("LP table not found, using localStorage:", error.message);
+    _useLocal = true;
+    return getLocalProjects(workspaceId);
+  }
   return data || [];
 }
 
 async function createProject(workspaceId, name, presetType) {
+  if (_useLocal) {
+    const proj = { id: crypto.randomUUID(), workspace_id: workspaceId, name, preset_type: presetType, step: "setup", context: {}, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    all.unshift(proj);
+    setLocalProjects(all);
+    return proj;
+  }
   const { data, error } = await supabase.from("landing_page_projects").insert({ workspace_id: workspaceId, name, preset_type: presetType }).select().single();
-  if (error) throw error;
+  if (error) {
+    console.warn("LP insert failed, falling back to localStorage:", error.message);
+    _useLocal = true;
+    return createProject(workspaceId, name, presetType);
+  }
   return data;
 }
 
 async function saveProject(project) {
+  if (_useLocal) {
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    const idx = all.findIndex(p => p.id === project.id);
+    if (idx >= 0) all[idx] = { ...all[idx], ...project, updated_at: new Date().toISOString() };
+    setLocalProjects(all);
+    return;
+  }
   const { id, ...fields } = project;
   fields.updated_at = new Date().toISOString();
   const { error } = await supabase.from("landing_page_projects").update(fields).eq("id", id);
@@ -192,6 +228,11 @@ async function saveProject(project) {
 }
 
 async function deleteProject(id) {
+  if (_useLocal) {
+    const all = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
+    setLocalProjects(all.filter(p => p.id !== id));
+    return;
+  }
   const { error } = await supabase.from("landing_page_projects").delete().eq("id", id);
   if (error) throw error;
 }
