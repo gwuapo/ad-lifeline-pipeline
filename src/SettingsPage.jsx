@@ -375,6 +375,9 @@ function IntegrationsTab() {
   const [metaAdAcct, setMetaAdAcct] = useState(metaConf.adAccountId);
   const [metaSaved, setMetaSaved] = useState(false);
 
+  const [manusKey, setManusKey] = useState(localStorage.getItem("al_manus_key") || "");
+  const [manusSaved, setManusSaved] = useState(false);
+
   const [claudeKey, setClaudeKey] = useState(getApiKey("claude"));
   const [geminiKey, setGeminiKey] = useState(getApiKey("gemini"));
   const [openaiKey, setOpenaiKey] = useState(getApiKey("openai"));
@@ -490,6 +493,16 @@ function IntegrationsTab() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
           <button onClick={() => saveKey("apify", apifyKey)} className="btn btn-ghost btn-sm">Save Token</button>
           {keySaved === "apify" && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </IntCard>
+
+      <IntCard title="Manus (Page Builder)" statusOk={!!manusKey.trim()} status={manusKey.trim() ? "Connected" : "Not configured"}>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 12px" }}>Build landing pages from approved copy in the Landing Page Builder.</p>
+        <label className="label" style={{ marginTop: 0 }}>API Key</label>
+        <input type="password" value={manusKey} onChange={e => setManusKey(e.target.value)} className="input" placeholder="manus_..." />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => { localStorage.setItem("al_manus_key", manusKey.trim()); setManusSaved(true); setTimeout(() => setManusSaved(false), 2000); }} className="btn btn-ghost btn-sm">Save Key</button>
+          {manusSaved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
         </div>
       </IntCard>
     </div>
