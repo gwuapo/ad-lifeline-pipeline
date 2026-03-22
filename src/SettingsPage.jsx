@@ -178,22 +178,30 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
       ]);
       const enriched = await Promise.all(membersData.map(async (m) => {
         let name = m.editor_name || "";
+        let email = "";
+        let lastSignIn = null;
+        // Try get_user_info RPC first (has everything)
+        if (!name) {
+          try {
+            const { data: info } = await supabase.rpc("get_user_info", { uid: m.user_id });
+            if (info) {
+              name = info.display_name || "";
+              email = info.email || "";
+              lastSignIn = info.last_sign_in || null;
+            }
+          } catch {}
+        }
         if (!name) {
           try {
             const { data: profile } = await supabase.from("editor_profiles").select("display_name").eq("user_id", m.user_id).maybeSingle();
             name = profile?.display_name || "";
           } catch {}
         }
-        if (!name) {
-          try {
-            const { data: rpcName } = await supabase.rpc("get_display_name_by_user_id", { uid: m.user_id });
-            name = rpcName || "";
-          } catch {}
-        }
         if (!name && m.user_id === currentUserId) {
           name = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "";
+          email = session?.user?.email || "";
         }
-        return { ...m, display_name: name || m.user_id?.slice(0, 8) + "..." };
+        return { ...m, display_name: name || email?.split("@")[0] || m.user_id?.slice(0, 8) + "...", email, lastSignIn };
       }));
       setMembers(enriched);
       // Only show pending invites (not ones already accepted)
@@ -275,6 +283,20 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
                     {m.display_name}
                     {m.user_id === currentUserId && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 400 }}>(you)</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6, marginTop: 1 }}>
+                    {m.email && <span>{m.email}</span>}
+                    {m.lastSignIn ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--green)", flexShrink: 0 }} />
+                        Last seen {new Date(m.lastSignIn).toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--yellow)", flexShrink: 0 }} />
+                        Never logged in
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className="badge" style={{ background: ROLE_BG[m.role], color: ROLE_COLORS[m.role], fontWeight: 600 }}>
