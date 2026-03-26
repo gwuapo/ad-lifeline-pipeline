@@ -149,6 +149,12 @@ function Root() {
     init();
   }, [session]);
 
+  // Update last_active timestamp
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    supabase.from("workspace_members").update({ last_active: new Date().toISOString() }).eq("user_id", session.user.id).then(() => {}).catch(() => {});
+  }, [session?.user?.id]);
+
   if (session === undefined) {
     return (
       <div className="loading-screen">
@@ -174,12 +180,6 @@ function Root() {
   const role = userMeta.role || "founder";
   const email = session.user?.email || "";
   const displayName = userMeta.display_name || email.split("@")[0] || "User";
-
-  // Update last_active timestamp
-  useEffect(() => {
-    if (!session?.user?.id) return;
-    supabase.from("workspace_members").update({ last_active: new Date().toISOString() }).eq("user_id", session.user.id).then(() => {});
-  }, [session?.user?.id]);
 
   // Set password screen for invite users
   if (needsPassword && session) {
