@@ -8,6 +8,9 @@ ALTER TABLE workspace_members DROP CONSTRAINT IF EXISTS workspace_members_role_c
 ALTER TABLE workspace_members ADD CONSTRAINT workspace_members_role_check
   CHECK (role IN ('founder', 'editor', 'strategist'));
 
+-- Track last activity
+ALTER TABLE workspace_members ADD COLUMN IF NOT EXISTS last_active timestamptz;
+
 -- Pending invites table -- tracks invites by email before signup
 CREATE TABLE IF NOT EXISTS workspace_invites (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

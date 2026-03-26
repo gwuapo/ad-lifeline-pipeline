@@ -10,6 +10,64 @@ import { fetchWorkspaces, createWorkspace, fetchEditorProfile, acceptPendingInvi
 import { loadWorkspaceKeys } from "./apiKeys.js";
 import "./styles.css";
 
+function SetPasswordScreen({ email, displayName, onComplete }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState(displayName || "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords don't match"); return; }
+    setLoading(true); setError(null);
+    try {
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password,
+        data: { display_name: name.trim() || email.split("@")[0] },
+      });
+      if (updateErr) throw updateErr;
+      onComplete();
+    } catch (err) { setError(err.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--bg-root)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="animate-fade-scale" style={{ width: 420, maxWidth: "100%", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", padding: "36px 32px 32px", boxShadow: "var(--shadow-lg)" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>Welcome!</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>Set up your account</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>You've been invited to join a workspace. Set your password to continue.</div>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 14 }}>
+            <label className="label" style={{ marginTop: 0 }}>Your Name</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Full name" className="input" />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label className="label" style={{ marginTop: 0 }}>Email</label>
+            <input type="email" value={email} disabled className="input" style={{ opacity: 0.6 }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label className="label" style={{ marginTop: 0 }}>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} className="input" />
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <label className="label" style={{ marginTop: 0 }}>Confirm Password</label>
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter password" required minLength={6} className="input" />
+          </div>
+          {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", border: "1px solid var(--red-border)", marginBottom: 14, fontSize: 12, color: "var(--red-light)" }}>{error}</div>}
+          <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 14 }}>
+            {loading ? "Setting up..." : "Set Password & Continue"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Root() {
   const [session, setSession] = useState(undefined);
   const [workspaces, setWorkspaces] = useState(null);
@@ -17,9 +75,10 @@ function Root() {
   const [editorOnboarded, setEditorOnboarded] = useState(null); // null = loading, true/false
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+  const [needsPassword, setNeedsPassword] = useState(false);
 
   useEffect(() => {
-    // Handle auth error redirects (e.g. expired invite links)
+    // Handle auth error redirects and invite link detection
     const hash = window.location.hash;
     if (hash.includes("error=")) {
       const params = new URLSearchParams(hash.replace("#", ""));
@@ -29,12 +88,20 @@ function Root() {
         window.history.replaceState(null, "", window.location.pathname);
       }
     }
+    if (hash.includes("type=invite") || hash.includes("type=magiclink")) {
+      setNeedsPassword(true);
+    }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => setSession(session)
+      (event, session) => {
+        setSession(session);
+        if (event === "PASSWORD_RECOVERY") {
+          setNeedsPassword(true);
+        }
+      }
     );
     return () => subscription.unsubscribe();
   }, []);
@@ -100,13 +167,24 @@ function Root() {
   }
 
   if (!session) {
-    return <AuthPage onAuth={setSession} authError={authError} />;
+    return <AuthPage onAuth={(s) => { setSession(s); }} authError={authError} />;
   }
 
   const userMeta = session.user?.user_metadata || {};
   const role = userMeta.role || "founder";
   const email = session.user?.email || "";
   const displayName = userMeta.display_name || email.split("@")[0] || "User";
+
+  // Update last_active timestamp
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    supabase.from("workspace_members").update({ last_active: new Date().toISOString() }).eq("user_id", session.user.id).then(() => {});
+  }, [session?.user?.id]);
+
+  // Set password screen for invite users
+  if (needsPassword && session) {
+    return <SetPasswordScreen email={email} displayName={displayName} onComplete={() => setNeedsPassword(false)} />;
+  }
 
   // Editor onboarding (Supabase-backed)
   if (role === "editor" && editorOnboarded === false) {

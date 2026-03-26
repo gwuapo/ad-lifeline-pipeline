@@ -179,18 +179,17 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
       const enriched = await Promise.all(membersData.map(async (m) => {
         let name = m.editor_name || "";
         let email = "";
-        let lastSignIn = null;
-        // Try get_user_info RPC first (has everything)
-        if (!name) {
-          try {
-            const { data: info } = await supabase.rpc("get_user_info", { uid: m.user_id });
-            if (info) {
-              name = info.display_name || "";
-              email = info.email || "";
-              lastSignIn = info.last_sign_in || null;
-            }
-          } catch {}
-        }
+        let lastActive = m.last_active || null;
+        // Try get_user_info RPC (has name, email, last_sign_in)
+        try {
+          const { data: info } = await supabase.rpc("get_user_info", { uid: m.user_id });
+          if (info) {
+            if (!name) name = info.display_name || "";
+            email = info.email || "";
+            // Use last_active from workspace_members if available, otherwise fall back to auth last_sign_in
+            if (!lastActive) lastActive = info.last_sign_in || null;
+          }
+        } catch {}
         if (!name) {
           try {
             const { data: profile } = await supabase.from("editor_profiles").select("display_name").eq("user_id", m.user_id).maybeSingle();
@@ -201,7 +200,7 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
           name = session?.user?.user_metadata?.display_name || session?.user?.email?.split("@")[0] || "";
           email = session?.user?.email || "";
         }
-        return { ...m, display_name: name || email?.split("@")[0] || m.user_id?.slice(0, 8) + "...", email, lastSignIn };
+        return { ...m, display_name: name || email?.split("@")[0] || m.user_id?.slice(0, 8) + "...", email, lastActive };
       }));
       setMembers(enriched);
       // Only show pending invites (not ones already accepted)
@@ -286,12 +285,21 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6, marginTop: 1 }}>
                     {m.email && <span>{m.email}</span>}
-                    {m.lastSignIn ? (
-                      <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--green)", flexShrink: 0 }} />
-                        Last seen {new Date(m.lastSignIn).toLocaleDateString()}
-                      </span>
-                    ) : (
+                    {m.email && m.lastActive && <span style={{ color: "var(--border)" }}>·</span>}
+                    {m.lastActive ? (() => {
+                      const diff = Date.now() - new Date(m.lastActive).getTime();
+                      const mins = Math.floor(diff / 60000);
+                      const hrs = Math.floor(diff / 3600000);
+                      const days = Math.floor(diff / 86400000);
+                      const label = mins < 5 ? "Online now" : mins < 60 ? `${mins}m ago` : hrs < 24 ? `${hrs}h ago` : `${days}d ago`;
+                      const isRecent = mins < 60;
+                      return (
+                        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: isRecent ? "var(--green)" : "var(--text-muted)", flexShrink: 0 }} />
+                          {label}
+                        </span>
+                      );
+                    })() : (
                       <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                         <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--yellow)", flexShrink: 0 }} />
                         Never logged in
