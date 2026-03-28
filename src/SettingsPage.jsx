@@ -239,6 +239,23 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
     setRemoving(null);
   };
 
+  const [resending, setResending] = useState(null);
+
+  const handleResend = async (invite) => {
+    setResending(invite.id);
+    try {
+      // Revoke old invite, then re-send
+      await revokeInvite(invite.id);
+      const data = await sendInvite(activeWorkspaceId, invite.email, invite.role);
+      setResult({ ok: true, msg: data.message || `Re-invite sent to ${invite.email}` });
+      loadTeam();
+    } catch (e) {
+      setResult({ ok: false, msg: e.message || "Failed to resend invite" });
+    }
+    setResending(null);
+    setTimeout(() => setResult(null), 6000);
+  };
+
   const handleRevoke = async (invite) => {
     setRevoking(invite.id);
     try {
@@ -320,11 +337,14 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
             ))}
 
             {/* Pending invites */}
-            {invites.map(inv => (
+            {invites.map(inv => {
+              const hoursAgo = (Date.now() - new Date(inv.created_at).getTime()) / 3600000;
+              const expired = hoursAgo > 24;
+              return (
               <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-light)", opacity: 0.7 }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: "var(--radius-full)",
-                  background: "var(--bg-elevated)", border: "1.5px dashed var(--border)",
+                  background: "var(--bg-elevated)", border: `1.5px dashed ${expired ? "var(--red-border)" : "var(--border)"}`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 14, color: "var(--text-muted)", flexShrink: 0,
                 }}>
@@ -332,19 +352,24 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>{inv.email}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    Invited {new Date(inv.created_at).toLocaleDateString()}
+                  <div style={{ fontSize: 11, color: expired ? "var(--red)" : "var(--text-muted)" }}>
+                    {expired ? "Invite expired" : "Invited"} {new Date(inv.created_at).toLocaleDateString()} · hasn't signed up
                   </div>
                 </div>
-                <span className="badge" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px dashed var(--border)" }}>
-                  Pending -- {ROLE_LABELS[inv.role] || inv.role}
+                <span className="badge" style={{ background: "var(--bg-elevated)", color: expired ? "var(--red)" : "var(--text-muted)", border: `1px dashed ${expired ? "var(--red-border)" : "var(--border)"}` }}>
+                  {expired ? "Expired" : "Pending"} · {ROLE_LABELS[inv.role] || inv.role}
                 </span>
+                <button onClick={() => handleResend(inv)} disabled={resending === inv.id}
+                  className="btn btn-ghost btn-xs" style={{ color: "var(--accent)", fontSize: 11, padding: "4px 8px", borderColor: "var(--accent-border)" }}>
+                  {resending === inv.id ? "..." : "Resend"}
+                </button>
                 <button onClick={() => handleRevoke(inv)} disabled={revoking === inv.id}
                   className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 11, padding: "4px 8px" }}>
                   {revoking === inv.id ? "..." : "Revoke"}
                 </button>
               </div>
-            ))}
+              );
+            })}
 
             {members.length === 0 && invites.length === 0 && (
               <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>No members yet</div>
