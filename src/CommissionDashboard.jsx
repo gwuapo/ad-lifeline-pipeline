@@ -170,9 +170,11 @@ function calcTotalAdSpend(ad) {
   return spend;
 }
 
-function getMetricsByPeriod(ads, period) {
+function getMetricsByPeriod(ads, period, fromDate, toDate) {
   const buckets = new Map();
   const now = new Date();
+  const from = fromDate ? new Date(fromDate) : null;
+  const to = toDate ? new Date(toDate + "T23:59:59") : null;
 
   ads.forEach(ad => {
     const allMetrics = [...(ad.metrics || [])];
@@ -182,6 +184,8 @@ function getMetricsByPeriod(ads, period) {
     allMetrics.forEach(m => {
       if (!m.date) return;
       const d = new Date(m.date);
+      if (from && d < from) return;
+      if (to && d > to) return;
       let key, label;
 
       if (period === "daily") {
@@ -214,6 +218,10 @@ function getMetricsByPeriod(ads, period) {
 
 export default function CommissionDashboard({ ads, editorName, commissionPct, isEditorView }) {
   const [chartPeriod, setChartPeriod] = useState("weekly");
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
+  });
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split("T")[0]);
 
   const editorAds = useMemo(() =>
     ads.filter(a => a.editor === editorName && a.stage !== "killed"),
@@ -232,16 +240,24 @@ export default function CommissionDashboard({ ads, editorName, commissionPct, is
   });
   const winRate = completedAds.length > 0 ? (winnerAds.length / completedAds.length) * 100 : 0;
 
+  // Auto-pick granularity based on date range
+  const autoGranularity = useMemo(() => {
+    const days = Math.ceil((new Date(dateTo) - new Date(dateFrom)) / 86400000);
+    if (days <= 14) return "daily";
+    if (days <= 90) return "weekly";
+    return "monthly";
+  }, [dateFrom, dateTo]);
+
   // Chart data
   const periodData = useMemo(() => {
-    const raw = getMetricsByPeriod(editorAds, chartPeriod);
+    const raw = getMetricsByPeriod(editorAds, autoGranularity, dateFrom, dateTo);
     return raw.map(d => ({ label: d.label, value: d.spend * (commissionPct / 100) }));
-  }, [editorAds, chartPeriod, commissionPct]);
+  }, [editorAds, autoGranularity, dateFrom, dateTo, commissionPct]);
 
   const spendData = useMemo(() => {
-    const raw = getMetricsByPeriod(editorAds, chartPeriod);
+    const raw = getMetricsByPeriod(editorAds, autoGranularity, dateFrom, dateTo);
     return raw.map(d => ({ label: d.label, value: d.spend }));
-  }, [editorAds, chartPeriod]);
+  }, [editorAds, autoGranularity, dateFrom, dateTo]);
 
   // Earning potential projections
   const projections = useMemo(() => {
@@ -350,17 +366,19 @@ export default function CommissionDashboard({ ads, editorName, commissionPct, is
         padding: "18px 20px", borderRadius: 16, marginBottom: 20,
         background: "var(--bg-elevated)", border: "1px solid var(--border-light)",
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Earnings Over Time</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Commission earned per period</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Commission earned · {autoGranularity} view</div>
           </div>
-          <div style={{ display: "flex", gap: 3 }}>
-            {["daily", "weekly", "monthly"].map(p => (
-              <button key={p} onClick={() => setChartPeriod(p)} className={`btn btn-xs ${chartPeriod === p ? "btn-primary" : "btn-ghost"}`} style={{ textTransform: "capitalize" }}>
-                {p}
-              </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {[7, 30, 90].map(d => (
+              <button key={d} onClick={() => { const f = new Date(); f.setDate(f.getDate() - d); setDateFrom(f.toISOString().split("T")[0]); setDateTo(new Date().toISOString().split("T")[0]); }}
+                className="btn btn-xs btn-ghost" style={{ fontSize: 10, padding: "3px 8px" }}>{d}d</button>
             ))}
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input" style={{ fontSize: 10, padding: "3px 6px", width: 110 }} />
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>to</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input" style={{ fontSize: 10, padding: "3px 6px", width: 110 }} />
           </div>
         </div>
         <SmoothLineChart data={periodData} width={600} height={180} color="#22c55e" gradientId="earnings-grad" />
