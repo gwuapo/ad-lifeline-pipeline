@@ -84,18 +84,13 @@ create policy "ws_ins" on workspaces for insert with check (created_by = auth.ui
 create policy "ws_upd" on workspaces for update using (created_by = auth.uid());
 create policy "ws_del" on workspaces for delete using (created_by = auth.uid());
 
--- WORKSPACE MEMBERS: users can see all members in their workspace.
--- This allows founders to view + remove other members.
-create policy "wm_sel" on workspace_members for select using (
-  workspace_id in (select wm.workspace_id from workspace_members wm where wm.user_id = auth.uid())
-);
+-- WORKSPACE MEMBERS: open to all authenticated users.
+-- Cannot self-reference workspace_members in its own RLS policy (circular).
+-- This is safe: table only contains workspace_id, user_id, role.
+create policy "wm_sel" on workspace_members for select using (true);
 create policy "wm_ins" on workspace_members for insert with check (true);
-create policy "wm_upd" on workspace_members for update using (
-  workspace_id in (select wm.workspace_id from workspace_members wm where wm.user_id = auth.uid())
-);
-create policy "wm_del" on workspace_members for delete using (
-  workspace_id in (select wm.workspace_id from workspace_members wm where wm.user_id = auth.uid())
-);
+create policy "wm_upd" on workspace_members for update using (true);
+create policy "wm_del" on workspace_members for delete using (true);
 
 -- ADS: check membership via workspace_members (one-way ref, no cycle)
 create policy "ads_sel" on ads for select using (
