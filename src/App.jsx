@@ -678,6 +678,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [editingType, setEditingType] = useState(false);
   const [editingVA, setEditingVA] = useState(false);
+  const [editingCost, setEditingCost] = useState(false);
   const [eType, setEType] = useState(ad.type || "");
   const TYPE_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
 
@@ -722,7 +723,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             <button onClick={doKill} className="btn btn-danger btn-xs">Kill</button>
           )}
           {role === "founder" && (
-            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--text-muted)" }}>···</button>
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 14 }} title="Delete ad">🗑</button>
           )}
         </div>
       </div>
@@ -846,6 +847,17 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   <div style={hCardS}>
                     <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Status</div>
                     <div style={hValS}>{ad.stage === "killed" ? "Killed" : "In progress"}</div>
+                  </div>
+                )}
+                {/* Production Cost */}
+                {!isEditor && (
+                  <div style={hCardS} onClick={() => setEditingCost(true)}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💵</span> Production Cost</div>
+                    {editingCost ? (
+                      <input type="number" step="0.01" value={ad.production_cost ?? ""} onChange={e => { dispatch({ type: "UPDATE", id: ad.id, data: { production_cost: parseFloat(e.target.value) || 0 } }); }} onBlur={() => setEditingCost(false)} autoFocus className="input" placeholder="0.00" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                    ) : (
+                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.production_cost ? `$${Number(ad.production_cost).toFixed(2)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1854,6 +1866,12 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
           const health = winRate >= 25 && onTime >= 85 && qualScore >= 75 ? "green" : winRate >= 10 || onTime >= 70 ? "yellow" : "red";
           const hc = health === "green" ? "var(--green)" : health === "yellow" ? "var(--yellow)" : "var(--red)";
           const profile = findProfile(name);
+          const totalProdCost = all.reduce((s, a) => s + (parseFloat(a.production_cost) || 0), 0);
+          const costPerWinner = winners.length > 0 ? totalProdCost / winners.length : 0;
+          const adSpendOf = (a) => [...(a.metrics || [])].reduce((s, m) => s + (m.spend || 0), 0);
+          const totalAdSpend = all.reduce((s, a) => s + adSpendOf(a), 0);
+          const roasProfit = all.reduce((s, a) => { const r = lm(a)?.roas || 0; return s + (adSpendOf(a) * Math.max(0, r - 1)); }, 0);
+          const recouped = totalProdCost > 0 && roasProfit >= totalProdCost;
 
           return (
             <div key={name} className="card" onClick={() => setSelectedEditor({ name, profile, stats: { winRate, onTime, qualScore, bonus, all: all.length, overdueN, health } })} style={{ cursor: "pointer", transition: "all var(--transition)" }}>
@@ -1881,6 +1899,22 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
                   </div>
                 ))}
               </div>
+              {totalProdCost > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-light)" }}>
+                  <div className="stat-box">
+                    <div className="stat-value" style={{ fontSize: 12 }}>${totalProdCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                    <div className="stat-label">Total Cost</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-value" style={{ fontSize: 12 }}>{costPerWinner > 0 ? "$" + costPerWinner.toLocaleString("en-US", { maximumFractionDigits: 0 }) : "—"}</div>
+                    <div className="stat-label">Cost/Winner</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-value" style={{ fontSize: 12, color: recouped ? "var(--green)" : "var(--yellow)" }}>{recouped ? "Yes" : totalProdCost > 0 ? `${Math.round((roasProfit / totalProdCost) * 100)}%` : "—"}</div>
+                    <div className="stat-label">Recouped</div>
+                  </div>
+                </div>
+              )}
               {overdueN > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--red-light)" }}>{overdueN} overdue</div>}
               {all.length === 0 && <button onClick={(e) => { e.stopPropagation(); removeEditor(name); }} className="btn btn-ghost btn-xs" style={{ marginTop: 8, color: "var(--red-light)", fontSize: 10.5 }}>Remove Editor</button>}
             </div>
@@ -2050,8 +2084,8 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
         <label className="label">Portfolio URL</label>
         <input value={pPortfolio} onChange={e => setPPortfolio(e.target.value)} className="input" placeholder="https://..." />
         {pPortfolio && <a href={pPortfolio} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent-light)", display: "inline-block", marginTop: 4 }}>Open portfolio</a>}
-        <label className="label">Compensation Rate</label>
-        <input value={pRate} onChange={e => setPRate(e.target.value)} className="input" placeholder="e.g. $20/minute edited" />
+        <label className="label">Rate Per Minute (USD)</label>
+        <input type="number" step="0.01" value={pRate} onChange={e => setPRate(e.target.value)} className="input" placeholder="e.g. 20" />
         <label className="label">Weekly Capacity (minutes of video)</label>
         <input type="number" value={pMinutes} onChange={e => setPMinutes(e.target.value)} className="input" placeholder="e.g. 60" min="1" />
         <label className="label">Commission on Ad Spend (%)</label>
@@ -2365,9 +2399,18 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         }
       }
       setLastAutoSync(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
-      const liveAds = ads.filter(a => a.stage !== "killed").length;
-      let msg = `Synced ${synced} data points across ${chCount} channel(s) for ${matches.length}/${liveAds} ad(s)`;
+      const liveAds = ads.filter(a => a.stage !== "killed");
+      const unmatchedAds = liveAds.filter(a => !matches.find(m => m.adId === a.id));
+      let msg = `Synced ${synced} data points across ${chCount} channel(s) for ${matches.length}/${liveAds.length} ad(s)`;
       if (autoMatched > 0) msg += ` · Auto-matched ${autoMatched} new ad set(s)`;
+      if (unmatchedAds.length > 0 && !silent) {
+        const names = unmatchedAds.slice(0, 3).map(a => `"${a.name}"`).join(", ");
+        const twNames = [...new Set(rows.map(r => r.adset_name))].slice(0, 5).join(", ");
+        msg += ` · ${unmatchedAds.length} ad(s) not matched: ${names}${unmatchedAds.length > 3 ? "..." : ""}`;
+        if (rows.length > 0) msg += ` · TW adset names found: ${twNames}`;
+        else msg += ` · No data returned from Triple Whale for the last 30 days`;
+      }
+      if (rows.length === 0 && !silent) msg = "Triple Whale returned 0 rows. Check your API key, shop domain, and that you have active ads with spend.";
       if (!silent) { setSyncMsg({ ok: synced > 0, text: msg }); }
     } catch (e) { if (!silent) setSyncMsg({ ok: false, text: e.message }); }
     setSyncing(false);
@@ -2547,6 +2590,14 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   };
 
   useEffect(() => { if (openAd) { const f = ads.find(a => a.id === openAd.id); if (f) setOpenAd(f); } }, [ads]);
+
+  // Escape key closes expanded ad view
+  useEffect(() => {
+    if (!openAd) return;
+    const handler = (e) => { if (e.key === "Escape") { setOpenAd(null); setOpenAdTab(null); } };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [openAd]);
 
   const visibleAds = (role === "editor" || role === "strategist") ? ads.filter(a => a.editor === editorName && a.stage !== "killed") : ads.filter(a => a.stage !== "killed");
   const live = visibleAds.filter(a => a.stage === "live");
