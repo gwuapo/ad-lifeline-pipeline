@@ -231,12 +231,18 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
 
   const handleRemove = async (member) => {
     if (member.user_id === currentUserId) return;
+    if (!confirm(`Remove ${member.display_name || member.email || "this member"} from the workspace?`)) return;
     setRemoving(member.user_id);
     try {
       await removeMemberFromWorkspace(activeWorkspaceId, member.user_id);
       setMembers(prev => prev.filter(m => m.user_id !== member.user_id));
-    } catch (e) { console.error("Remove member:", e); }
+      setResult({ ok: true, msg: `${member.display_name || "Member"} removed from workspace` });
+    } catch (e) {
+      console.error("Remove member:", e);
+      setResult({ ok: false, msg: `Failed to remove: ${e.message}` });
+    }
     setRemoving(null);
+    setTimeout(() => setResult(null), 4000);
   };
 
   const [resending, setResending] = useState(null);
