@@ -3,9 +3,8 @@ import { supabase } from "./supabase.js";
 
 export default function AuthPage({ onAuth, authError }) {
   const [mode, setMode] = useState(authError ? "signup" : "login");
-  const [role, setRole] = useState("founder");
+  const [role, setRole] = useState("editor");
   const ROLES = [
-    { id: "founder", label: "Founder" },
     { id: "strategist", label: "Creative Strategist" },
     { id: "editor", label: "Editor" },
   ];
@@ -145,9 +144,8 @@ export default function AuthPage({ onAuth, authError }) {
               <label className="label">Role</label>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
-                  { id: "founder", label: "Founder", desc: "Full pipeline access", icon: "◆", color: "var(--accent)" },
-                  { id: "strategist", label: "Strategist", desc: "Pipeline + view strategy", icon: "◎", color: "var(--green)" },
-                  { id: "editor", label: "Editor", desc: "Assigned ads only", icon: "⚙", color: "var(--yellow)" },
+                  { id: "strategist", label: "Strategist", desc: "Pipeline + strategy access", icon: "◎", color: "var(--green)" },
+                  { id: "editor", label: "Editor", desc: "Assigned ads + earnings", icon: "⚙", color: "var(--yellow)" },
                 ].map(r => (
                   <div key={r.id} onClick={() => setRole(r.id)} style={{
                     flex: 1, padding: "13px 14px", borderRadius: "var(--radius-md)",
