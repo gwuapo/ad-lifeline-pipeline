@@ -342,6 +342,13 @@ export async function upsertEditorProfile(userId, profile) {
     .select()
     .single();
   if (error) throw error;
+  // Keep workspace_members.editor_name in sync
+  if (profile.display_name) {
+    await supabase
+      .from("workspace_members")
+      .update({ editor_name: profile.display_name })
+      .eq("user_id", userId);
+  }
   return data;
 }
 
