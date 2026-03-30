@@ -2331,6 +2331,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         const adEditors = [...new Set(adsData.map(a => a.editor).filter(Boolean))];
         const allEditors = [...new Set([...editorNames, ...adEditors])];
         setEditors(allEditors.length > 0 ? allEditors : DEFAULT_EDITORS);
+        // Fix editor name matching: use editor_name from workspace_members
+        if (session?.user?.id && (userRole === "editor" || userRole === "strategist")) {
+          const myMembership = members.find(m => m.user_id === session.user.id);
+          if (myMembership?.editor_name) {
+            setEditorName(myMembership.editor_name);
+          }
+        }
         // Load editor profiles (for commission display)
         if (session?.user?.id) {
           fetchEditorProfile(session.user.id).then(p => { if (p) setMyEditorProfile(p); }).catch(() => {});
