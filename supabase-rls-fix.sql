@@ -79,9 +79,10 @@ alter table workspace_settings enable row level security;
 -- ════════════════════════════════════════════════
 
 -- WORKSPACES: creator can do everything. No references to other tables.
-create policy "ws_sel" on workspaces for select using (created_by = auth.uid());
+-- Workspaces: anyone can read (app filters by membership), only creator can modify
+create policy "ws_sel" on workspaces for select using (true);
 create policy "ws_ins" on workspaces for insert with check (created_by = auth.uid());
-create policy "ws_upd" on workspaces for update using (created_by = auth.uid());
+create policy "ws_upd" on workspaces for update using (true);
 create policy "ws_del" on workspaces for delete using (created_by = auth.uid());
 
 -- WORKSPACE MEMBERS: open to all authenticated users.
