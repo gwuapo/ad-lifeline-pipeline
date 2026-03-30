@@ -401,16 +401,16 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                 Choose what to do with this team member:
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button onClick={() => handleRemove(removeConfirm, false)} disabled={removing} className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", textAlign: "left" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Remove from workspace</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>They keep their account but lose access to this workspace. You can re-invite them later.</div>
-                  </div>
-                </button>
                 <button onClick={() => handleRemove(removeConfirm, true)} disabled={removing} className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", textAlign: "left", borderColor: "var(--red-border)" }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--red)" }}>Delete account permanently</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>Removes from all workspaces and permanently deletes their account. Cannot be undone.</div>
+                  </div>
+                </button>
+                <button onClick={() => handleRemove(removeConfirm, false)} disabled={removing} className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", textAlign: "left" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Remove from workspace only</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>They keep their account but lose access. You can re-invite them later.</div>
                   </div>
                 </button>
                 <button onClick={() => setRemoveConfirm(null)} className="btn btn-ghost btn-sm" style={{ marginTop: 4, color: "var(--text-muted)" }}>Cancel</button>
