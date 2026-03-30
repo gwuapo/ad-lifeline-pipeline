@@ -180,9 +180,11 @@ function Root() {
     return <AuthPage onAuth={(s) => { setSession(s); }} authError={authError} />;
   }
 
+  const ADMIN_EMAILS = ["capo@nexusholdings.io", "af@nexusholdings.io"];
   const userMeta = session.user?.user_metadata || {};
-  const role = userMeta.role || "founder";
-  const email = session.user?.email || "";
+  const email = session.user?.email?.toLowerCase() || "";
+  const isAdmin = ADMIN_EMAILS.includes(email);
+  const role = isAdmin ? "founder" : (userMeta.role || "editor");
   const displayName = userMeta.display_name || email.split("@")[0] || "User";
 
   // Set password screen for invite users

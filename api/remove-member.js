@@ -32,15 +32,9 @@ export default async function handler(req, res) {
   const { data: { user: caller }, error: authErr } = await supabase.auth.getUser(callerToken);
   if (authErr || !caller) return res.status(401).json({ error: "Invalid auth token" });
 
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", caller.id)
-    .single();
-
-  if (!membership || membership.role !== "founder") {
-    return res.status(403).json({ error: "Only founders can remove members" });
+  const ADMIN_EMAILS = ["capo@nexusholdings.io", "af@nexusholdings.io"];
+  if (!ADMIN_EMAILS.includes(caller.email?.toLowerCase())) {
+    return res.status(403).json({ error: "Only admins can remove members" });
   }
 
   // Don't allow removing yourself
