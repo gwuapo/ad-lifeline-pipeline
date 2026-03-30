@@ -119,12 +119,16 @@ function Root() {
         setWorkspaces(ws);
 
         // Restore last active workspace from localStorage or pick first
+        // If saved workspace no longer exists (deleted), fall back to first available
         const savedWsId = localStorage.getItem("al_active_workspace");
         let wsId;
         if (savedWsId && ws.find(w => w.id === savedWsId)) {
           wsId = savedWsId;
         } else if (ws.length > 0) {
           wsId = ws[0].id;
+          localStorage.setItem("al_active_workspace", wsId);
+        } else {
+          localStorage.removeItem("al_active_workspace");
         }
         if (wsId) {
           setActiveWorkspaceId(wsId);
