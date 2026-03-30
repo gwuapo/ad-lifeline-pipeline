@@ -78,22 +78,41 @@ alter table workspace_settings enable row level security;
 -- RULE: No table ever references itself or creates circular refs
 -- ════════════════════════════════════════════════
 
--- WORKSPACES: creator can do everything. No references to other tables.
--- Workspaces: anyone can read (app filters by membership), only creator can modify
+-- Drop new-style policy names too (in case partial runs left them)
+drop policy if exists "ws_sel" on workspaces;
+drop policy if exists "ws_ins" on workspaces;
+drop policy if exists "ws_upd" on workspaces;
+drop policy if exists "ws_del" on workspaces;
+drop policy if exists "wm_sel" on workspace_members;
+drop policy if exists "wm_ins" on workspace_members;
+drop policy if exists "wm_upd" on workspace_members;
+drop policy if exists "wm_del" on workspace_members;
+drop policy if exists "ads_sel" on ads;
+drop policy if exists "ads_ins" on ads;
+drop policy if exists "ads_upd" on ads;
+drop policy if exists "ads_del" on ads;
+drop policy if exists "ep_sel" on editor_profiles;
+drop policy if exists "ep_ins" on editor_profiles;
+drop policy if exists "ep_upd" on editor_profiles;
+drop policy if exists "ep_del" on editor_profiles;
+drop policy if exists "wset_sel" on workspace_settings;
+drop policy if exists "wset_ins" on workspace_settings;
+drop policy if exists "wset_upd" on workspace_settings;
+drop policy if exists "wset_del" on workspace_settings;
+
+-- WORKSPACES: anyone can read, only creator can create/delete
 create policy "ws_sel" on workspaces for select using (true);
 create policy "ws_ins" on workspaces for insert with check (created_by = auth.uid());
 create policy "ws_upd" on workspaces for update using (true);
 create policy "ws_del" on workspaces for delete using (created_by = auth.uid());
 
--- WORKSPACE MEMBERS: open to all authenticated users.
--- Cannot self-reference workspace_members in its own RLS policy (circular).
--- This is safe: table only contains workspace_id, user_id, role.
+-- WORKSPACE MEMBERS: fully open (no circular self-reference)
 create policy "wm_sel" on workspace_members for select using (true);
 create policy "wm_ins" on workspace_members for insert with check (true);
 create policy "wm_upd" on workspace_members for update using (true);
 create policy "wm_del" on workspace_members for delete using (true);
 
--- ADS: check membership via workspace_members (one-way ref, no cycle)
+-- ADS: anyone in the workspace can CRUD
 create policy "ads_sel" on ads for select using (
   workspace_id in (select workspace_id from workspace_members where user_id = auth.uid())
 );

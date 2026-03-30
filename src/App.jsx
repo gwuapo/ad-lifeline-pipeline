@@ -406,6 +406,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [videoFile, setVideoFile] = useState(null);
   const videoInputRef = useRef(null);
   const [tiktokUrl, setTiktokUrl] = useState(ad.tiktokUrl || "");
+  const [saveToast, setSaveToast] = useState(false);
   const [nc, setNc] = useState({ text: "", sentiment: "neutral", hidden: false });
   const [nm, setNm] = useState({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" });
   const [nl, setNl] = useState({ type: "hook_pattern", text: "" });
@@ -536,7 +537,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
 
   const addMetric = () => { const m = { date: nm.date, cpa: +nm.cpa, spend: +nm.spend, conv: +nm.conv, ctr: +nm.ctr, cpm: +nm.cpm }; if (!m.cpa || !m.spend) return; dispatch({ type: "ADD_METRIC", id: ad.id, metric: m }); setNm({ date: "2026-02-12", cpa: "", spend: "", conv: "", ctr: "", cpm: "" }); };
   const addComment = () => { if (!nc.text.trim()) return; dispatch({ type: "ADD_COMMENT", id: ad.id, comment: { id: uid(), ...nc, text: nc.text.trim() } }); setNc({ text: "", sentiment: "neutral", hidden: false }); };
-  const save = () => dispatch({ type: "UPDATE", id: ad.id, data: { name: eName.trim() || ad.name, brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } });
+  const save = () => { dispatch({ type: "UPDATE", id: ad.id, data: { name: eName.trim() || ad.name, brief: eb, notes: en, editor: ee, deadline: eDl, channelIds: eChIds, tiktokUrl: tiktokUrl.trim() } }); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); };
   const saveName = () => {
     const newName = eName.trim();
     if (!newName || newName === ad.name) { setEditingName(false); setEName(ad.name); return; }
@@ -790,7 +791,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 <div style={hCardS} onClick={() => !isEditor && setEditingEditor(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>👤</span> Editor</div>
                   {editingEditor ? (
-                    <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                    <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
                       <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
                     </select>
                   ) : (
@@ -801,7 +802,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 <div style={hCardS} onClick={() => !isEditor && setEditingDeadline(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>📅</span> Deadline</div>
                   {editingDeadline ? (
-                    <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }} />
+                    <input type="date" value={eDl} onChange={e => { setEDl(e.target.value); setEditingDeadline(false); dispatch({ type: "UPDATE", id: ad.id, data: { deadline: e.target.value } }); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} onBlur={() => setEditingDeadline(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }} />
                   ) : (
                     <div style={{ ...hValS, color: over ? "var(--red)" : "var(--text-primary)", cursor: !isEditor ? "pointer" : "default" }}>{ad.deadline ? fd(ad.deadline) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
                   )}
@@ -815,7 +816,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 <div style={hCardS} onClick={() => !editingVA && setEditingVA(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>🎙️</span> Voice Actor</div>
                   {editingVA ? (
-                    <div><input list="va-list-hl" value={ad.strategy?.voice_actor || ""} onChange={e => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...(ad.strategy || {}), voice_actor: e.target.value } } })} onBlur={() => setEditingVA(false)} autoFocus className="input" placeholder="Select or type..." style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                    <div><input list="va-list-hl" value={ad.strategy?.voice_actor || ""} onChange={e => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...(ad.strategy || {}), voice_actor: e.target.value } } })} onBlur={() => { setEditingVA(false); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} autoFocus className="input" placeholder="Select or type..." style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
                     <datalist id="va-list-hl">{[...new Set(allAds.map(a => a.strategy?.voice_actor).filter(Boolean))].map(v => <option key={v} value={v} />)}</datalist></div>
                   ) : (
                     <div style={{ ...hValS, cursor: "pointer" }}>{ad.strategy?.voice_actor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
@@ -825,7 +826,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
                   {editingType ? (
-                    <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                    <select value={eType} onChange={e => { setEType(e.target.value); setEditingType(false); dispatch({ type: "UPDATE", id: ad.id, data: { type: e.target.value } }); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} onBlur={() => setEditingType(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
                       {TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : (
@@ -1025,6 +1026,19 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           )}
 
           <button onClick={save} className="btn btn-primary btn-sm" style={{ marginBottom: 16 }}>Save Changes</button>
+
+          {saveToast && (
+            <div style={{
+              position: "fixed", bottom: 32, left: "50%", transform: "translateX(-50%)",
+              background: "var(--green)", color: "#fff", padding: "10px 24px",
+              borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 99999,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              animation: "toastIn 0.3s ease-out",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 15 }}>&#10003;</span> Changes saved
+            </div>
+          )}
 
           {ad.iterHistory.length > 0 && <div style={{ marginTop: 24 }}>
             <div className="section-title">Iteration History</div>
