@@ -229,20 +229,29 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
     setTimeout(() => setResult(null), 6000);
   };
 
-  const handleRemove = async (member) => {
+  const [removeConfirm, setRemoveConfirm] = useState(null);
+
+  const handleRemove = async (member, deleteAccount = false) => {
     if (member.user_id === currentUserId) return;
-    if (!confirm(`Remove ${member.display_name || member.email || "this member"} from the workspace?`)) return;
     setRemoving(member.user_id);
+    setRemoveConfirm(null);
     try {
-      await removeMemberFromWorkspace(activeWorkspaceId, member.user_id);
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch("/api/remove-member", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ userId: member.user_id, workspaceId: activeWorkspaceId, deleteAccount }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to remove");
       setMembers(prev => prev.filter(m => m.user_id !== member.user_id));
-      setResult({ ok: true, msg: `${member.display_name || "Member"} removed from workspace` });
+      setResult({ ok: true, msg: data.message });
     } catch (e) {
       console.error("Remove member:", e);
-      setResult({ ok: false, msg: `Failed to remove: ${e.message}` });
+      setResult({ ok: false, msg: e.message });
     }
     setRemoving(null);
-    setTimeout(() => setResult(null), 4000);
+    setTimeout(() => setResult(null), 5000);
   };
 
   const [resending, setResending] = useState(null);
@@ -334,7 +343,7 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                   {ROLE_LABELS[m.role] || m.role}
                 </span>
                 {m.user_id !== currentUserId && (
-                  <button onClick={() => handleRemove(m)} disabled={removing === m.user_id}
+                  <button onClick={() => setRemoveConfirm(m)} disabled={removing === m.user_id}
                     className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 11, padding: "4px 8px" }}>
                     {removing === m.user_id ? "..." : "Remove"}
                   </button>
@@ -380,6 +389,33 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
             {members.length === 0 && invites.length === 0 && (
               <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>No members yet</div>
             )}
+          </div>
+        )}
+
+        {/* Remove confirmation modal */}
+        {removeConfirm && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }} onClick={() => setRemoveConfirm(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 400, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 14, padding: "24px 28px", boxShadow: "var(--shadow-lg)" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Remove {removeConfirm.display_name || removeConfirm.email}?</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+                Choose what to do with this team member:
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button onClick={() => handleRemove(removeConfirm, false)} disabled={removing} className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", textAlign: "left" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Remove from workspace</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>They keep their account but lose access to this workspace. You can re-invite them later.</div>
+                  </div>
+                </button>
+                <button onClick={() => handleRemove(removeConfirm, true)} disabled={removing} className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start", padding: "10px 14px", textAlign: "left", borderColor: "var(--red-border)" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--red)" }}>Delete account permanently</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>Removes from all workspaces and permanently deletes their account. Cannot be undone.</div>
+                  </div>
+                </button>
+                <button onClick={() => setRemoveConfirm(null)} className="btn btn-ghost btn-sm" style={{ marginTop: 4, color: "var(--text-muted)" }}>Cancel</button>
+              </div>
+            </div>
           </div>
         )}
 
