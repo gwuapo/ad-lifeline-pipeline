@@ -10,6 +10,7 @@ import { fetchWorkspaceLearnings, saveWorkspaceLearningsBatch, fetchStrategyData
 import { isGeminiConfigured, prepareVideoFile, analyzeAdWithVideo, analyzeAdTextOnly } from "./gemini.js";
 import Sidebar from "./Sidebar.jsx";
 import SettingsPage from "./SettingsPage.jsx";
+import EditorSettings from "./EditorSettings.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 import StrategyPage from "./StrategyPage.jsx";
 import CommissionDashboard from "./CommissionDashboard.jsx";
@@ -2108,6 +2109,27 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>% of total ad spend on their ads</span>
         </div>
 
+        {/* Payment Methods (read-only for founders) */}
+        {profile?.payment_methods && Object.keys(profile.payment_methods).some(k => Object.values(profile.payment_methods[k] || {}).some(v => v)) && (
+          <div style={{ marginTop: 16 }}>
+            <div className="section-title">Payment Methods</div>
+            {Object.entries(profile.payment_methods).filter(([, v]) => v && Object.values(v).some(x => x)).map(([method, fields]) => {
+              const labels = { usd_bank: "USD Bank Account", crypto: "USDT/USDC Wallet", paypal: "PayPal", cih: "CIH Bank (Morocco)" };
+              return (
+                <div key={method} style={{ marginBottom: 10, padding: "10px 12px", background: "var(--bg-elevated)", borderRadius: 8, border: "1px solid var(--border-light)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>{labels[method] || method}</div>
+                  {Object.entries(fields).filter(([, v]) => v).map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                      <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</span>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 500, fontFamily: "var(--fm)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Workspace assignment */}
         {workspaces && workspaces.length > 0 && (
           <WorkspaceAssignment editorName={name} editorUserId={profile?.user_id} workspaces={workspaces} />
@@ -2895,7 +2917,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "landingpages" && <LandingPageBuilder ads={ads} activeWorkspaceId={activeWorkspaceId} strategyData={strategyData} />}
 
         {/* ── SETTINGS PAGE ── */}
-        {page === "settings" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
+        {page === "settings" && role === "editor" && <EditorSettings userId={session?.user?.id} userName={userName} />}
+        {page === "settings" && role !== "editor" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
 
         {/* Modals (only NewAdForm stays as modal) */}
         {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}

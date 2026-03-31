@@ -82,7 +82,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         <div className="nav-section-label">Support</div>
 
         {BOTTOM_ITEMS.filter(item => {
-          if (item.id === "settings" && (role === "editor" || role === "strategist")) return false;
+          if (item.id === "settings" && role === "strategist") return false;
           return true;
         }).map(item => (
           <div key={item.id} className={`nav-item ${page === item.id ? "active" : ""}`} onClick={() => setPage(item.id)}>
