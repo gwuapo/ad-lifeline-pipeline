@@ -104,6 +104,7 @@ const CS = {
 };
 
 const CUR = "SAR";
+const USD_TO_SAR = 3.75;
 
 const CHANNELS = [
   { id: "meta", label: "Meta", color: "#3b82f6", twId: "facebook-ads" },
@@ -1023,17 +1024,18 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     adTotalSpend += (metrics || []).reduce((s, m) => s + (m.spend || 0), 0);
                     adTotalRevenue += (metrics || []).reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
                   });
-                  const prodCost = parseFloat(ad.production_cost) || 0;
+                  const prodCostUSD = parseFloat(ad.production_cost) || 0;
+                  const prodCostSAR = prodCostUSD * USD_TO_SAR;
                   const adGm = (th.grossMarginPct ?? 70) / 100;
-                  const adNetProfit = (adTotalRevenue * adGm) - adTotalSpend - prodCost;
-                  const roi = prodCost > 0 ? (adNetProfit / prodCost * 100) : 0;
+                  const adNetProfit = (adTotalRevenue * adGm) - adTotalSpend - prodCostSAR;
+                  const roi = prodCostSAR > 0 ? (adNetProfit / prodCostSAR * 100) : 0;
                   const roiColor = roi > 0 ? "var(--green)" : roi === 0 ? "var(--yellow)" : "var(--red)";
                   return (
                     <div style={{ ...hCardS, borderColor: roi > 0 ? "var(--green-border)" : roi < 0 ? "var(--red-border)" : "var(--border-light)" }}>
                       <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> Net Profit</div>
                       <div style={{ ...hValS, color: adNetProfit > 0 ? "var(--green)" : "var(--red)" }}>{CUR} {adNetProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
                       <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
-                        Rev {CUR} {adTotalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })} x {th.grossMarginPct ?? 70}% - Spend {CUR} {adTotalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} - Cost ${prodCost.toFixed(0)} · ROI {roi >= 0 ? "+" : ""}{roi.toFixed(0)}%
+                        Rev {CUR} {adTotalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })} x {th.grossMarginPct ?? 70}% - Spend {CUR} {adTotalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} - Cost ${prodCostUSD} ({CUR} {prodCostSAR.toLocaleString("en-US", { maximumFractionDigits: 0 })}) · ROI {roi >= 0 ? "+" : ""}{roi.toFixed(0)}%
                       </div>
                     </div>
                   );
@@ -2053,8 +2055,9 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
           const health = winRate >= 25 && onTime >= 85 && qualScore >= 75 ? "green" : winRate >= 10 || onTime >= 70 ? "yellow" : "red";
           const hc = health === "green" ? "var(--green)" : health === "yellow" ? "var(--yellow)" : "var(--red)";
           const profile = findProfile(name);
-          const totalProdCost = all.reduce((s, a) => s + (parseFloat(a.production_cost) || 0), 0);
-          const costPerWinner = winners.length > 0 ? totalProdCost / winners.length : 0;
+          const totalProdCostUSD = all.reduce((s, a) => s + (parseFloat(a.production_cost) || 0), 0);
+          const totalProdCost = totalProdCostUSD * USD_TO_SAR;
+          const costPerWinner = winners.length > 0 ? totalProdCostUSD / winners.length : 0;
           const adSpendOf = (a) => {
             let sp = (a.metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0);
             Object.values(a.channelMetrics || {}).forEach(metrics => { sp += (metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0); });
@@ -2124,7 +2127,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
                   {totalProdCost > 0 && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
                       <div className="stat-box">
-                        <div className="stat-value" style={{ fontSize: 12 }}>${totalProdCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                        <div className="stat-value" style={{ fontSize: 12 }}>${totalProdCostUSD.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
                         <div className="stat-label">Prod Cost</div>
                       </div>
                       <div className="stat-box">
@@ -2137,7 +2140,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
                       </div>
                     </div>
                   )}
-                  <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 6 }}>Net = Revenue x {th.grossMarginPct ?? 70}% margin - Ad Spend - Prod Cost</div>
+                  <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 6 }}>Net = Revenue x {th.grossMarginPct ?? 70}% - Ad Spend - Prod Cost (${totalProdCostUSD.toLocaleString("en-US", { maximumFractionDigits: 0 })} x {USD_TO_SAR} = {CUR} {totalProdCost.toLocaleString("en-US", { maximumFractionDigits: 0 })})</div>
                 </div>
               )}
               {overdueN > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--red-light)" }}>{overdueN} overdue</div>}
