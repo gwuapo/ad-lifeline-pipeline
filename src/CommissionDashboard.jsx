@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import DateRangePicker from "./DateRangePicker.jsx";
 
 const CUR = "SAR";
 
@@ -371,15 +372,7 @@ export default function CommissionDashboard({ ads, editorName, commissionPct, is
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Earnings Over Time</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Commission earned · {autoGranularity} view</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {[7, 30, 90].map(d => (
-              <button key={d} onClick={() => { const f = new Date(); f.setDate(f.getDate() - d); setDateFrom(f.toISOString().split("T")[0]); setDateTo(new Date().toISOString().split("T")[0]); }}
-                className="btn btn-xs btn-ghost" style={{ fontSize: 10, padding: "3px 8px" }}>{d}d</button>
-            ))}
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input" style={{ fontSize: 10, padding: "3px 6px", width: 110 }} />
-            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>to</span>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input" style={{ fontSize: 10, padding: "3px 6px", width: 110 }} />
-          </div>
+          <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} onChange={(from, to) => { setDateFrom(from); setDateTo(to); }} />
         </div>
         <SmoothLineChart data={periodData} width={600} height={180} color="#22c55e" gradientId="earnings-grad" />
       </div>
