@@ -2973,7 +2973,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
       <div className="main-content">
         {/* Top bar with presence + notifications */}
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", padding: "12px 0 8px", gap: 12 }}>
-          <PresenceBubbles presenceState={presenceState} currentUserId={session?.user?.id} currentPage={page} />
+          {role !== "editor" && <PresenceBubbles presenceState={presenceState} currentUserId={session?.user?.id} currentPage={page} />}
           <NotificationBell userId={session?.user?.id} onOpenAd={(adId) => { const ad = ads.find(a => a.id === adId); if (ad) { setOpenAdTab("thread"); setOpenAd(ad); setPage("pipeline"); } }} />
         </div>
         {/* Toasts */}
