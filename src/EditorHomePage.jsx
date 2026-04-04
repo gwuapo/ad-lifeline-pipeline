@@ -235,12 +235,12 @@ export default function EditorHomePage({ ads, userName, setPage, activeWorkspace
         </div>
 
         {/* RIGHT: Activity Feed */}
-        <div className="card" style={{ position: "sticky", top: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div className="card" style={{ position: "sticky", top: 16, maxHeight: "calc(100vh - 48px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexShrink: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Activity</div>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{activityFeed.length} items</span>
           </div>
-          <div style={{ maxHeight: 520, overflowY: "auto", marginRight: -8, paddingRight: 8 }}>
+          <div style={{ flex: 1, overflowY: "auto", marginRight: -8, paddingRight: 8 }}>
             {activityFeed.length === 0 ? (
               <div style={{ fontSize: 13, color: "var(--text-muted)", padding: "20px 0", textAlign: "center" }}>No activity yet.</div>
             ) : (
