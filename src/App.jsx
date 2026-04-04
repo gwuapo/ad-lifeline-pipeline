@@ -1378,7 +1378,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             const chId = (ad.channelIds || {})[ch.id];
             const chTot = tmCh(chm);
             const chLast = chm.length ? chm[chm.length - 1] : null;
-            const chCl = chLast ? CL(chLast.roas ?? 0, th) : "none";
+            const chCl = chTot ? CL(chTot.roas ?? 0, th) : "none";
             const chCs = CS[chCl];
             if (!chId?.trim() && !chmRaw.length) return null;
             return (
@@ -1392,7 +1392,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   {chId && !chmRaw.length && <span className="badge badge-yellow">No data synced</span>}
                 </div>
                 {chTot && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 10 }}>
-                  {[["CPA", CUR + " " + chTot.lc, chCs.c], ["Spend", CUR + " " + chTot.spend.toLocaleString(), "var(--text-primary)"], ["Conv", chTot.conv, "var(--green-light)"], ["CTR", chTot.at + "%", "var(--accent-light)"], ["CPM", CUR + " " + chTot.am, "var(--text-primary)"], ["ROAS", (chLast?.roas || 0) + "x", (chLast?.roas || 0) >= 2 ? "var(--green)" : "var(--yellow)"]].map(([l, v, c]) => (
+                  {[["CPA", CUR + " " + chTot.lc, chCs.c], ["Spend", CUR + " " + chTot.spend.toLocaleString(), "var(--text-primary)"], ["Conv", chTot.conv, "var(--green-light)"], ["CTR", chTot.at + "%", "var(--accent-light)"], ["CPM", CUR + " " + chTot.am, "var(--text-primary)"], ["ROAS", chTot.roas + "x", chTot.roas >= 2 ? "var(--green)" : "var(--yellow)"]].map(([l, v, c]) => (
                     <div key={l} className="stat-box">
                       <div className="stat-value" style={{ color: c }}>{v}</div>
                       <div className="stat-label">{l}</div>
