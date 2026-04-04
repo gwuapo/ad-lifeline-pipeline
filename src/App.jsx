@@ -550,7 +550,7 @@ function DateRangePicker({ dateFrom, dateTo, onChange }) {
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab, strategyData }) {
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab, strategyData, editorProfiles }) {
   const [tab, setTab] = useState(initialTab || "overview");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [msg, setMsg] = useState("");
@@ -835,6 +835,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [editingType, setEditingType] = useState(false);
   const [editingVA, setEditingVA] = useState(false);
   const [editingCost, setEditingCost] = useState(false);
+  const [editingDuration, setEditingDuration] = useState(false);
   const [eType, setEType] = useState(ad.type || "");
   const TYPE_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
 
@@ -946,7 +947,19 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 <div style={hCardS} onClick={() => !isEditor && setEditingEditor(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>👤</span> Editor</div>
                   {editingEditor ? (
-                    <select value={ee} onChange={e => { setEe(e.target.value); setEditingEditor(false); dispatch({ type: "UPDATE", id: ad.id, data: { editor: e.target.value } }); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                    <select value={ee} onChange={e => {
+                      const newEditor = e.target.value;
+                      setEe(newEditor); setEditingEditor(false);
+                      const updates = { editor: newEditor };
+                      if (newEditor && !ad.production_cost_override) {
+                        const ep = editorProfiles?.[newEditor];
+                        const rate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                        const dur = parseFloat(ad.video_duration) || 0;
+                        if (rate > 0 && dur > 0) updates.production_cost = +(rate * dur).toFixed(2);
+                      }
+                      dispatch({ type: "UPDATE", id: ad.id, data: updates });
+                      setSaveToast(true); setTimeout(() => setSaveToast(false), 2200);
+                    }} onBlur={() => setEditingEditor(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
                       <option value="">Unassigned</option>{editors.map(e => <option key={e} value={e}>{e}</option>)}
                     </select>
                   ) : (
@@ -1005,14 +1018,39 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     <div style={hValS}>{ad.stage === "killed" ? "Killed" : "In progress"}</div>
                   </div>
                 )}
+                {/* Video Duration */}
+                {!isEditor && (
+                  <div style={hCardS} onClick={() => setEditingDuration(true)}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>⏱️</span> Duration (min)</div>
+                    {editingDuration ? (
+                      <input type="number" step="0.1" min="0" value={ad.video_duration ?? ""} onChange={e => {
+                        const dur = parseFloat(e.target.value) || 0;
+                        const updates = { video_duration: dur };
+                        if (!ad.production_cost_override && ad.editor) {
+                          const ep = editorProfiles?.[ad.editor];
+                          const rate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                          if (rate > 0 && dur > 0) updates.production_cost = +(rate * dur).toFixed(2);
+                        }
+                        dispatch({ type: "UPDATE", id: ad.id, data: updates });
+                      }} onBlur={() => setEditingDuration(false)} autoFocus className="input" placeholder="0" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                    ) : (
+                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.video_duration ? `${ad.video_duration} min` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+                    )}
+                  </div>
+                )}
                 {/* Production Cost */}
                 {!isEditor && (
                   <div style={hCardS} onClick={() => setEditingCost(true)}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💵</span> Production Cost</div>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💵</span> Prod Cost</div>
                     {editingCost ? (
-                      <input type="number" step="0.01" value={ad.production_cost ?? ""} onChange={e => { dispatch({ type: "UPDATE", id: ad.id, data: { production_cost: parseFloat(e.target.value) || 0 } }); }} onBlur={() => setEditingCost(false)} autoFocus className="input" placeholder="0.00" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                      <input type="number" step="0.01" value={ad.production_cost ?? ""} onChange={e => {
+                        dispatch({ type: "UPDATE", id: ad.id, data: { production_cost: parseFloat(e.target.value) || 0, production_cost_override: true } });
+                      }} onBlur={() => setEditingCost(false)} autoFocus className="input" placeholder="0.00" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
                     ) : (
-                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.production_cost ? `$${Number(ad.production_cost).toFixed(2)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+                      <div style={{ ...hValS, cursor: "pointer" }}>
+                        {ad.production_cost ? `$${Number(ad.production_cost).toFixed(2)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}
+                        {ad.production_cost && !ad.production_cost_override && <span style={{ fontSize: 8, color: "var(--accent-light)", marginLeft: 4 }}>auto</span>}
+                      </div>
                     )}
                   </div>
                 )}
@@ -2901,7 +2939,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── AD EXPANDED VIEW ── */}
         {page === "pipeline" && openAd && (
-          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} strategyData={strategyData} />
+          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} strategyData={strategyData} editorProfiles={editorProfiles} />
         )}
 
         {/* ── PIPELINE PAGE ── */}

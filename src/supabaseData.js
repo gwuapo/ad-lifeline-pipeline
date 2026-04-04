@@ -188,6 +188,8 @@ function adToRow(ad, workspaceId) {
       channelMatchedNames: rest.channelMatchedNames || {},
       tiktokUrl: rest.tiktokUrl || "",
       production_cost: rest.production_cost ?? null,
+      production_cost_override: rest.production_cost_override ?? false,
+      video_duration: rest.video_duration ?? null,
       // Strategy / Ads Lab fields
       strategy: rest.strategy || {},
     },
@@ -226,6 +228,8 @@ function rowToAd(row) {
     channelMatchedNames: d.channelMatchedNames || {},
     tiktokUrl: d.tiktokUrl || "",
     production_cost: d.production_cost ?? null,
+    production_cost_override: d.production_cost_override ?? false,
+    video_duration: d.video_duration ?? null,
     strategy: d.strategy || {},
     checklist: d.checklist || {},
     stageEnteredAt: d.stageEnteredAt || new Date(row.created_at || Date.now()).getTime(),

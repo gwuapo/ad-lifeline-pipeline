@@ -27,7 +27,7 @@ export default function EditorOnboarding({ email, displayName, userId, onComplet
         display_name: name.trim(),
         photo_url: photoPreview || null,
         portfolio_url: portfolioUrl.trim(),
-        compensation_rate: compensationRate.trim(),
+        compensation_rate: parseFloat(compensationRate) || 0,
         weekly_minutes: parseInt(weeklyMinutes) || 0,
         onboarded_at: new Date().toISOString(),
       });
@@ -85,8 +85,12 @@ export default function EditorOnboarding({ email, displayName, userId, onComplet
         <div>
           <label className="label" style={{ marginTop: 0 }}>Portfolio URL</label>
           <input value={portfolioUrl} onChange={e => setPortfolioUrl(e.target.value)} className="input" placeholder="https://yourportfolio.com or Google Drive link" />
-          <label className="label">Agreed Compensation Rate</label>
-          <input value={compensationRate} onChange={e => setCompensationRate(e.target.value)} className="input" placeholder="e.g. $20/minute edited" />
+          <label className="label">Rate Per Minute (USD)</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 14, color: "var(--text-muted)" }}>$</span>
+            <input type="number" step="0.01" min="0" value={compensationRate} onChange={e => setCompensationRate(e.target.value)} className="input" placeholder="e.g. 20" style={{ width: 120 }} />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>/ minute of edited video</span>
+          </div>
           <label className="label">Weekly Editing Capacity (minutes of video)</label>
           <input type="number" value={weeklyMinutes} onChange={e => setWeeklyMinutes(e.target.value)} className="input" placeholder="e.g. 60" min="1" />
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Maximum minutes of finished video you can edit per week.</p>
