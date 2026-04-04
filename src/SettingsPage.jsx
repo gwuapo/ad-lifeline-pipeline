@@ -6,7 +6,7 @@ import { getMetaConfig, setMetaConfig, isMetaConfigured } from "./metaComments.j
 import { getApiKey, setApiKey, isConfigured, getAnalysisPrompt, setAnalysisPrompt, resetAnalysisPrompt, DEFAULT_ANALYSIS_PROMPT, getSelectedModel, setSelectedModel, GEMINI_MODELS, CLAUDE_MODELS, OPENAI_MODELS, getProxyUrl, setProxyUrl, getResearchModelAssignment, setResearchModelAssignment } from "./apiKeys.js";
 import { RESEARCH_STEPS } from "./researchEngine.js";
 import { supabase } from "./supabase.js";
-import { addMemberToWorkspace, getWorkspaceMembers, removeMemberFromWorkspace, getWorkspaceInvites, sendInvite, revokeInvite } from "./supabaseData.js";
+import { addMemberToWorkspace, getWorkspaceMembers, removeMemberFromWorkspace, updateMemberRole, getWorkspaceInvites, sendInvite, revokeInvite } from "./supabaseData.js";
 
 const SETTINGS_TABS = [
   { id: "profile", icon: "👤", label: "Profile" },
@@ -15,9 +15,9 @@ const SETTINGS_TABS = [
   { id: "pipeline", icon: "⚙", label: "Pipeline" },
 ];
 
-const ROLE_LABELS = { founder: "Founder", strategist: "Creative Strategist", editor: "Editor" };
-const ROLE_COLORS = { founder: "var(--accent-light)", strategist: "var(--green)", editor: "var(--yellow)" };
-const ROLE_BG = { founder: "var(--accent-bg)", strategist: "var(--green-bg)", editor: "var(--yellow-bg)" };
+const ROLE_LABELS = { founder: "Founder", admin: "Admin", manager: "Manager", strategist: "Creative Strategist", editor: "Editor" };
+const ROLE_COLORS = { founder: "var(--accent-light)", admin: "var(--accent-light)", manager: "#06b6d4", strategist: "var(--green)", editor: "var(--yellow)" };
+const ROLE_BG = { founder: "var(--accent-bg)", admin: "var(--accent-bg)", manager: "rgba(6,182,212,0.1)", strategist: "var(--green-bg)", editor: "var(--yellow-bg)" };
 
 export default function SettingsPage({ thresholds, setThresholds, activeWorkspaceId, workspaces, session, userName }) {
   const [tab, setTab] = useState("profile");
@@ -339,9 +339,21 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
                     )}
                   </div>
                 </div>
-                <span className="badge" style={{ background: ROLE_BG[m.role], color: ROLE_COLORS[m.role], fontWeight: 600 }}>
-                  {ROLE_LABELS[m.role] || m.role}
-                </span>
+                {m.user_id === currentUserId ? (
+                  <span className="badge" style={{ background: ROLE_BG[m.role], color: ROLE_COLORS[m.role], fontWeight: 600 }}>
+                    {ROLE_LABELS[m.role] || m.role}
+                  </span>
+                ) : (
+                  <select value={m.role} onChange={async (e) => {
+                    const newRole = e.target.value;
+                    try {
+                      await updateMemberRole(activeWorkspaceId, m.user_id, newRole);
+                      setMembers(prev => prev.map(x => x.user_id === m.user_id ? { ...x, role: newRole } : x));
+                    } catch (err) { console.error("Update role:", err); setResult({ ok: false, msg: "Failed to update role: " + err.message }); setTimeout(() => setResult(null), 5000); }
+                  }} style={{ padding: "3px 8px", fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: "pointer", border: `1px solid ${ROLE_COLORS[m.role] || "var(--border)"}`, background: ROLE_BG[m.role] || "var(--bg-elevated)", color: ROLE_COLORS[m.role] || "var(--text-secondary)", outline: "none" }}>
+                    {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                )}
                 {m.user_id !== currentUserId && (
                   <button onClick={() => setRemoveConfirm(m)} disabled={removing === m.user_id}
                     className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 11, padding: "4px 8px" }}>
@@ -431,6 +443,8 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
               <label className="label" style={{ marginTop: 0 }}>Role</label>
               <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} className="input" style={{ cursor: "pointer" }}>
                 <option value="founder">Founder</option>
+                <option value="admin">Admin</option>
+                <option value="manager">Manager</option>
                 <option value="strategist">Creative Strategist</option>
                 <option value="editor">Editor</option>
               </select>

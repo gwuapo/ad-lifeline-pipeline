@@ -18,7 +18,8 @@ import SplitTestPage from "./SplitTestPage.jsx";
 import AudioRecordingPage from "./AudioRecordingPage.jsx";
 import AdCopyPage from "./AdCopyPage.jsx";
 import LandingPageBuilder from "./LandingPageBuilder.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel } from "./supabaseData.js";
+import MarketplacePage from "./MarketplacePage.jsx";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -615,8 +616,11 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const kids = allAds.filter(a => a.parentId === ad.id);
   const isEditor = role === "editor";
   const isStrategist = role === "strategist";
-  const isRestricted = isEditor || isStrategist; // both see only assigned ads
-  const canEditAd = !isEditor || isStrategist; // strategists can edit assigned ads, editors can only submit drafts
+  const _isFounderOrAdmin = role === "founder" || role === "admin";
+  const _isManager = role === "manager";
+  const _canManage = _isFounderOrAdmin || _isManager;
+  const isRestricted = isEditor || isStrategist;
+  const canEditAd = _canManage || isStrategist;
 
   const analyze = async () => {
     setBusy(true); setAiStatus(null);
@@ -836,6 +840,27 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [editingVA, setEditingVA] = useState(false);
   const [editingCost, setEditingCost] = useState(false);
   const [editingDuration, setEditingDuration] = useState(false);
+  const [draftRatings, setDraftRatings] = useState({});
+
+  useEffect(() => {
+    if (activeWorkspaceId && ad.id) {
+      getDeliverableRatings(activeWorkspaceId, ad.id).then(ratings => {
+        const map = {};
+        ratings.forEach(r => { map[r.draft_id] = r.rating; });
+        setDraftRatings(map);
+      }).catch(() => {});
+    }
+  }, [activeWorkspaceId, ad.id]);
+
+  const handleRate = async (draftId, rating) => {
+    try {
+      await rateDeliverable(activeWorkspaceId, {
+        adId: ad.id, draftId, editorName: ad.editor || "", rating,
+        ratedBy: session?.user?.id, ratedByName: userName, notes: null,
+      });
+      setDraftRatings(prev => ({ ...prev, [draftId]: rating }));
+    } catch (e) { console.error("Rate error:", e); }
+  };
   const [eType, setEType] = useState(ad.type || "");
   const TYPE_OPTIONS = ["UGC", "Image", "Carousel", "VSL", "Talking Head", "B-Roll", "Mashup", "Other"];
 
@@ -872,14 +897,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           <span style={{ color: stg.color }}>{stg.label}</span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {ad.stage !== "killed" && role === "founder" && SO.filter(s => s !== ad.stage).map(s => {
+          {ad.stage !== "killed" && _canManage && SO.filter(s => s !== ad.stage).map(s => {
             const st = STAGES.find(x => x.id === s);
             return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "22", fontSize: 11 }}>{st.icon} {st.label}</button>;
           })}
           {ad.iterations >= ad.maxIter && ad.stage === "live" && cl === "red" && (
             <button onClick={doKill} className="btn btn-danger btn-xs">Kill</button>
           )}
-          {role === "founder" && (
+          {_isFounderOrAdmin && (
             <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 14 }} title="Delete ad">🗑</button>
           )}
         </div>
@@ -895,8 +920,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             <button onClick={() => { setEditingName(false); setEName(ad.name); }} className="btn btn-ghost btn-sm">Cancel</button>
           </div>
         ) : (
-          <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0, cursor: role === "founder" ? "pointer" : "default" }}
-            onClick={() => { if (role === "founder") setEditingName(true); }}>
+          <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: 0, cursor: _canManage ? "pointer" : "default" }}
+            onClick={() => { if (_canManage) setEditingName(true); }}>
             {ad.name}
           </h1>
         )}
@@ -914,7 +939,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
           {winner ? "Confirmed winner (5+ days). Scale aggressively." : `${gdays}/5 green days to confirm.`}
         </div>
       )}
-      {ad.stage === "live" && cl === "red" && role === "founder" && (
+      {ad.stage === "live" && cl === "red" && _isFounderOrAdmin && (
         <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--red-bg)", borderLeft: "3px solid var(--red)", marginBottom: 12, fontSize: 12, color: "var(--red)", display: "flex", alignItems: "center", gap: 8 }}>
           <span>Below threshold. Iter {ad.iterations}/{ad.maxIter}.</span>
           {ad.iterations < ad.maxIter && <>
@@ -1268,7 +1293,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
             </div>)}
           </div>}
 
-          {ad.stage === "live" && cl === "green" && role === "founder" && <div style={{ marginTop: 18 }}>
+          {ad.stage === "live" && cl === "green" && _isFounderOrAdmin && <div style={{ marginTop: 18 }}>
             <div className="section-title">Create Variations</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
               {VT.map(v => <div key={v.id} onClick={() => { setVm(v); setVf({ name: ad.name + " — " + v.label, brief: "" }); }}
@@ -1330,7 +1355,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <span style={{ fontSize: 10, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
-                        {d.status === "in-review" && role === "founder" && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                        {d.status === "in-review" && _canManage && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                        {_canManage && <span style={{ display: "flex", gap: 1, marginLeft: 4 }}>{[1,2,3,4,5].map(s => (
+                          <span key={s} onClick={() => handleRate(d.id, s)} style={{ cursor: "pointer", fontSize: 13, color: (draftRatings[d.id] || 0) >= s ? "#f59e0b" : "var(--text-muted)", opacity: (draftRatings[d.id] || 0) >= s ? 1 : 0.3 }}>★</span>
+                        ))}</span>}
                       </div>
                     </div>
                     {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", marginTop: 4, display: "inline-block" }}>🔗 View</a>}
@@ -1367,7 +1395,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <span style={{ fontSize: 10, color: "var(--text-tertiary)", fontFamily: "var(--fm)" }}>{d.ts}</span>
-                      {d.status === "in-review" && role === "founder" && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                      {d.status === "in-review" && _canManage && <button onClick={() => approveDraft(d.id)} className="btn btn-success btn-xs">Approve</button>}
+                      {_canManage && <span style={{ display: "flex", gap: 1, marginLeft: 4 }}>{[1,2,3,4,5].map(s => (
+                        <span key={s} onClick={() => handleRate(d.id, s)} style={{ cursor: "pointer", fontSize: 13, color: (draftRatings[d.id] || 0) >= s ? "#f59e0b" : "var(--text-muted)", opacity: (draftRatings[d.id] || 0) >= s ? 1 : 0.3 }}>★</span>
+                      ))}</span>}
                     </div>
                   </div>
                   {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", marginTop: 4, display: "inline-block" }}>🔗 View</a>}
@@ -2569,6 +2600,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const presenceRef = useRef(null);
   const [th, setTh] = useState(DT);
   const [role, setRole] = useState(userRole || "founder");
+  const isFounderOrAdmin = role === "founder" || role === "admin";
+  const isManager = role === "manager";
+  const canManage = isFounderOrAdmin || isManager;
   const [editors, setEditors] = useState(DEFAULT_EDITORS);
   const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "") : "");
   const [myEditorProfile, setMyEditorProfile] = useState(null);
@@ -2734,7 +2768,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const syncRef = useRef(syncTripleWhale);
   syncRef.current = syncTripleWhale;
   useEffect(() => {
-    if (autoSyncEnabled && isTripleWhaleConfigured() && ads.length > 0 && role === "founder") {
+    if (autoSyncEnabled && isTripleWhaleConfigured() && ads.length > 0 && isFounderOrAdmin) {
       startAutoSync(() => syncRef.current(true));
       return () => stopAutoSync();
     } else {
@@ -2766,7 +2800,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
   // Intelligence Flywheel: auto-analyze winners
   useEffect(() => {
-    if (role !== "founder" || !activeWorkspaceId) return;
+    if (!isFounderOrAdmin || !activeWorkspaceId) return;
     const winners = ads.filter(a => {
       if (a.stage !== "live") return false;
       const bc = bestChannel(a, th);
@@ -3001,15 +3035,17 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 </p>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                {userRole === "founder" && <>
+                {["founder", "admin"].includes(userRole) && <>
                   <div style={{ display: "flex", borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--border)" }}>
                     <button onClick={() => setRole("founder")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "founder" ? "var(--accent-bg)" : "transparent", color: role === "founder" ? "var(--accent-light)" : "var(--text-muted)" }}>Founder</button>
+                    <button onClick={() => setRole("admin")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "admin" ? "var(--accent-bg)" : "transparent", color: role === "admin" ? "var(--accent-light)" : "var(--text-muted)" }}>Admin</button>
+                    <button onClick={() => setRole("manager")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "manager" ? "rgba(6,182,212,0.1)" : "transparent", color: role === "manager" ? "#06b6d4" : "var(--text-muted)" }}>Manager</button>
                     <button onClick={() => setRole("strategist")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "strategist" ? "var(--green-bg)" : "transparent", color: role === "strategist" ? "var(--green)" : "var(--text-muted)" }}>Strategist</button>
                     <button onClick={() => setRole("editor")} className="btn btn-xs" style={{ borderRadius: 0, border: "none", background: role === "editor" ? "var(--yellow-bg)" : "transparent", color: role === "editor" ? "var(--yellow)" : "var(--text-muted)" }}>Editor</button>
                   </div>
                   {(role === "editor" || role === "strategist") && <select value={editorName} onChange={e => setEditorName(e.target.value)} className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }}>{editors.map(e => <option key={e} value={e}>{e}</option>)}</select>}
                 </>}
-                {role === "founder" && <>
+                {canManage && <>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button onClick={() => syncTripleWhale(false)} disabled={syncing} className={`btn btn-sm ${isTripleWhaleConfigured() ? "btn-success" : "btn-ghost"}`}>
                       {syncing ? "Syncing..." : "Sync TW"}
@@ -3175,6 +3211,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── LANDING PAGE BUILDER ── */}
         {page === "landingpages" && <LandingPageBuilder ads={ads} activeWorkspaceId={activeWorkspaceId} strategyData={strategyData} />}
+        {page === "marketplace" && <MarketplacePage activeWorkspaceId={activeWorkspaceId} role={role} session={session} userName={userName} editors={editors} editorProfiles={editorProfiles} />}
 
         {/* ── SETTINGS PAGE ── */}
         {page === "settings" && role === "editor" && <EditorSettings userId={session?.user?.id} userName={userName} />}

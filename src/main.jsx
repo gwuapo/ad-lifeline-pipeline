@@ -204,21 +204,22 @@ function Root() {
     );
   }
 
-  // Non-founder with no workspaces → waiting to be invited
-  if (role !== "founder" && workspaces && workspaces.length === 0) {
+  const ROLE_DISPLAY = { founder: "Founder", admin: "Admin", manager: "Manager", strategist: "Creative Strategist", editor: "Editor" };
+  // Non-founder/admin with no workspaces → waiting to be invited
+  if (!["founder", "admin"].includes(role) && workspaces && workspaces.length === 0) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-primary)", flexDirection: "column", gap: 12 }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>Waiting for workspace invite</div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", maxWidth: 360, textAlign: "center", lineHeight: 1.6 }}>
-          You're signed up as <strong style={{ color: "var(--text-secondary)" }}>{role === "strategist" ? "Creative Strategist" : "Editor"}</strong>. Ask a founder to invite <strong style={{ color: "var(--text-secondary)" }}>{email}</strong> to their workspace from Settings.
+          You're signed up as <strong style={{ color: "var(--text-secondary)" }}>{ROLE_DISPLAY[role] || role}</strong>. Ask a founder to invite <strong style={{ color: "var(--text-secondary)" }}>{email}</strong> to their workspace from Settings.
         </div>
         <button onClick={() => supabase.auth.signOut()} className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>Sign Out</button>
       </div>
     );
   }
 
-  // Founder with no workspaces → create first one
-  if (role === "founder" && workspaces && workspaces.length === 0) {
+  // Founder/admin with no workspaces → create first one
+  if (["founder", "admin"].includes(role) && workspaces && workspaces.length === 0) {
     return (
       <WorkspaceSetup onComplete={async (name) => {
         try {

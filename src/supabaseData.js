@@ -78,6 +78,14 @@ export async function removeMemberFromWorkspace(workspaceId, userId) {
   if (error) throw error;
 }
 
+export async function updateMemberRole(workspaceId, userId, newRole) {
+  const { error } = await supabase
+    .from("workspace_members")
+    .update({ role: newRole })
+    .match({ workspace_id: workspaceId, user_id: userId });
+  if (error) throw error;
+}
+
 export async function getWorkspaceMembers(workspaceId) {
   const { data, error } = await supabase
     .from("workspace_members")
@@ -837,4 +845,100 @@ export async function updateOffer(offerId, updates) {
 export async function deleteOffer(offerId) {
   const { error } = await supabase.from("offer_library").delete().eq("id", offerId);
   if (error) throw error;
+}
+
+// ════════════════════════════════════════════════
+// POINTS SYSTEM
+// ════════════════════════════════════════════════
+
+export async function getPointTransactions(workspaceId, editorUserId = null) {
+  let q = supabase.from("point_transactions").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false });
+  if (editorUserId) q = q.eq("editor_user_id", editorUserId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function issuePoints(workspaceId, { editorUserId, editorName, amount, category, reason, adId, issuedBy, issuedByName }) {
+  const { data, error } = await supabase.from("point_transactions").insert({
+    workspace_id: workspaceId, editor_user_id: editorUserId, editor_name: editorName,
+    amount, type: "earn", category, reason, ad_id: adId || null,
+    issued_by: issuedBy, issued_by_name: issuedByName,
+  }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getEditorPointBalance(workspaceId, editorUserId) {
+  const txns = await getPointTransactions(workspaceId, editorUserId);
+  return txns.reduce((s, t) => s + (t.type === "earn" ? t.amount : -t.amount), 0);
+}
+
+export async function getMarketplaceRewards(workspaceId) {
+  const { data, error } = await supabase.from("marketplace_rewards").select("*").eq("workspace_id", workspaceId).eq("active", true).order("cost", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createReward(workspaceId, reward) {
+  const { data, error } = await supabase.from("marketplace_rewards").insert({ workspace_id: workspaceId, ...reward }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateReward(rewardId, updates) {
+  const { data, error } = await supabase.from("marketplace_rewards").update(updates).eq("id", rewardId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteReward(rewardId) {
+  const { error } = await supabase.from("marketplace_rewards").delete().eq("id", rewardId);
+  if (error) throw error;
+}
+
+export async function createRedemptionRequest(workspaceId, { editorUserId, editorName, rewardId, rewardName, cost }) {
+  const { data: txn, error: txnErr } = await supabase.from("point_transactions").insert({
+    workspace_id: workspaceId, editor_user_id: editorUserId, editor_name: editorName,
+    amount: cost, type: "redeem", category: "redemption", reason: `Redeemed: ${rewardName}`,
+    issued_by: editorUserId, issued_by_name: editorName,
+  }).select().single();
+  if (txnErr) throw txnErr;
+  const { data, error } = await supabase.from("redemption_requests").insert({
+    workspace_id: workspaceId, editor_user_id: editorUserId, editor_name: editorName,
+    reward_id: rewardId, reward_name: rewardName, cost,
+  }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getRedemptionRequests(workspaceId) {
+  const { data, error } = await supabase.from("redemption_requests").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function handleRedemptionRequest(requestId, status, handledBy, adminNotes) {
+  const { data, error } = await supabase.from("redemption_requests").update({
+    status, handled_by: handledBy, admin_notes: adminNotes || null, handled_at: new Date().toISOString(),
+  }).eq("id", requestId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function rateDeliverable(workspaceId, { adId, draftId, editorName, rating, ratedBy, ratedByName, notes }) {
+  const { data, error } = await supabase.from("deliverable_ratings").upsert({
+    workspace_id: workspaceId, ad_id: adId, draft_id: draftId,
+    editor_name: editorName, rating, rated_by: ratedBy, rated_by_name: ratedByName, notes: notes || null,
+  }, { onConflict: "ad_id,draft_id" }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getDeliverableRatings(workspaceId, adId = null) {
+  let q = supabase.from("deliverable_ratings").select("*").eq("workspace_id", workspaceId);
+  if (adId) q = q.eq("ad_id", adId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
 }

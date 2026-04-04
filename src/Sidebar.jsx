@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { id: "audio", icon: "🎙️", label: "Audio" },
   { id: "adcopy", icon: "✍️", label: "Ad Copy" },
   { id: "landingpages", icon: "🌐", label: "Landing Pages" },
+  { id: "marketplace", icon: "🏪", label: "Marketplace" },
 ];
 
 const BOTTOM_ITEMS = [
@@ -68,7 +69,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
 
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {NAV_ITEMS.filter(item => {
-            if (role === "editor") return item.id === "pipeline" || item.id === "earnings";
+            if (role === "editor") return item.id === "pipeline" || item.id === "earnings" || item.id === "marketplace";
             if (role === "strategist") return item.id !== "editors" && item.id !== "splittests";
             return true;
           }).map(item => (
