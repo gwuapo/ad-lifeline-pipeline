@@ -420,8 +420,8 @@ function IssuePointsModal({ editorName, onClose, onIssue, editorProfiles, active
   POINT_CATEGORIES.forEach(c => { if (!groups[c.group]) groups[c.group] = []; groups[c.group].push(c); });
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 460, maxHeight: "80vh", overflowY: "auto", background: "var(--bg-modal)", border: "1px solid var(--border)", borderRadius: 14, padding: "24px 28px" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "40px 20px", overflow: "auto" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 460, maxHeight: "calc(100vh - 80px)", overflowY: "auto", background: "var(--bg-modal)", border: "1px solid var(--border)", borderRadius: 14, padding: "24px 28px", margin: "auto" }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Issue Points to {editorName}</div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>Select a reason and the points will be awarded automatically.</div>
 
