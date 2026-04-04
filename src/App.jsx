@@ -1016,9 +1016,13 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   </div>
                 )}
                 {/* Ad ROI (production cost vs revenue) */}
-                {!isEditor && ad.metrics?.length > 0 && (parseFloat(ad.production_cost) || 0) > 0 && (() => {
-                  const adTotalSpend = ad.metrics.reduce((s, m) => s + (m.spend || 0), 0);
-                  const adTotalRevenue = ad.metrics.reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
+                {!isEditor && (parseFloat(ad.production_cost) || 0) > 0 && (ad.metrics?.length > 0 || Object.values(ad.channelMetrics || {}).some(m => m?.length > 0)) && (() => {
+                  let adTotalSpend = (ad.metrics || []).reduce((s, m) => s + (m.spend || 0), 0);
+                  let adTotalRevenue = (ad.metrics || []).reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
+                  Object.values(ad.channelMetrics || {}).forEach(metrics => {
+                    adTotalSpend += (metrics || []).reduce((s, m) => s + (m.spend || 0), 0);
+                    adTotalRevenue += (metrics || []).reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
+                  });
                   const prodCost = parseFloat(ad.production_cost) || 0;
                   const grossProfit = adTotalRevenue - adTotalSpend;
                   const roi = prodCost > 0 ? ((grossProfit - prodCost) / prodCost * 100) : 0;
@@ -2050,12 +2054,21 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
           const profile = findProfile(name);
           const totalProdCost = all.reduce((s, a) => s + (parseFloat(a.production_cost) || 0), 0);
           const costPerWinner = winners.length > 0 ? totalProdCost / winners.length : 0;
-          const adSpendOf = (a) => [...(a.metrics || [])].reduce((s, m) => s + (m.spend || 0), 0);
-          const adRevenueOf = (a) => [...(a.metrics || [])].reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
+          const adSpendOf = (a) => {
+            let sp = (a.metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0);
+            Object.values(a.channelMetrics || {}).forEach(metrics => { sp += (metrics || []).reduce((ss, m) => ss + (m.spend || 0), 0); });
+            return sp;
+          };
+          const adRevenueOf = (a) => {
+            let rev = (a.metrics || []).reduce((ss, m) => ss + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
+            Object.values(a.channelMetrics || {}).forEach(metrics => { rev += (metrics || []).reduce((ss, m) => ss + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0); });
+            return rev;
+          };
           const totalAdSpend = all.reduce((s, a) => s + adSpendOf(a), 0);
           const totalRevenue = all.reduce((s, a) => s + adRevenueOf(a), 0);
           const roasProfit = totalRevenue - totalAdSpend;
           const recouped = totalProdCost > 0 && roasProfit >= totalProdCost;
+          const editorROI = totalProdCost > 0 ? ((roasProfit - totalProdCost) / totalProdCost * 100) : 0;
 
           return (
             <div key={name} className="card" onClick={() => setSelectedEditor({ name, profile, stats: { winRate, onTime, qualScore, bonus, all: all.length, overdueN, health } })} style={{ cursor: "pointer", transition: "all var(--transition)" }}>
@@ -2083,20 +2096,42 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
                   </div>
                 ))}
               </div>
-              {totalProdCost > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-light)" }}>
-                  <div className="stat-box">
-                    <div className="stat-value" style={{ fontSize: 12 }}>${totalProdCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
-                    <div className="stat-label">Total Cost</div>
+              {(totalProdCost > 0 || totalRevenue > 0) && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-light)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    <div className="stat-box">
+                      <div className="stat-value" style={{ fontSize: 12, color: "var(--green-light)" }}>{CUR} {totalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                      <div className="stat-label">Revenue</div>
+                    </div>
+                    <div className="stat-box">
+                      <div className="stat-value" style={{ fontSize: 12 }}>{CUR} {totalAdSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                      <div className="stat-label">Ad Spend</div>
+                    </div>
+                    <div className="stat-box">
+                      <div className="stat-value" style={{ fontSize: 12, color: roasProfit > 0 ? "var(--green)" : "var(--red)" }}>{CUR} {roasProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                      <div className="stat-label">Gross Profit</div>
+                    </div>
                   </div>
-                  <div className="stat-box">
-                    <div className="stat-value" style={{ fontSize: 12 }}>{costPerWinner > 0 ? "$" + costPerWinner.toLocaleString("en-US", { maximumFractionDigits: 0 }) : "—"}</div>
-                    <div className="stat-label">Cost/Winner</div>
-                  </div>
-                  <div className="stat-box">
-                    <div className="stat-value" style={{ fontSize: 12, color: recouped ? "var(--green)" : "var(--yellow)" }}>{recouped ? "Yes" : totalProdCost > 0 ? `${Math.round((roasProfit / totalProdCost) * 100)}%` : "—"}</div>
-                    <div className="stat-label">Recouped</div>
-                  </div>
+                  {totalProdCost > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
+                      <div className="stat-box">
+                        <div className="stat-value" style={{ fontSize: 12 }}>${totalProdCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                        <div className="stat-label">Prod Cost</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-value" style={{ fontSize: 12 }}>{costPerWinner > 0 ? "$" + costPerWinner.toLocaleString("en-US", { maximumFractionDigits: 0 }) : "—"}</div>
+                        <div className="stat-label">Cost/Winner</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-value" style={{ fontSize: 12, color: editorROI > 0 ? "var(--green)" : editorROI < 0 ? "var(--red)" : "var(--yellow)" }}>{editorROI >= 0 ? "+" : ""}{editorROI.toFixed(0)}%</div>
+                        <div className="stat-label">ROI</div>
+                      </div>
+                      <div className="stat-box">
+                        <div className="stat-value" style={{ fontSize: 12, color: recouped ? "var(--green)" : "var(--yellow)" }}>{recouped ? "Yes" : `${Math.round((roasProfit / totalProdCost) * 100)}%`}</div>
+                        <div className="stat-label">Recouped</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {overdueN > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--red-light)" }}>{overdueN} overdue</div>}
