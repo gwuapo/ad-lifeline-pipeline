@@ -131,10 +131,13 @@ const tm = (a) => {
 const tmCh = (metrics) => {
   if (!metrics?.length) return null;
   const m = metrics;
-  return { spend: m.reduce((s, x) => s + x.spend, 0), conv: m.reduce((s, x) => s + x.conv, 0),
-    ac: +(m.reduce((s, x) => s + x.cpa, 0) / m.length).toFixed(2), lc: m[m.length - 1].cpa,
-    at: +(m.reduce((s, x) => s + x.ctr, 0) / m.length).toFixed(1), am: +(m.reduce((s, x) => s + x.cpm, 0) / m.length).toFixed(2),
-    roas: m[m.length - 1].roas || 0, lr: m[m.length - 1].revenue || 0 };
+  const totalSpend = m.reduce((s, x) => s + (x.spend || 0), 0);
+  const totalConv = m.reduce((s, x) => s + (x.conv || 0), 0);
+  const totalRevenue = m.reduce((s, x) => s + (x.revenue != null ? x.revenue : (x.spend || 0) * (x.roas || 0)), 0);
+  return { spend: totalSpend, conv: totalConv,
+    ac: totalConv > 0 ? +(totalSpend / totalConv).toFixed(2) : 0, lc: totalConv > 0 ? +(totalSpend / totalConv).toFixed(2) : 0,
+    at: +(m.reduce((s, x) => s + (x.ctr || 0), 0) / m.length).toFixed(1), am: +(m.reduce((s, x) => s + (x.cpm || 0), 0) / m.length).toFixed(2),
+    roas: totalSpend > 0 ? +(totalRevenue / totalSpend).toFixed(2) : 0, lr: totalRevenue };
 };
 const bestChannel = (ad, th) => {
   const cm = ad.channelMetrics || {};
