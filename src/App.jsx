@@ -1977,7 +1977,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
 // EDITOR PANEL
 // ════════════════════════════════════════════════
 
-function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, activeWorkspaceId }) {
+function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, activeWorkspaceId, onProfileUpdate }) {
   const [editorTab, setEditorTab] = useState("performance");
   const [showAdd, setShowAdd] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -2227,6 +2227,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
       {/* Editor Detail Modal */}
       {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onProfileSaved={(editorName, updated) => {
         setAllProfiles(prev => ({ ...prev, [editorName]: { ...prev[editorName], ...updated } }));
+        if (onProfileUpdate) onProfileUpdate(editorName, updated);
       }} />}
     </div>
   );
@@ -2332,21 +2333,23 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId, onP
   };
 
   const handleSave = async () => {
-    if (profile?.user_id) {
-      try {
-        const updated = await upsertEditorProfile(profile.user_id, {
-          display_name: pName.trim(),
-          photo_url: pPhoto,
-          portfolio_url: pPortfolio.trim(),
-          compensation_rate: pRate.trim(),
-          weekly_minutes: parseInt(pMinutes) || 0,
-          commission_pct: parseFloat(pCommission) || 0,
-        });
-        if (onProfileSaved) onProfileSaved(name, updated);
-      } catch (e) { console.error("Save profile error:", e); }
+    if (!profile?.user_id) { console.warn("No user_id on profile, cannot save"); return; }
+    try {
+      const updated = await upsertEditorProfile(profile.user_id, {
+        display_name: String(pName).trim(),
+        photo_url: pPhoto,
+        portfolio_url: String(pPortfolio).trim(),
+        compensation_rate: String(pRate).trim(),
+        weekly_minutes: parseInt(pMinutes) || 0,
+        commission_pct: parseFloat(pCommission) || 0,
+      });
+      if (onProfileSaved) onProfileSaved(name, updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error("Save profile error:", e);
+      alert("Failed to save: " + e.message);
     }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
   };
 
   const hc = stats.health === "green" ? "var(--green)" : stats.health === "yellow" ? "var(--yellow)" : "var(--red)";
@@ -3144,7 +3147,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         )}
 
         {/* ── EDITORS PAGE ── */}
-        {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
+        {page === "editors" && <EditorPanel ads={ads} th={th} editors={editors} addEditor={addEditor} removeEditor={removeEditor} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onProfileUpdate={(editorName, updated) => {
+          setEditorProfiles(prev => ({ ...prev, [editorName]: { ...prev[editorName], ...updated } }));
+        }} />}
 
         {/* ── RESEARCH PAGE ── */}
         {page === "strategy" && <StrategyPage activeWorkspaceId={activeWorkspaceId} ads={ads} dispatch={dispatch} role={role} />}
