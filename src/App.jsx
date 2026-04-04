@@ -2992,8 +2992,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {!adsLoading && <>
             {/* Fixed header section */}
             <div style={{ flexShrink: 0, overflow: "hidden" }}>
-            {/* Needs attention */}
-            {(() => {
+            {/* Needs attention (hidden from editors) */}
+            {role !== "editor" && (() => {
               const adsNeedingAttention = ads.filter(a => a.stage !== "killed").filter(a => {
                 const overdue = getStaleItems(a, a.stage);
                 const deadlineOverdue = od(a.deadline);
