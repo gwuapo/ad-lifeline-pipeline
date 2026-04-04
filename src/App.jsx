@@ -862,6 +862,24 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     )}
                   </div>
                 )}
+                {/* Ad ROI (production cost vs revenue) */}
+                {!isEditor && ad.metrics?.length > 0 && (parseFloat(ad.production_cost) || 0) > 0 && (() => {
+                  const adTotalSpend = ad.metrics.reduce((s, m) => s + (m.spend || 0), 0);
+                  const adTotalRevenue = ad.metrics.reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
+                  const prodCost = parseFloat(ad.production_cost) || 0;
+                  const grossProfit = adTotalRevenue - adTotalSpend;
+                  const roi = prodCost > 0 ? ((grossProfit - prodCost) / prodCost * 100) : 0;
+                  const roiColor = roi > 0 ? "var(--green)" : roi === 0 ? "var(--yellow)" : "var(--red)";
+                  return (
+                    <div style={{ ...hCardS, borderColor: roi > 0 ? "var(--green-border)" : roi < 0 ? "var(--red-border)" : "var(--border-light)" }}>
+                      <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> Ad ROI</div>
+                      <div style={{ ...hValS, color: roiColor }}>{roi >= 0 ? "+" : ""}{roi.toFixed(0)}%</div>
+                      <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
+                        Rev {CUR} {adTotalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })} · Spend {CUR} {adTotalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} · Cost ${prodCost.toFixed(0)}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
@@ -1884,8 +1902,10 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
           const totalProdCost = all.reduce((s, a) => s + (parseFloat(a.production_cost) || 0), 0);
           const costPerWinner = winners.length > 0 ? totalProdCost / winners.length : 0;
           const adSpendOf = (a) => [...(a.metrics || [])].reduce((s, m) => s + (m.spend || 0), 0);
+          const adRevenueOf = (a) => [...(a.metrics || [])].reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
           const totalAdSpend = all.reduce((s, a) => s + adSpendOf(a), 0);
-          const roasProfit = all.reduce((s, a) => { const r = lm(a)?.roas || 0; return s + (adSpendOf(a) * Math.max(0, r - 1)); }, 0);
+          const totalRevenue = all.reduce((s, a) => s + adRevenueOf(a), 0);
+          const roasProfit = totalRevenue - totalAdSpend;
           const recouped = totalProdCost > 0 && roasProfit >= totalProdCost;
 
           return (
