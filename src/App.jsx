@@ -487,7 +487,7 @@ function DateRangePicker({ dateFrom, dateTo, onChange }) {
         <span style={{ fontSize: 13 }}>📅</span> {label} <span style={{ fontSize: 10, opacity: 0.5 }}>▾</span>
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 1000, marginTop: 4, background: "var(--bg-card)", border: "1px solid var(--border-light)", borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.4)", display: "flex", minWidth: 520, overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 1000, marginTop: 4, background: "var(--bg-modal)", border: "1px solid var(--border-light)", borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.4)", display: "flex", minWidth: 520, overflow: "hidden" }}>
           {/* Presets */}
           <div style={{ width: 160, borderRight: "1px solid var(--border-light)", padding: "8px 0", overflowY: "auto", maxHeight: 360 }}>
             {PRESETS.map(p => (
