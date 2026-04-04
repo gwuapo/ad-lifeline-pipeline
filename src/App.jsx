@@ -2370,9 +2370,18 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
                 <div key={method} style={{ marginBottom: 10, padding: "10px 12px", background: "var(--bg-elevated)", borderRadius: 8, border: "1px solid var(--border-light)" }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>{labels[method] || method}</div>
                   {Object.entries(fields).filter(([, v]) => v).map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-                      <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</span>
-                      <span style={{ color: "var(--text-primary)", fontWeight: 500, fontFamily: "var(--fm)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{v}</span>
+                    <div key={k} style={{ marginBottom: 3 }}>
+                      {typeof v === "string" && v.startsWith("data:image") ? (
+                        <div style={{ marginTop: 4 }}>
+                          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</span>
+                          <img src={v} style={{ display: "block", maxWidth: 180, maxHeight: 180, borderRadius: 8, border: "1px solid var(--border-light)", marginTop: 4 }} />
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                          <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</span>
+                          <span style={{ color: "var(--text-primary)", fontWeight: 500, fontFamily: "var(--fm)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{v}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

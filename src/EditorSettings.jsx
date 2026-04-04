@@ -5,9 +5,12 @@ const PAYMENT_METHODS = [
   { key: "usd_bank", label: "USD Bank Account", fields: [
     { key: "bank_name", label: "Bank Name", placeholder: "e.g. Chase, Wells Fargo" },
     { key: "account_holder", label: "Account Holder Name", placeholder: "Full legal name" },
+    { key: "account_type", label: "Account Type", placeholder: "Checking or Savings", type: "select", options: ["Checking", "Savings"] },
     { key: "account_number", label: "Account Number", placeholder: "Account number" },
     { key: "routing_number", label: "Routing Number", placeholder: "9-digit routing number" },
     { key: "swift", label: "SWIFT / BIC (international)", placeholder: "Optional for international" },
+    { key: "bank_address", label: "Bank Address", placeholder: "Full bank branch address" },
+    { key: "recipient_address", label: "Recipient Legal Address", placeholder: "Your legal address for wire transfers" },
   ]},
   { key: "crypto", label: "USDT / USDC Wallet", fields: [
     { key: "wallet_address", label: "Wallet Address", placeholder: "0x... or T..." },
@@ -22,6 +25,7 @@ const PAYMENT_METHODS = [
     { key: "cih_name", label: "Account Holder Name", placeholder: "Full name" },
     { key: "cih_rib", label: "RIB Number", placeholder: "24-digit RIB" },
     { key: "cih_iban", label: "IBAN", placeholder: "MA..." },
+    { key: "cih_qr", label: "CIH QR Code", type: "image" },
   ]},
 ];
 
@@ -175,6 +179,21 @@ export default function EditorSettings({ userId, userName }) {
                     <option value="">Select...</option>
                     {field.options.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
+                ) : field.type === "image" ? (
+                  <div>
+                    {paymentMethods[method.key]?.[field.key] ? (
+                      <div style={{ position: "relative", display: "inline-block" }}>
+                        <img src={paymentMethods[method.key][field.key]} style={{ maxWidth: 200, maxHeight: 200, borderRadius: 8, border: "1px solid var(--border)" }} />
+                        <button onClick={() => updatePaymentField(method.key, field.key, null)} style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "var(--red)", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                      </div>
+                    ) : (
+                      <div onClick={() => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.onchange = (ev) => { const f = ev.target.files?.[0]; if (!f) return; if (f.size > 5 * 1024 * 1024) { alert("Image must be under 5MB"); return; } const r = new FileReader(); r.onload = () => updatePaymentField(method.key, field.key, r.result); r.readAsDataURL(f); }; inp.click(); }}
+                        style={{ width: 200, height: 120, borderRadius: 8, border: "2px dashed var(--border)", background: "var(--bg-elevated)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                        <span style={{ fontSize: 24 }}>📷</span>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Upload QR Code</span>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <input
                     value={paymentMethods[method.key]?.[field.key] || ""}
