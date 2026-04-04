@@ -351,11 +351,26 @@ export async function fetchEditorProfile(userId) {
 }
 
 export async function upsertEditorProfile(userId, profile) {
-  const { data, error } = await supabase
-    .from("editor_profiles")
-    .upsert({ user_id: userId, ...profile }, { onConflict: "user_id" })
-    .select()
-    .single();
+  const currentUserId = (await supabase.auth.getUser()).data.user?.id;
+  const isSelf = currentUserId === userId;
+
+  let data, error;
+  if (isSelf) {
+    // Self-edit: upsert (may insert if profile doesn't exist yet)
+    ({ data, error } = await supabase
+      .from("editor_profiles")
+      .upsert({ user_id: userId, ...profile }, { onConflict: "user_id" })
+      .select()
+      .single());
+  } else {
+    // Admin editing another user: update only (avoids INSERT RLS restriction)
+    ({ data, error } = await supabase
+      .from("editor_profiles")
+      .update(profile)
+      .eq("user_id", userId)
+      .select()
+      .single());
+  }
   if (error) throw error;
   // Keep workspace_members.editor_name in sync
   if (profile.display_name) {
