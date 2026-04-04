@@ -2223,7 +2223,9 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
       </>}
 
       {/* Editor Detail Modal */}
-      {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} />}
+      {selectedEditor && <EditorDetailModal editor={selectedEditor} onClose={() => setSelectedEditor(null)} workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onProfileSaved={(editorName, updated) => {
+        setAllProfiles(prev => ({ ...prev, [editorName]: { ...prev[editorName], ...updated } }));
+      }} />}
     </div>
   );
 }
@@ -2308,7 +2310,7 @@ function WorkspaceAssignment({ editorName, editorUserId, workspaces }) {
   );
 }
 
-function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
+function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId, onProfileSaved }) {
   const { name, profile, stats } = editor;
   const [pName, setPName] = useState(profile?.displayName || name);
   const [pPhoto, setPPhoto] = useState(profile?.photo_url || profile?.photoUrl || null);
@@ -2330,7 +2332,7 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
   const handleSave = async () => {
     if (profile?.user_id) {
       try {
-        await upsertEditorProfile(profile.user_id, {
+        const updated = await upsertEditorProfile(profile.user_id, {
           display_name: pName.trim(),
           photo_url: pPhoto,
           portfolio_url: pPortfolio.trim(),
@@ -2338,6 +2340,7 @@ function EditorDetailModal({ editor, onClose, workspaces, activeWorkspaceId }) {
           weekly_minutes: parseInt(pMinutes) || 0,
           commission_pct: parseFloat(pCommission) || 0,
         });
+        if (onProfileSaved) onProfileSaved(name, updated);
       } catch (e) { console.error("Save profile error:", e); }
     }
     setSaved(true);
