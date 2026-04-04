@@ -441,50 +441,6 @@ export default function CommissionDashboard({ ads, editorName, commissionPct, is
         </div>
       </div>
 
-      {/* ── MILESTONES ── */}
-      <div style={{
-        padding: "18px 20px", borderRadius: 16, marginBottom: 20,
-        background: "var(--bg-elevated)", border: "1px solid var(--border-light)",
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Milestones</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 14 }}>Unlock achievements as you grow</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {milestones.map((m, i) => (
-            <MilestoneBadge key={i} icon={m.icon} title={m.title} subtitle={m.subtitle} achieved={m.achieved} color={m.color || "var(--accent-light)"} />
-          ))}
-        </div>
-      </div>
-
-      {/* ── LEVEL PROGRESS ── */}
-      {nextLevel && (
-        <div style={{
-          padding: "16px 20px", borderRadius: 16, marginBottom: 20,
-          background: "var(--bg-elevated)", border: "1px solid var(--border-light)",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: currentLevel.color }}>{currentLevel.name}</span>
-              <span style={{ fontSize: 10, color: "var(--text-muted)", margin: "0 6px" }}>→</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: nextLevel.color }}>{nextLevel.name}</span>
-            </div>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>
-              {CUR} {totalCommission.toLocaleString("en-US", { maximumFractionDigits: 0 })} / {CUR} {nextLevel.min.toLocaleString()}
-            </span>
-          </div>
-          <div style={{ height: 8, borderRadius: 4, background: "var(--border-light)", overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 4,
-              width: Math.min((totalCommission / nextLevel.min) * 100, 100) + "%",
-              background: `linear-gradient(90deg, ${currentLevel.color}, ${nextLevel.color})`,
-              transition: "width 1s ease",
-            }} />
-          </div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-            {CUR} {(nextLevel.min - totalCommission).toLocaleString("en-US", { maximumFractionDigits: 0 })} more to reach {nextLevel.name}
-          </div>
-        </div>
-      )}
-
       {/* ── AD BREAKDOWN ── */}
       <div style={{
         padding: "18px 20px", borderRadius: 16,

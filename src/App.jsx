@@ -817,10 +817,12 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const tabs = [
     { id: "overview", l: "Overview" },
     { id: "drafts", l: `Drafts (${ad.drafts.length})` },
-    { id: "metrics", l: `Metrics (${ad.metrics.length})` },
-    { id: "comments", l: `Comments (${ad.comments.length})` },
-    { id: "analysis", l: `Analysis (${ad.analyses.length})` },
-    { id: "learnings", l: `Learnings (${ad.learnings.length})` },
+    ...(!isEditor ? [
+      { id: "metrics", l: `Metrics (${ad.metrics.length})` },
+      { id: "comments", l: `Comments (${ad.comments.length})` },
+      { id: "analysis", l: `Analysis (${ad.analyses.length})` },
+      { id: "learnings", l: `Learnings (${ad.learnings.length})` },
+    ] : []),
   ];
 
   const filteredComments = commentFilter === "all" ? ad.comments : ad.comments.filter(c => c.sentiment === commentFilter);
