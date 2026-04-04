@@ -186,6 +186,7 @@ function adToRow(ad, workspaceId) {
       channelMetrics: rest.channelMetrics || {},
       channelMatchedNames: rest.channelMatchedNames || {},
       tiktokUrl: rest.tiktokUrl || "",
+      production_cost: rest.production_cost ?? null,
       // Strategy / Ads Lab fields
       strategy: rest.strategy || {},
     },
@@ -223,6 +224,7 @@ function rowToAd(row) {
     channelMetrics: d.channelMetrics || {},
     channelMatchedNames: d.channelMatchedNames || {},
     tiktokUrl: d.tiktokUrl || "",
+    production_cost: d.production_cost ?? null,
     strategy: d.strategy || {},
     checklist: d.checklist || {},
     stageEnteredAt: d.stageEnteredAt || new Date(row.created_at || Date.now()).getTime(),
