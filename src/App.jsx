@@ -19,6 +19,7 @@ import AudioRecordingPage from "./AudioRecordingPage.jsx";
 import AdCopyPage from "./AdCopyPage.jsx";
 import LandingPageBuilder from "./LandingPageBuilder.jsx";
 import MarketplacePage from "./MarketplacePage.jsx";
+import EditorHomePage from "./EditorHomePage.jsx";
 import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
@@ -2595,7 +2596,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [openAd, setOpenAd] = useState(null);
   const [openAdTab, setOpenAdTab] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [page, setPageRaw] = useState("pipeline");
+  const [page, setPageRaw] = useState(userRole === "editor" ? "home" : "pipeline");
   const [presenceState, setPresenceState] = useState({});
   const presenceRef = useRef(null);
   const [th, setTh] = useState(DT);
@@ -2979,6 +2980,11 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {gateMsg && <div className="toast toast-error">🚫 {gateMsg}</div>}
         {syncMsg && <div className={`toast ${syncMsg.ok ? "toast-success" : "toast-error"}`}>{syncMsg.ok ? "🐳" : "⚠"} {syncMsg.text}</div>}
         {flywheelStatus && <div className="toast toast-success">🧠 {flywheelStatus}</div>}
+
+        {/* ── EDITOR HOME ── */}
+        {page === "home" && role === "editor" && (
+          <EditorHomePage ads={ads} userName={userName} setPage={setPage} activeWorkspaceId={activeWorkspaceId} session={session} myEditorProfile={myEditorProfile} />
+        )}
 
         {/* ── AD EXPANDED VIEW ── */}
         {page === "pipeline" && openAd && (
