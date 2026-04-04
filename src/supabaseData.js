@@ -141,7 +141,8 @@ export async function getWorkspaceSettings(workspaceId) {
     .eq("workspace_id", workspaceId)
     .single();
   if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
-  return data?.thresholds || { green: 15, yellow: 25 };
+  const defaults = { green: 15, yellow: 25, grossMarginPct: 70 };
+  return data?.thresholds ? { ...defaults, ...data.thresholds } : defaults;
 }
 
 export async function saveWorkspaceSettings(workspaceId, thresholds) {

@@ -94,7 +94,7 @@ const VT = [
   { id: "proof", label: "Proof Block", desc: "Different proof arrangement" },
 ];
 
-const DT = { green: 2.0, yellow: 1.0 }; // ROAS thresholds: >= green = winner, >= yellow = medium, < yellow = losing
+const DT = { green: 2.0, yellow: 1.0, grossMarginPct: 70 }; // ROAS thresholds + gross margin %
 const CL = (roas, t) => roas == null ? "none" : roas >= t.green ? "green" : roas >= t.yellow ? "yellow" : "red";
 const CS = {
   green: { l: "Winner", c: "var(--green)", bg: "var(--green-bg)" },
@@ -1024,15 +1024,16 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     adTotalRevenue += (metrics || []).reduce((s, m) => s + (m.revenue != null ? m.revenue : (m.spend || 0) * (m.roas || 0)), 0);
                   });
                   const prodCost = parseFloat(ad.production_cost) || 0;
-                  const grossProfit = adTotalRevenue - adTotalSpend;
-                  const roi = prodCost > 0 ? ((grossProfit - prodCost) / prodCost * 100) : 0;
+                  const adGm = (th.grossMarginPct ?? 70) / 100;
+                  const adNetProfit = (adTotalRevenue * adGm) - adTotalSpend - prodCost;
+                  const roi = prodCost > 0 ? (adNetProfit / prodCost * 100) : 0;
                   const roiColor = roi > 0 ? "var(--green)" : roi === 0 ? "var(--yellow)" : "var(--red)";
                   return (
                     <div style={{ ...hCardS, borderColor: roi > 0 ? "var(--green-border)" : roi < 0 ? "var(--red-border)" : "var(--border-light)" }}>
-                      <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> Ad ROI</div>
-                      <div style={{ ...hValS, color: roiColor }}>{roi >= 0 ? "+" : ""}{roi.toFixed(0)}%</div>
+                      <div style={hLabelS}><span style={{ fontSize: 13 }}>💰</span> Net Profit</div>
+                      <div style={{ ...hValS, color: adNetProfit > 0 ? "var(--green)" : "var(--red)" }}>{CUR} {adNetProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
                       <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
-                        Rev {CUR} {adTotalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })} · Spend {CUR} {adTotalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} · Cost ${prodCost.toFixed(0)}
+                        Rev {CUR} {adTotalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })} x {th.grossMarginPct ?? 70}% - Spend {CUR} {adTotalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} - Cost ${prodCost.toFixed(0)} · ROI {roi >= 0 ? "+" : ""}{roi.toFixed(0)}%
                       </div>
                     </div>
                   );
@@ -2066,9 +2067,11 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
           };
           const totalAdSpend = all.reduce((s, a) => s + adSpendOf(a), 0);
           const totalRevenue = all.reduce((s, a) => s + adRevenueOf(a), 0);
-          const roasProfit = totalRevenue - totalAdSpend;
-          const recouped = totalProdCost > 0 && roasProfit >= totalProdCost;
-          const editorROI = totalProdCost > 0 ? ((roasProfit - totalProdCost) / totalProdCost * 100) : 0;
+          const gm = (th.grossMarginPct ?? 70) / 100;
+          const grossProfit = totalRevenue * gm;
+          const netProfit = grossProfit - totalAdSpend - totalProdCost;
+          const recouped = totalProdCost > 0 && netProfit >= 0;
+          const editorROI = totalProdCost > 0 ? (netProfit / totalProdCost * 100) : 0;
 
           return (
             <div key={name} className="card" onClick={() => setSelectedEditor({ name, profile, stats: { winRate, onTime, qualScore, bonus, all: all.length, overdueN, health } })} style={{ cursor: "pointer", transition: "all var(--transition)" }}>
@@ -2098,7 +2101,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
               </div>
               {(totalProdCost > 0 || totalRevenue > 0) && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-light)" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
                     <div className="stat-box">
                       <div className="stat-value" style={{ fontSize: 12, color: "var(--green-light)" }}>{CUR} {totalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
                       <div className="stat-label">Revenue</div>
@@ -2108,12 +2111,18 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
                       <div className="stat-label">Ad Spend</div>
                     </div>
                     <div className="stat-box">
-                      <div className="stat-value" style={{ fontSize: 12, color: roasProfit > 0 ? "var(--green)" : "var(--red)" }}>{CUR} {roasProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
-                      <div className="stat-label">Gross Profit</div>
+                      <div className="stat-value" style={{ fontSize: 12, color: netProfit > 0 ? "var(--green)" : "var(--red)" }}>{CUR} {netProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+                      <div className="stat-label">Net Profit</div>
                     </div>
+                    {totalProdCost > 0 && (
+                      <div className="stat-box">
+                        <div className="stat-value" style={{ fontSize: 12, color: editorROI > 0 ? "var(--green)" : editorROI < 0 ? "var(--red)" : "var(--yellow)" }}>{editorROI >= 0 ? "+" : ""}{editorROI.toFixed(0)}%</div>
+                        <div className="stat-label">ROI</div>
+                      </div>
+                    )}
                   </div>
                   {totalProdCost > 0 && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6 }}>
                       <div className="stat-box">
                         <div className="stat-value" style={{ fontSize: 12 }}>${totalProdCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
                         <div className="stat-label">Prod Cost</div>
@@ -2123,15 +2132,12 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
                         <div className="stat-label">Cost/Winner</div>
                       </div>
                       <div className="stat-box">
-                        <div className="stat-value" style={{ fontSize: 12, color: editorROI > 0 ? "var(--green)" : editorROI < 0 ? "var(--red)" : "var(--yellow)" }}>{editorROI >= 0 ? "+" : ""}{editorROI.toFixed(0)}%</div>
-                        <div className="stat-label">ROI</div>
-                      </div>
-                      <div className="stat-box">
-                        <div className="stat-value" style={{ fontSize: 12, color: recouped ? "var(--green)" : "var(--yellow)" }}>{recouped ? "Yes" : `${Math.round((roasProfit / totalProdCost) * 100)}%`}</div>
+                        <div className="stat-value" style={{ fontSize: 12, color: recouped ? "var(--green)" : "var(--yellow)" }}>{recouped ? "Yes" : `${Math.round(Math.max(0, (netProfit + totalProdCost) / totalProdCost * 100))}%`}</div>
                         <div className="stat-label">Recouped</div>
                       </div>
                     </div>
                   )}
+                  <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 6 }}>Net = Revenue x {th.grossMarginPct ?? 70}% margin - Ad Spend - Prod Cost</div>
                 </div>
               )}
               {overdueN > 0 && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--red-light)" }}>{overdueN} overdue</div>}

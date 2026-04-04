@@ -620,11 +620,12 @@ function IntegrationsTab() {
 function PipelineTab({ thresholds, setThresholds }) {
   const [g, setG] = useState(thresholds.green);
   const [y, setY] = useState(thresholds.yellow);
+  const [gm, setGm] = useState(thresholds.grossMarginPct ?? 70);
   const [saved, setSaved] = useState(false);
   const [prompt, setPrompt] = useState(getAnalysisPrompt());
   const [promptSaved, setPromptSaved] = useState(false);
 
-  const saveThresholds = () => { setThresholds({ green: g, yellow: y }); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const saveThresholds = () => { setThresholds({ green: g, yellow: y, grossMarginPct: gm }); setSaved(true); setTimeout(() => setSaved(false), 2000); };
 
   return (
     <div>
@@ -651,6 +652,26 @@ function PipelineTab({ thresholds, setThresholds }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={saveThresholds} className="btn btn-primary btn-sm">Save Thresholds</button>
+          {saved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+
+      {/* Gross Profit Margin */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">Product Gross Margin</div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
+          Your product's gross profit margin (Revenue minus COGS). Used to calculate net profit on ads: <span style={{ color: "var(--text-secondary)" }}>Net Profit = (Revenue x Margin%) - Ad Spend - Production Cost</span>
+        </p>
+        <div style={{ maxWidth: 200 }}>
+          <label className="label" style={{ marginTop: 0 }}>Gross Margin %</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="number" step="1" min="0" max="100" value={gm} onChange={e => setGm(+e.target.value)} className="input" style={{ width: 80 }} />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>%</span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>e.g. 70% means for every SAR 100 revenue, SAR 30 is COGS</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+          <button onClick={saveThresholds} className="btn btn-primary btn-sm">Save</button>
           {saved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
         </div>
       </div>
