@@ -134,7 +134,7 @@ export default function EditorSettings({ userId, userName }) {
         {profile?.compensation_rate && (
           <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--bg-elevated)", borderRadius: 8, fontSize: 12 }}>
             <span style={{ color: "var(--text-muted)" }}>Your rate:</span>{" "}
-            <span style={{ color: "var(--green-light)", fontWeight: 600 }}>${profile.compensation_rate}/min</span>
+            <span style={{ color: "var(--green-light)", fontWeight: 600 }}>${parseFloat(String(profile.compensation_rate).replace(/[^0-9.]/g, "")) || profile.compensation_rate}/min</span>
             <span style={{ color: "var(--text-muted)", marginLeft: 4, fontSize: 10 }}>(set by admin)</span>
           </div>
         )}
