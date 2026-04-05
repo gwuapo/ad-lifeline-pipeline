@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { id: "learnings", icon: "🧠", label: "Learnings" },
   { id: "audio", icon: "🎙️", label: "Audio" },
   { id: "adcopy", icon: "✍️", label: "Ad Copy" },
+  { id: "analytics", icon: "📈", label: "Analytics" },
   { id: "landingpages", icon: "🌐", label: "Landing Pages" },
   { id: "marketplace", icon: "🏪", label: "Marketplace" },
 ];
