@@ -15,9 +15,9 @@ const SETTINGS_TABS = [
   { id: "pipeline", icon: "⚙", label: "Pipeline" },
 ];
 
-const ROLE_LABELS = { founder: "Founder", admin: "Admin", manager: "Manager", strategist: "Creative Strategist", editor: "Editor" };
-const ROLE_COLORS = { founder: "var(--accent-light)", admin: "var(--accent-light)", manager: "#06b6d4", strategist: "var(--green)", editor: "var(--yellow)" };
-const ROLE_BG = { founder: "var(--accent-bg)", admin: "var(--accent-bg)", manager: "rgba(6,182,212,0.1)", strategist: "var(--green-bg)", editor: "var(--yellow-bg)" };
+const ROLE_LABELS = { founder: "Founder", admin: "Admin", manager: "Manager", strategist: "Creative Strategist", editor: "Editor", voice_actor: "Voice Actor" };
+const ROLE_COLORS = { founder: "var(--accent-light)", admin: "var(--accent-light)", manager: "#06b6d4", strategist: "var(--green)", editor: "var(--yellow)", voice_actor: "#f472b6" };
+const ROLE_BG = { founder: "var(--accent-bg)", admin: "var(--accent-bg)", manager: "rgba(6,182,212,0.1)", strategist: "var(--green-bg)", editor: "var(--yellow-bg)", voice_actor: "rgba(244,114,182,0.1)" };
 
 export default function SettingsPage({ thresholds, setThresholds, activeWorkspaceId, workspaces, session, userName }) {
   const [tab, setTab] = useState("profile");

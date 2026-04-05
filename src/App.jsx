@@ -410,7 +410,7 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
 
-function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, activeWorkspaceId, session, initialTab, strategyData, editorProfiles }) {
+function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors, userName, activeWorkspaceId, session, initialTab, strategyData, editorProfiles }) {
   const [tab, setTab] = useState(initialTab || "overview");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [msg, setMsg] = useState("");
@@ -474,7 +474,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const gdays = gd(ad, th);
   const winner = cl === "green" && gdays >= 5;
   const kids = allAds.filter(a => a.parentId === ad.id);
-  const isEditor = role === "editor";
+  const isEditor = role === "editor" || role === "voice_actor";
   const isStrategist = role === "strategist";
   const _isFounderOrAdmin = role === "founder" || role === "admin";
   const _isManager = role === "manager";
@@ -665,7 +665,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
     if (type === "video" && dur > 0 && !ad.production_cost_override) {
       const ep = editorProfiles?.[ad.editor];
       const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
-      const vaRate = parseFloat(ad.voice_actor_rate) || 0;
+      const vaProfile = editorProfiles?.[ad.voice_actor];
+      const vaRate = parseFloat(vaProfile?.compensation_rate || vaProfile?.compensationRate) || 0;
       const editorCost = +(editorRate * dur).toFixed(2);
       const vaCost = +(vaRate * dur).toFixed(2);
       const totalCost = +(editorCost + vaCost).toFixed(2);
@@ -857,7 +858,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                       if (newEditor && !ad.production_cost_override) {
                         const ep = editorProfiles?.[newEditor];
                         const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
-                        const vaRate = parseFloat(ad.voice_actor_rate) || 0;
+                        const vaProfile = editorProfiles?.[ad.voice_actor];
+                        const vaRate = parseFloat(vaProfile?.compensation_rate || vaProfile?.compensationRate) || 0;
                         const dur = parseFloat(ad.video_duration) || 0;
                         if (dur > 0) {
                           const editorCost = +(editorRate * dur).toFixed(2);
@@ -891,42 +893,44 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                   <div><span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: stg.color + "15", color: stg.color, fontWeight: 600 }}>{stg.label}</span></div>
                 </div>
                 {/* Voice Actor */}
-                <div style={hCardS} onClick={() => !editingVA && setEditingVA(true)}>
+                <div style={hCardS} onClick={() => !editingVA && !isEditor && setEditingVA(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>🎙️</span> Voice Actor</div>
                   {editingVA ? (
-                    <div><input list="va-list-hl" value={ad.strategy?.voice_actor || ""} onChange={e => dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...(ad.strategy || {}), voice_actor: e.target.value } } })} onBlur={() => { setEditingVA(false); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} autoFocus className="input" placeholder="Select or type..." style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
-                    <datalist id="va-list-hl">{[...new Set(allAds.map(a => a.strategy?.voice_actor).filter(Boolean))].map(v => <option key={v} value={v} />)}</datalist></div>
+                    <select value={ad.voice_actor || ""} onChange={e => {
+                      const newVA = e.target.value;
+                      setEditingVA(false);
+                      const updates = { voice_actor: newVA };
+                      if (!ad.production_cost_override) {
+                        const dur = parseFloat(ad.video_duration) || 0;
+                        const vaProfile = editorProfiles?.[newVA];
+                        const vaRate = parseFloat(vaProfile?.compensation_rate || vaProfile?.compensationRate) || 0;
+                        const ep = editorProfiles?.[ad.editor];
+                        const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                        if (dur > 0) {
+                          const editorCost = +(editorRate * dur).toFixed(2);
+                          const vaCost = +(vaRate * dur).toFixed(2);
+                          updates.editor_cost = editorCost;
+                          updates.voice_actor_cost = vaCost;
+                          updates.production_cost = +(editorCost + vaCost).toFixed(2);
+                        }
+                      }
+                      dispatch({ type: "UPDATE", id: ad.id, data: updates });
+                      setSaveToast(true); setTimeout(() => setSaveToast(false), 2200);
+                    }} onBlur={() => setEditingVA(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                      <option value="">Unassigned</option>
+                      {(voiceActors || []).map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
                   ) : (
-                    <div style={{ ...hValS, cursor: "pointer" }}>{ad.strategy?.voice_actor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
+                    <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default" }}>
+                      {ad.voice_actor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}
+                      {ad.voice_actor && (() => {
+                        const vaP = editorProfiles?.[ad.voice_actor];
+                        const vaR = parseFloat(vaP?.compensation_rate || vaP?.compensationRate) || 0;
+                        return vaR > 0 ? <span style={{ fontSize: 9, color: "var(--text-muted)", marginLeft: 4 }}>${vaR}/min</span> : null;
+                      })()}
+                    </div>
                   )}
                 </div>
-                {/* Voice Actor Rate */}
-                {!isEditor && (
-                  <div style={hCardS} onClick={() => setEditingVARate(true)}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💲</span> VA Rate ($/min)</div>
-                    {editingVARate ? (
-                      <input type="number" step="0.01" min="0" value={ad.voice_actor_rate ?? ""} onChange={e => {
-                        const vaRate = parseFloat(e.target.value) || 0;
-                        const dur = parseFloat(ad.video_duration) || 0;
-                        const updates = { voice_actor_rate: vaRate };
-                        if (dur > 0) {
-                          const vaCost = +(vaRate * dur).toFixed(2);
-                          updates.voice_actor_cost = vaCost;
-                          if (!ad.production_cost_override) {
-                            const ep = editorProfiles?.[ad.editor];
-                            const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
-                            const editorCost = +(editorRate * dur).toFixed(2);
-                            updates.editor_cost = editorCost;
-                            updates.production_cost = +(editorCost + vaCost).toFixed(2);
-                          }
-                        }
-                        dispatch({ type: "UPDATE", id: ad.id, data: updates });
-                      }} onBlur={() => { setEditingVARate(false); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} autoFocus className="input" placeholder="0.00" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
-                    ) : (
-                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.voice_actor_rate ? `$${Number(ad.voice_actor_rate).toFixed(2)}/min` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
-                    )}
-                  </div>
-                )}
                 {/* Type */}
                 <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
@@ -966,7 +970,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                         if (!ad.production_cost_override) {
                           const ep = editorProfiles?.[ad.editor];
                           const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
-                          const vaRate = parseFloat(ad.voice_actor_rate) || 0;
+                          const vaProfile = editorProfiles?.[ad.voice_actor];
+                          const vaRate = parseFloat(vaProfile?.compensation_rate || vaProfile?.compensationRate) || 0;
                           const editorCost = +(editorRate * dur).toFixed(2);
                           const vaCost = +(vaRate * dur).toFixed(2);
                           updates.editor_cost = editorCost;
@@ -1994,6 +1999,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
   const [editorTab, setEditorTab] = useState("performance");
   const [showAdd, setShowAdd] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("editor");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
   const [selectedEditor, setSelectedEditor] = useState(null);
@@ -2024,9 +2030,9 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
       // Get their display name from profile or email
       const profile = await fetchEditorProfile(userId);
       const editorName = profile?.display_name || inviteEmail.split("@")[0];
-      await addMemberToWorkspace(activeWorkspaceId, userId, "editor", editorName);
-      addEditor(editorName);
-      setInviteResult({ ok: true, msg: `Added ${editorName} to workspace` });
+      await addMemberToWorkspace(activeWorkspaceId, userId, inviteRole, editorName);
+      if (inviteRole !== "voice_actor") addEditor(editorName);
+      setInviteResult({ ok: true, msg: `Added ${editorName} as ${inviteRole.replace("_", " ")}` });
       setInviteEmail("");
       setShowAdd(false);
     } catch (e) {
@@ -2040,28 +2046,40 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
     return allProfiles[name] || null;
   };
 
+  const editorProfilesList = Object.values(allProfiles).filter(p => p.member_role !== "voice_actor");
+  const vaProfilesList = Object.values(allProfiles).filter(p => p.member_role === "voice_actor");
+  const vaNames = vaProfilesList.map(p => p.editor_name || p.display_name).filter(Boolean);
+
   return (
     <div className="animate-fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Editors</h2>
-          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>Performance, commissions, and team management.</p>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Team</h2>
+          <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>Editors, voice actors, performance, and commissions.</p>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary btn-sm">{showAdd ? "Cancel" : "+ Add Editor"}</button>
+        <button onClick={() => setShowAdd(!showAdd)} className="btn btn-primary btn-sm">{showAdd ? "Cancel" : "+ Invite Member"}</button>
       </div>
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-        <button onClick={() => setEditorTab("performance")} className={`btn btn-sm ${editorTab === "performance" ? "btn-primary" : "btn-ghost"}`}>Performance</button>
+        <button onClick={() => setEditorTab("performance")} className={`btn btn-sm ${editorTab === "performance" ? "btn-primary" : "btn-ghost"}`}>Editors</button>
+        <button onClick={() => setEditorTab("voice_actors")} className={`btn btn-sm ${editorTab === "voice_actors" ? "btn-primary" : "btn-ghost"}`}>Voice Actors</button>
         <button onClick={() => setEditorTab("commission")} className={`btn btn-sm ${editorTab === "commission" ? "btn-primary" : "btn-ghost"}`}>Commission</button>
       </div>
       {showAdd && <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
           <div style={{ flex: 1 }}>
             <label className="label" style={{ marginTop: 0 }}>Editor Email</label>
-            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleInvite()} className="input" placeholder="editor@email.com" autoFocus />
+            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleInvite()} className="input" placeholder="email@example.com" autoFocus />
           </div>
-          <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()} className="btn btn-primary btn-sm">
+          <div>
+            <label className="label" style={{ marginTop: 0 }}>Role</label>
+            <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} className="input">
+              <option value="editor">Editor</option>
+              <option value="voice_actor">Voice Actor</option>
+            </select>
+          </div>
+          <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()} className="btn btn-primary btn-sm" style={{ alignSelf: "flex-end" }}>
             {inviteLoading ? "Adding..." : "Invite to Workspace"}
           </button>
         </div>
@@ -2077,6 +2095,53 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
         )}
         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>The editor must have an Ad Lifeline account first.</p>
       </div>}
+      {/* ── VOICE ACTORS TAB ── */}
+      {editorTab === "voice_actors" && (
+        <div>
+          {vaProfilesList.length === 0 ? (
+            <div className="card" style={{ textAlign: "center", padding: 40 }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🎙️</div>
+              <div style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 8 }}>No voice actors yet.</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Invite a voice actor using the button above and select "Voice Actor" as their role.</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: vaProfilesList.length < 3 ? `repeat(${Math.max(1, vaProfilesList.length)},1fr)` : "repeat(3,1fr)", gap: 12 }}>
+              {vaProfilesList.map(profile => {
+                const name = profile.editor_name || profile.display_name || "Voice Actor";
+                const rate = parseFloat(profile.compensation_rate || profile.compensationRate) || 0;
+                const capacity = profile.weekly_minutes || profile.weeklyMinutes || 0;
+                const assignedAds = ads.filter(a => a.voice_actor === name && a.stage !== "killed");
+                const totalMinutes = assignedAds.reduce((s, a) => s + (parseFloat(a.video_duration) || 0), 0);
+                const totalEarned = assignedAds.reduce((s, a) => s + (parseFloat(a.voice_actor_cost) || 0), 0);
+                return (
+                  <div key={name} className="card" onClick={() => setSelectedEditor({ name, profile, stats: { winRate: 0, onTime: 100, qualScore: 100, bonus: 0, all: assignedAds.length, overdueN: 0, health: "green" } })} style={{ cursor: "pointer" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {profile.photo_url ? <img src={profile.photo_url} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} /> : <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--accent-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "var(--accent-light)" }}>{name[0]}</div>}
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{name}</div>
+                          <span className="badge badge-accent" style={{ fontSize: 9 }}>Voice Actor</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--green)", fontFamily: "var(--fm)" }}>${totalEarned.toFixed(0)}</div>
+                        <div style={{ fontSize: 9, color: "var(--text-muted)" }}>earned</div>
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                      <div className="stat-box"><div className="stat-value" style={{ fontSize: 14 }}>${rate}/min</div><div className="stat-label">Rate</div></div>
+                      <div className="stat-box"><div className="stat-value" style={{ fontSize: 14 }}>{assignedAds.length}</div><div className="stat-label">Assigned</div></div>
+                      <div className="stat-box"><div className="stat-value" style={{ fontSize: 14 }}>{totalMinutes.toFixed(1)}m</div><div className="stat-label">Minutes</div></div>
+                    </div>
+                    {capacity > 0 && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Capacity: {capacity} min/week</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── COMMISSION TAB ── */}
       {editorTab === "commission" && (
         <div>
@@ -2617,7 +2682,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [openAd, setOpenAd] = useState(null);
   const [openAdTab, setOpenAdTab] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [page, setPageRaw] = useState(userRole === "editor" ? "home" : "pipeline");
+  const [page, setPageRaw] = useState(userRole === "editor" || userRole === "voice_actor" ? "home" : "pipeline");
   const [presenceState, setPresenceState] = useState({});
   const presenceRef = useRef(null);
   const [th, setTh] = useState(DT);
@@ -2626,6 +2691,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const isManager = role === "manager";
   const canManage = isFounderOrAdmin || isManager;
   const [editors, setEditors] = useState(DEFAULT_EDITORS);
+  const [voiceActors, setVoiceActors] = useState([]);
   const [editorName, setEditorName] = useState(userRole === "editor" ? (userName || "") : "");
   const [myEditorProfile, setMyEditorProfile] = useState(null);
   const [earningsEditor, setEarningsEditor] = useState(null);
@@ -2669,6 +2735,10 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         const adEditors = [...new Set(adsData.map(a => a.editor).filter(Boolean))];
         const allEditors = [...new Set([...editorNames, ...adEditors])];
         setEditors(allEditors.length > 0 ? allEditors : DEFAULT_EDITORS);
+        // Derive voice actor names from workspace members with voice_actor role
+        const vaNames = members.filter(m => m.role === "voice_actor").map(m => m.editor_name || "Voice Actor");
+        const adVAs = [...new Set(adsData.map(a => a.voice_actor).filter(Boolean))];
+        setVoiceActors([...new Set([...vaNames, ...adVAs])]);
         // Fix editor name matching: resolve from workspace_members or editor_profiles
         if (session?.user?.id && (userRole === "editor" || userRole === "strategist")) {
           const myMembership = members.find(m => m.user_id === session.user.id);
@@ -2968,7 +3038,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
     return () => window.removeEventListener("keydown", handler);
   }, [openAd]);
 
-  const visibleAds = (role === "editor" || role === "strategist") ? ads.filter(a => a.editor === editorName && a.stage !== "killed") : ads.filter(a => a.stage !== "killed");
+  const visibleAds = (role === "editor" || role === "voice_actor" || role === "strategist") ? ads.filter(a => (a.editor === editorName || a.voice_actor === editorName) && a.stage !== "killed") : ads.filter(a => a.stage !== "killed");
   const live = visibleAds.filter(a => a.stage === "live");
   const win = live.filter(a => { const l = lm(a); return CL(l?.roas ?? 0, th) === "green"; }).length;
   const lose = live.filter(a => { const l = lm(a); return CL(l?.roas ?? 0, th) === "red"; }).length;
@@ -3003,13 +3073,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {flywheelStatus && <div className="toast toast-success">🧠 {flywheelStatus}</div>}
 
         {/* ── EDITOR HOME ── */}
-        {page === "home" && role === "editor" && (
+        {page === "home" && (role === "editor" || role === "voice_actor") && (
           <EditorHomePage ads={ads} userName={userName} setPage={setPage} activeWorkspaceId={activeWorkspaceId} session={session} myEditorProfile={myEditorProfile} />
         )}
 
         {/* ── AD EXPANDED VIEW ── */}
         {page === "pipeline" && openAd && (
-          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} strategyData={strategyData} editorProfiles={editorProfiles} />
+          <AdPanel ad={ads.find(a => a.id === openAd.id) || openAd} onClose={() => { setOpenAd(null); setOpenAdTab(null); }} dispatch={dispatch} th={th} allAds={ads} role={role} editors={editors} voiceActors={voiceActors} userName={userName} activeWorkspaceId={activeWorkspaceId} session={session} initialTab={openAdTab} strategyData={strategyData} editorProfiles={editorProfiles} />
         )}
 
         {/* ── PIPELINE PAGE ── */}
@@ -3244,7 +3314,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "marketplace" && <MarketplacePage activeWorkspaceId={activeWorkspaceId} role={role} session={session} userName={userName} editors={editors} editorProfiles={editorProfiles} />}
 
         {/* ── SETTINGS PAGE ── */}
-        {page === "settings" && role === "editor" && <EditorSettings userId={session?.user?.id} userName={userName} />}
+        {page === "settings" && (role === "editor" || role === "voice_actor") && <EditorSettings userId={session?.user?.id} userName={userName} />}
         {page === "settings" && role !== "editor" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
 
         {/* Modals (only NewAdForm stays as modal) */}

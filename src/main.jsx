@@ -204,7 +204,7 @@ function Root() {
     );
   }
 
-  const ROLE_DISPLAY = { founder: "Founder", admin: "Admin", manager: "Manager", strategist: "Creative Strategist", editor: "Editor" };
+  const ROLE_DISPLAY = { founder: "Founder", admin: "Admin", manager: "Manager", strategist: "Creative Strategist", editor: "Editor", voice_actor: "Voice Actor" };
   // Non-founder/admin with no workspaces → waiting to be invited
   if (!["founder", "admin"].includes(role) && workspaces && workspaces.length === 0) {
     return (

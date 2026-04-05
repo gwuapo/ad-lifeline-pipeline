@@ -389,12 +389,12 @@ export async function upsertEditorProfile(userId, profile) {
 }
 
 export async function fetchAllEditorProfiles(workspaceId) {
-  // Get all editor members of this workspace, then fetch their profiles
+  // Get all editor + voice_actor members of this workspace, then fetch their profiles
   const { data: members, error: memErr } = await supabase
     .from("workspace_members")
-    .select("user_id, editor_name")
+    .select("user_id, editor_name, role")
     .eq("workspace_id", workspaceId)
-    .eq("role", "editor");
+    .in("role", ["editor", "voice_actor"]);
   if (memErr) throw memErr;
   if (!members?.length) return [];
 
@@ -407,7 +407,7 @@ export async function fetchAllEditorProfiles(workspaceId) {
 
   return (profiles || []).map(p => {
     const member = members.find(m => m.user_id === p.user_id);
-    return { ...p, editor_name: member?.editor_name || p.display_name };
+    return { ...p, editor_name: member?.editor_name || p.display_name, member_role: member?.role || "editor" };
   });
 }
 

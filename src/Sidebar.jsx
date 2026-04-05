@@ -5,7 +5,7 @@ const NAV_ITEMS = [
   { id: "home", icon: "🏠", label: "Home" },
   { id: "pipeline", icon: "📊", label: "Pipeline" },
   { id: "strategy", icon: "🧪", label: "Strategy" },
-  { id: "editors", icon: "👥", label: "Editors" },
+  { id: "editors", icon: "👥", label: "Team" },
   { id: "splittests", icon: "⚖️", label: "Split Tests" },
   { id: "earnings", icon: "💰", label: "Earnings" },
   { id: "learnings", icon: "🧠", label: "Learnings" },
@@ -71,7 +71,7 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
 
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {NAV_ITEMS.filter(item => {
-            if (role === "editor") return item.id === "home" || item.id === "pipeline" || item.id === "earnings" || item.id === "marketplace";
+            if (role === "editor" || role === "voice_actor") return item.id === "home" || item.id === "pipeline" || item.id === "earnings" || item.id === "marketplace";
             if (role === "strategist") return item.id !== "editors" && item.id !== "splittests" && item.id !== "home";
             return item.id !== "home";
           }).map(item => (
