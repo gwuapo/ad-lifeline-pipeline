@@ -1331,12 +1331,8 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                 <input value={draftName} onChange={e => setDraftName(e.target.value)} className="input" placeholder="File name, e.g. whistleblower_edit_v2.mp4" />
                 <input value={draftUrl} onChange={e => setDraftUrl(e.target.value)} className="input" placeholder="URL (Google Drive, Dropbox, Frame.io, etc.)" />
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>⏱️</span>
-                    <input type="number" step="0.1" min="0" value={draftDuration} onChange={e => setDraftDuration(e.target.value)} className="input" placeholder="Duration (min)" style={{ width: 120 }} />
-                  </div>
-                  <div style={{ flex: 1 }} />
-                  <button onClick={() => submitDraft("video", draftName, draftUrl, draftDuration)} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4 }}>Submit Video Draft</button>
+                  <input type="number" step="0.1" min="0" value={draftDuration} onChange={e => setDraftDuration(e.target.value)} className="input" placeholder="Video length in minutes" style={{ flex: 1 }} />
+                  <button onClick={() => submitDraft("video", draftName, draftUrl, draftDuration)} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4, flexShrink: 0 }}>Submit Video Draft</button>
                 </div>
               </div>
             </div>
