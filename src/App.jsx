@@ -448,6 +448,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [revText, setRevText] = useState("");
   const [draftName, setDraftName] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
+  const [draftDuration, setDraftDuration] = useState("");
   const [draftType, setDraftType] = useState("video"); // "script" or "video"
   const [scriptDraftName, setScriptDraftName] = useState("");
   const [scriptDraftUrl, setScriptDraftUrl] = useState("");
@@ -653,10 +654,25 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const createVar = () => { if (!vf.name.trim()) return; dispatch({ type: "CREATE_VAR", pid: ad.id, name: vf.name.trim(), brief: vf.brief.trim(), type: ad.type, vt: vm.id }); setVm(null); setVf({ name: "", brief: "" }); };
   const doIter = () => { const last = ad.analyses[ad.analyses.length - 1]; dispatch({ type: "ITERATE", id: ad.id, reason: last?.nextIterationPlan || last?.summary || "Based on metrics" }); };
   const doKill = () => dispatch({ type: "KILL", id: ad.id });
-  const submitDraft = (type, name, url) => {
+  const submitDraft = (type, name, url, duration) => {
     if (!name.trim()) return;
-    dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft: { id: uid(), name: name.trim(), url: url.trim() || null, draftType: type, version: ad.drafts.filter(d => d.draftType === type || (!d.draftType && type === "video")).length + 1, ts: now(), status: "in-review" } });
-    if (type === "video") { setDraftName(""); setDraftUrl(""); }
+    const dur = parseFloat(duration) || 0;
+    const draft = { id: uid(), name: name.trim(), url: url.trim() || null, draftType: type, version: ad.drafts.filter(d => d.draftType === type || (!d.draftType && type === "video")).length + 1, ts: now(), status: "in-review" };
+    if (type === "video" && dur > 0) draft.duration = dur;
+    dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft });
+    // Auto-update ad duration + costs from video draft
+    if (type === "video" && dur > 0 && !ad.production_cost_override) {
+      const ep = editorProfiles?.[ad.editor];
+      const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+      const vaRate = parseFloat(ad.voice_actor_rate) || 0;
+      const editorCost = +(editorRate * dur).toFixed(2);
+      const vaCost = +(vaRate * dur).toFixed(2);
+      const totalCost = +(editorCost + vaCost).toFixed(2);
+      const updates = { video_duration: dur, editor_cost: editorCost, voice_actor_cost: vaCost };
+      if (editorRate > 0 || vaRate > 0) updates.production_cost = totalCost;
+      dispatch({ type: "UPDATE", id: ad.id, data: updates });
+    }
+    if (type === "video") { setDraftName(""); setDraftUrl(""); setDraftDuration(""); }
     else { setScriptDraftName(""); setScriptDraftUrl(""); }
   };
   const requestRevision = () => { if (!revText.trim()) return; dispatch({ type: "ADD_REVISION", id: ad.id, rev: { id: uid(), from: "Adolf", text: revText.trim(), ts: now(), resolved: false } }); setRevText(""); };
@@ -698,6 +714,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [editingType, setEditingType] = useState(false);
   const [editingVA, setEditingVA] = useState(false);
+  const [editingVARate, setEditingVARate] = useState(false);
   const [editingCost, setEditingCost] = useState(false);
   const [editingDuration, setEditingDuration] = useState(false);
   const [draftRatings, setDraftRatings] = useState({});
@@ -838,9 +855,16 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                       const updates = { editor: newEditor };
                       if (newEditor && !ad.production_cost_override) {
                         const ep = editorProfiles?.[newEditor];
-                        const rate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                        const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                        const vaRate = parseFloat(ad.voice_actor_rate) || 0;
                         const dur = parseFloat(ad.video_duration) || 0;
-                        if (rate > 0 && dur > 0) updates.production_cost = +(rate * dur).toFixed(2);
+                        if (dur > 0) {
+                          const editorCost = +(editorRate * dur).toFixed(2);
+                          const vaCost = +(vaRate * dur).toFixed(2);
+                          updates.editor_cost = editorCost;
+                          updates.voice_actor_cost = vaCost;
+                          if (editorRate > 0 || vaRate > 0) updates.production_cost = +(editorCost + vaCost).toFixed(2);
+                        }
                       }
                       dispatch({ type: "UPDATE", id: ad.id, data: updates });
                       setSaveToast(true); setTimeout(() => setSaveToast(false), 2200);
@@ -875,6 +899,33 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                     <div style={{ ...hValS, cursor: "pointer" }}>{ad.strategy?.voice_actor || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Unassigned</span>}</div>
                   )}
                 </div>
+                {/* Voice Actor Rate */}
+                {!isEditor && (
+                  <div style={hCardS} onClick={() => setEditingVARate(true)}>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>💲</span> VA Rate ($/min)</div>
+                    {editingVARate ? (
+                      <input type="number" step="0.01" min="0" value={ad.voice_actor_rate ?? ""} onChange={e => {
+                        const vaRate = parseFloat(e.target.value) || 0;
+                        const dur = parseFloat(ad.video_duration) || 0;
+                        const updates = { voice_actor_rate: vaRate };
+                        if (dur > 0) {
+                          const vaCost = +(vaRate * dur).toFixed(2);
+                          updates.voice_actor_cost = vaCost;
+                          if (!ad.production_cost_override) {
+                            const ep = editorProfiles?.[ad.editor];
+                            const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                            const editorCost = +(editorRate * dur).toFixed(2);
+                            updates.editor_cost = editorCost;
+                            updates.production_cost = +(editorCost + vaCost).toFixed(2);
+                          }
+                        }
+                        dispatch({ type: "UPDATE", id: ad.id, data: updates });
+                      }} onBlur={() => { setEditingVARate(false); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} autoFocus className="input" placeholder="0.00" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                    ) : (
+                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.voice_actor_rate ? `$${Number(ad.voice_actor_rate).toFixed(2)}/min` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+                    )}
+                  </div>
+                )}
                 {/* Type */}
                 <div style={hCardS} onClick={() => !isEditor && setEditingType(true)}>
                   <div style={hLabelS}><span style={{ fontSize: 13 }}>🎬</span> Type</div>
@@ -911,10 +962,15 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                       <input type="number" step="0.1" min="0" value={ad.video_duration ?? ""} onChange={e => {
                         const dur = parseFloat(e.target.value) || 0;
                         const updates = { video_duration: dur };
-                        if (!ad.production_cost_override && ad.editor) {
+                        if (!ad.production_cost_override) {
                           const ep = editorProfiles?.[ad.editor];
-                          const rate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
-                          if (rate > 0 && dur > 0) updates.production_cost = +(rate * dur).toFixed(2);
+                          const editorRate = parseFloat(ep?.compensation_rate || ep?.compensationRate) || 0;
+                          const vaRate = parseFloat(ad.voice_actor_rate) || 0;
+                          const editorCost = +(editorRate * dur).toFixed(2);
+                          const vaCost = +(vaRate * dur).toFixed(2);
+                          updates.editor_cost = editorCost;
+                          updates.voice_actor_cost = vaCost;
+                          if ((editorRate > 0 || vaRate > 0) && dur > 0) updates.production_cost = +(editorCost + vaCost).toFixed(2);
                         }
                         dispatch({ type: "UPDATE", id: ad.id, data: updates });
                       }} onBlur={() => setEditingDuration(false)} autoFocus className="input" placeholder="0" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
@@ -935,6 +991,11 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
                       <div style={{ ...hValS, cursor: "pointer" }}>
                         {ad.production_cost ? `$${Number(ad.production_cost).toFixed(2)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}
                         {ad.production_cost && !ad.production_cost_override && <span style={{ fontSize: 8, color: "var(--accent-light)", marginLeft: 4 }}>auto</span>}
+                        {ad.production_cost && !ad.production_cost_override && (ad.editor_cost || ad.voice_actor_cost) && (
+                          <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
+                            {ad.editor_cost ? `Editor $${Number(ad.editor_cost).toFixed(2)}` : ""}{ad.editor_cost && ad.voice_actor_cost ? " + " : ""}{ad.voice_actor_cost ? `VA $${Number(ad.voice_actor_cost).toFixed(2)}` : ""}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1269,8 +1330,13 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, userName, a
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <input value={draftName} onChange={e => setDraftName(e.target.value)} className="input" placeholder="File name, e.g. whistleblower_edit_v2.mp4" />
                 <input value={draftUrl} onChange={e => setDraftUrl(e.target.value)} className="input" placeholder="URL (Google Drive, Dropbox, Frame.io, etc.)" />
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={() => submitDraft("video", draftName, draftUrl)} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4 }}>Submit Video Draft</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>⏱️</span>
+                    <input type="number" step="0.1" min="0" value={draftDuration} onChange={e => setDraftDuration(e.target.value)} className="input" placeholder="Duration (min)" style={{ width: 120 }} />
+                  </div>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => submitDraft("video", draftName, draftUrl, draftDuration)} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4 }}>Submit Video Draft</button>
                 </div>
               </div>
             </div>
