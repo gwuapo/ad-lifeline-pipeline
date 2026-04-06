@@ -955,8 +955,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
                   </div>
                 ) : (
                   <div style={hCardS}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Status</div>
-                    <div style={hValS}>{ad.stage === "killed" ? "Killed" : "In progress"}</div>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Ad Tier</div>
+                    <div style={{ ...hValS, color: ad.strategy?.ad_tier === "Premium" ? "#f59e0b" : ad.strategy?.ad_tier === "Minimalistic" ? "#94a3b8" : "var(--text-muted)" }}>
+                      {ad.strategy?.ad_tier || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}
+                    </div>
                   </div>
                 )}
                 {/* Video Duration */}
@@ -1095,152 +1097,157 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
             const sectionLabel = (text) => <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.8, padding: "10px 0 4px", borderBottom: "1px solid var(--border-light)" }}>{text}</div>;
             return (
               <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-light)", borderRadius: 10, padding: "6px 16px", marginBottom: 16 }}>
-                {sectionLabel("Targeting")}
+                {/* Editor-visible fields */}
                 <div style={rowS}>
                   <div style={labelS}>Avatar</div>
-                  <select value={s.avatar || ""} onChange={e => updateS("avatar", e.target.value)} className="input" style={inputS}>
+                  <select disabled={isEditor} value={s.avatar || ""} onChange={e => updateS("avatar", e.target.value)} className="input" style={inputS}>
                     <option value="">—</option>
                     {avatarNames.map(a => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
                 <div style={rowS}>
-                  <div style={labelS}>Desire</div>
-                  <select value={s.desire || ""} onChange={e => updateS("desire", e.target.value)} className="input" style={inputS}>
-                    <option value="">—</option>
-                    {desireList.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Awareness Level</div>
-                  <select value={s.awareness_level || ""} onChange={e => updateS("awareness_level", e.target.value)} className="input" style={inputS}>
-                    <option value="">—</option>
-                    <option value="Unaware">Unaware</option>
-                    <option value="Problem-Aware">Problem-Aware</option>
-                    <option value="Solution-Aware">Solution-Aware</option>
-                    <option value="Product-Aware">Product-Aware</option>
-                    <option value="Most Aware">Most Aware</option>
-                  </select>
-                </div>
-
-                {sectionLabel("Creative Structure")}
-                <div style={rowS}>
-                  <div style={labelS}>Hook Type</div>
-                  <select value={s.hook_type || ""} onChange={e => updateS("hook_type", e.target.value)} className="input" style={inputS}>
-                    <option value="">—</option>
-                    {HOOK_TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Hook Text</div>
-                  <input value={s.hook_text || ""} onChange={e => updateS("hook_text", e.target.value)} className="input" placeholder="The actual hook line..." style={inputS} />
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>UMP</div>
-                  <div style={{ flex: 1, display: "flex", gap: 4 }}>
-                    <input list="ump-list" value={s.ump || ""} onChange={e => updateS("ump", e.target.value)} className="input" placeholder="Unique Mechanism Proof..." style={{ ...inputS, flex: 1 }} />
-                    <datalist id="ump-list">{usedUMPs.map(v => <option key={v} value={v} />)}</datalist>
-                  </div>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>UMS</div>
-                  <div style={{ flex: 1, display: "flex", gap: 4 }}>
-                    <input list="ums-list" value={s.ums || ""} onChange={e => updateS("ums", e.target.value)} className="input" placeholder="Unique Mechanism Story..." style={{ ...inputS, flex: 1 }} />
-                    <datalist id="ums-list">{usedUMSs.map(v => <option key={v} value={v} />)}</datalist>
-                  </div>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>VSL Body Type</div>
-                  <select value={s.vsl_body_type || ""} onChange={e => updateS("vsl_body_type", e.target.value)} className="input" style={inputS}>
-                    <option value="">—</option>
-                    {VSL_BODY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div style={rowS}>
                   <div style={labelS}>Ad Angle</div>
-                  <input value={s.angle || ""} onChange={e => updateS("angle", e.target.value)} className="input" placeholder="e.g. Fear-based, aspirational..." style={inputS} />
+                  <input disabled={isEditor} value={s.angle || ""} onChange={e => updateS("angle", e.target.value)} className="input" placeholder="e.g. Fear-based, aspirational..." style={inputS} />
                 </div>
-                <div style={rowS}>
-                  <div style={labelS}>Big Idea</div>
-                  <input value={s.big_idea || ""} onChange={e => updateS("big_idea", e.target.value)} className="input" placeholder="The one big idea..." style={inputS} />
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Ad Concept</div>
-                  <input value={s.concept || ""} onChange={e => updateS("concept", e.target.value)} className="input" placeholder="Describe the concept..." style={inputS} />
-                </div>
-                <div style={rowS}>
+                <div style={{ ...rowS, borderBottom: isEditor ? "none" : "1px solid var(--border-light)" }}>
                   <div style={labelS}>Ad Format</div>
-                  <select value={s.ad_format || ""} onChange={e => updateS("ad_format", e.target.value)} className="input" style={inputS}>
+                  <select disabled={isEditor} value={s.ad_format || ""} onChange={e => updateS("ad_format", e.target.value)} className="input" style={inputS}>
                     <option value="">—</option>
                     {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
-                <div style={rowS}>
-                  <div style={labelS}>Ad Tier</div>
-                  <select value={s.ad_tier || ""} onChange={e => updateS("ad_tier", e.target.value)} className="input" style={inputS}>
-                    <option value="">—</option>
-                    <option value="Minimalistic">Minimalistic</option>
-                    <option value="Premium">Premium</option>
-                  </select>
-                </div>
 
-                {sectionLabel("Offer & Funnel")}
-                <div style={rowS}>
-                  <div style={labelS}>Offer</div>
-                  <div style={{ flex: 1, display: "flex", gap: 4 }}>
-                    <input list="offer-list" value={s.offer_name || ""} onChange={e => updateS("offer_name", e.target.value)} className="input" placeholder="Which offer is this ad running?" style={{ ...inputS, flex: 1 }} />
-                    <datalist id="offer-list">{usedOffers.map(v => <option key={v} value={v} />)}</datalist>
-                  </div>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Landing Page</div>
-                  <div style={{ flex: 1, display: "flex", gap: 4 }}>
-                    <input list="lp-list" value={s.landing_page_name || ""} onChange={e => updateS("landing_page_name", e.target.value)} className="input" placeholder="LP variant name..." style={{ ...inputS, flex: 1 }} />
-                    <datalist id="lp-list">{usedLPs.map(v => <option key={v} value={v} />)}</datalist>
-                  </div>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Landing Page URL</div>
-                  <input value={s.landing_page_url || ""} onChange={e => updateS("landing_page_url", e.target.value)} className="input" placeholder="https://..." style={inputS} />
-                </div>
-
-                {sectionLabel("Iteration Tracking")}
-                <div style={rowS}>
-                  <div style={labelS}>Variable Tested</div>
-                  <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={inputS}>
-                    <option value="">—</option>
-                    {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Iteration Notes</div>
-                  <input value={s.iteration_notes || ""} onChange={e => updateS("iteration_notes", e.target.value)} className="input" placeholder="What changed from parent ad..." style={inputS} />
-                </div>
-                {ad.parentId && (
+                {/* Admin-only fields */}
+                {!isEditor && <>
+                  {sectionLabel("Targeting")}
                   <div style={rowS}>
-                    <div style={labelS}>Iterated From</div>
-                    <div style={{ flex: 1, fontSize: 12, color: "var(--accent-light)", cursor: "pointer" }} onClick={() => { const parent = allAds.find(a => a.id === ad.parentId); if (parent) { onClose(); setTimeout(() => {}, 100); } }}>
-                      {allAds.find(a => a.id === ad.parentId)?.name || ad.parentId}
+                    <div style={labelS}>Desire</div>
+                    <select value={s.desire || ""} onChange={e => updateS("desire", e.target.value)} className="input" style={inputS}>
+                      <option value="">—</option>
+                      {desireList.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Awareness Level</div>
+                    <select value={s.awareness_level || ""} onChange={e => updateS("awareness_level", e.target.value)} className="input" style={inputS}>
+                      <option value="">—</option>
+                      <option value="Unaware">Unaware</option>
+                      <option value="Problem-Aware">Problem-Aware</option>
+                      <option value="Solution-Aware">Solution-Aware</option>
+                      <option value="Product-Aware">Product-Aware</option>
+                      <option value="Most Aware">Most Aware</option>
+                    </select>
+                  </div>
+
+                  {sectionLabel("Creative Structure")}
+                  <div style={rowS}>
+                    <div style={labelS}>Hook Type</div>
+                    <select value={s.hook_type || ""} onChange={e => updateS("hook_type", e.target.value)} className="input" style={inputS}>
+                      <option value="">—</option>
+                      {HOOK_TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Hook Text</div>
+                    <input value={s.hook_text || ""} onChange={e => updateS("hook_text", e.target.value)} className="input" placeholder="The actual hook line..." style={inputS} />
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>UMP</div>
+                    <div style={{ flex: 1, display: "flex", gap: 4 }}>
+                      <input list="ump-list" value={s.ump || ""} onChange={e => updateS("ump", e.target.value)} className="input" placeholder="Unique Mechanism Proof..." style={{ ...inputS, flex: 1 }} />
+                      <datalist id="ump-list">{usedUMPs.map(v => <option key={v} value={v} />)}</datalist>
                     </div>
                   </div>
-                )}
+                  <div style={rowS}>
+                    <div style={labelS}>UMS</div>
+                    <div style={{ flex: 1, display: "flex", gap: 4 }}>
+                      <input list="ums-list" value={s.ums || ""} onChange={e => updateS("ums", e.target.value)} className="input" placeholder="Unique Mechanism Story..." style={{ ...inputS, flex: 1 }} />
+                      <datalist id="ums-list">{usedUMSs.map(v => <option key={v} value={v} />)}</datalist>
+                    </div>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>VSL Body Type</div>
+                    <select value={s.vsl_body_type || ""} onChange={e => updateS("vsl_body_type", e.target.value)} className="input" style={inputS}>
+                      <option value="">—</option>
+                      {VSL_BODY_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Big Idea</div>
+                    <input value={s.big_idea || ""} onChange={e => updateS("big_idea", e.target.value)} className="input" placeholder="The one big idea..." style={inputS} />
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Ad Concept</div>
+                    <input value={s.concept || ""} onChange={e => updateS("concept", e.target.value)} className="input" placeholder="Describe the concept..." style={inputS} />
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Ad Tier</div>
+                    <select value={s.ad_tier || ""} onChange={e => updateS("ad_tier", e.target.value)} className="input" style={inputS}>
+                      <option value="">—</option>
+                      <option value="Minimalistic">Minimalistic</option>
+                      <option value="Premium">Premium</option>
+                    </select>
+                  </div>
 
-                {sectionLabel("Hook & Hold Metrics")}
-                <div style={rowS}>
-                  <div style={labelS}>Hook Rate %</div>
-                  <input type="number" step="0.1" min="0" max="100" value={s.hook_rate ?? ""} onChange={e => updateS("hook_rate", parseFloat(e.target.value) || null)} className="input" placeholder="Meta: 3s video views / impressions" style={inputS} />
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>Hold Rate %</div>
-                  <input type="number" step="0.1" min="0" max="100" value={s.hold_rate ?? ""} onChange={e => updateS("hold_rate", parseFloat(e.target.value) || null)} className="input" placeholder="Meta: ThruPlays / 3s views" style={inputS} />
-                </div>
-                <div style={rowS}>
-                  <div style={labelS}>TikTok 2s Rate %</div>
-                  <input type="number" step="0.1" min="0" max="100" value={s.tiktok_2s_rate ?? ""} onChange={e => updateS("tiktok_2s_rate", parseFloat(e.target.value) || null)} className="input" placeholder="2-second video play rate" style={inputS} />
-                </div>
-                <div style={{ ...rowS, borderBottom: "none" }}>
-                  <div style={labelS}>TikTok 100% Rate %</div>
-                  <input type="number" step="0.1" min="0" max="100" value={s.tiktok_100_rate ?? ""} onChange={e => updateS("tiktok_100_rate", parseFloat(e.target.value) || null)} className="input" placeholder="100% video completion rate" style={inputS} />
-                </div>
+                  {sectionLabel("Offer & Funnel")}
+                  <div style={rowS}>
+                    <div style={labelS}>Offer</div>
+                    <div style={{ flex: 1, display: "flex", gap: 4 }}>
+                      <input list="offer-list" value={s.offer_name || ""} onChange={e => updateS("offer_name", e.target.value)} className="input" placeholder="Which offer is this ad running?" style={{ ...inputS, flex: 1 }} />
+                      <datalist id="offer-list">{usedOffers.map(v => <option key={v} value={v} />)}</datalist>
+                    </div>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Landing Page</div>
+                    <div style={{ flex: 1, display: "flex", gap: 4 }}>
+                      <input list="lp-list" value={s.landing_page_name || ""} onChange={e => updateS("landing_page_name", e.target.value)} className="input" placeholder="LP variant name..." style={{ ...inputS, flex: 1 }} />
+                      <datalist id="lp-list">{usedLPs.map(v => <option key={v} value={v} />)}</datalist>
+                    </div>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Landing Page URL</div>
+                    <input value={s.landing_page_url || ""} onChange={e => updateS("landing_page_url", e.target.value)} className="input" placeholder="https://..." style={inputS} />
+                  </div>
+
+                  {sectionLabel("Iteration Tracking")}
+                  <div style={rowS}>
+                    <div style={labelS}>Variable Tested</div>
+                    <select value={s.variable_tested || ""} onChange={e => updateS("variable_tested", e.target.value)} className="input" style={inputS}>
+                      <option value="">—</option>
+                      {VARIABLE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Iteration Notes</div>
+                    <input value={s.iteration_notes || ""} onChange={e => updateS("iteration_notes", e.target.value)} className="input" placeholder="What changed from parent ad..." style={inputS} />
+                  </div>
+                  {ad.parentId && (
+                    <div style={rowS}>
+                      <div style={labelS}>Iterated From</div>
+                      <div style={{ flex: 1, fontSize: 12, color: "var(--accent-light)", cursor: "pointer" }} onClick={() => { const parent = allAds.find(a => a.id === ad.parentId); if (parent) { onClose(); setTimeout(() => {}, 100); } }}>
+                        {allAds.find(a => a.id === ad.parentId)?.name || ad.parentId}
+                      </div>
+                    </div>
+                  )}
+
+                  {sectionLabel("Hook & Hold Metrics")}
+                  <div style={rowS}>
+                    <div style={labelS}>Hook Rate %</div>
+                    <input type="number" step="0.1" min="0" max="100" value={s.hook_rate ?? ""} onChange={e => updateS("hook_rate", parseFloat(e.target.value) || null)} className="input" placeholder="Meta: 3s video views / impressions" style={inputS} />
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>Hold Rate %</div>
+                    <input type="number" step="0.1" min="0" max="100" value={s.hold_rate ?? ""} onChange={e => updateS("hold_rate", parseFloat(e.target.value) || null)} className="input" placeholder="Meta: ThruPlays / 3s views" style={inputS} />
+                  </div>
+                  <div style={rowS}>
+                    <div style={labelS}>TikTok 2s Rate %</div>
+                    <input type="number" step="0.1" min="0" max="100" value={s.tiktok_2s_rate ?? ""} onChange={e => updateS("tiktok_2s_rate", parseFloat(e.target.value) || null)} className="input" placeholder="2-second video play rate" style={inputS} />
+                  </div>
+                  <div style={{ ...rowS, borderBottom: "none" }}>
+                    <div style={labelS}>TikTok 100% Rate %</div>
+                    <input type="number" step="0.1" min="0" max="100" value={s.tiktok_100_rate ?? ""} onChange={e => updateS("tiktok_100_rate", parseFloat(e.target.value) || null)} className="input" placeholder="100% video completion rate" style={inputS} />
+                  </div>
+                </>}
               </div>
             );
           })()}
