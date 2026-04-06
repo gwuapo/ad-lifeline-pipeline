@@ -717,6 +717,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
   const [editingType, setEditingType] = useState(false);
   const [editingVA, setEditingVA] = useState(false);
   const [editingVARate, setEditingVARate] = useState(false);
+  const [editingTier, setEditingTier] = useState(false);
   const [editingCost, setEditingCost] = useState(false);
   const [editingDuration, setEditingDuration] = useState(false);
   const [draftRatings, setDraftRatings] = useState({});
@@ -954,11 +955,19 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
                     <div style={{ ...hValS, color: cs.c }}>{adRoas}x · {CUR} {la.cpa} CPA</div>
                   </div>
                 ) : (
-                  <div style={hCardS}>
+                  <div style={hCardS} onClick={() => !isEditor && setEditingTier(true)}>
                     <div style={hLabelS}><span style={{ fontSize: 13 }}>🏷️</span> Ad Tier</div>
-                    <div style={{ ...hValS, color: ad.strategy?.ad_tier === "Premium" ? "#f59e0b" : ad.strategy?.ad_tier === "Minimalistic" ? "#94a3b8" : "var(--text-muted)" }}>
-                      {ad.strategy?.ad_tier || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}
-                    </div>
+                    {editingTier ? (
+                      <select value={ad.strategy?.ad_tier || ""} onChange={e => { dispatch({ type: "UPDATE", id: ad.id, data: { strategy: { ...(ad.strategy || {}), ad_tier: e.target.value } } }); setEditingTier(false); setSaveToast(true); setTimeout(() => setSaveToast(false), 2200); }} onBlur={() => setEditingTier(false)} autoFocus className="input" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent" }}>
+                        <option value="">—</option>
+                        <option value="Minimalistic">Minimalistic</option>
+                        <option value="Premium">Premium</option>
+                      </select>
+                    ) : (
+                      <div style={{ ...hValS, cursor: !isEditor ? "pointer" : "default", color: ad.strategy?.ad_tier === "Premium" ? "#f59e0b" : ad.strategy?.ad_tier === "Minimalistic" ? "#94a3b8" : "var(--text-muted)" }}>
+                        {ad.strategy?.ad_tier || <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* Video Duration */}
