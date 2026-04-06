@@ -1174,6 +1174,14 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
                     {AD_FORMAT_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
+                <div style={rowS}>
+                  <div style={labelS}>Ad Tier</div>
+                  <select value={s.ad_tier || ""} onChange={e => updateS("ad_tier", e.target.value)} className="input" style={inputS}>
+                    <option value="">—</option>
+                    <option value="Minimalistic">Minimalistic</option>
+                    <option value="Premium">Premium</option>
+                  </select>
+                </div>
 
                 {sectionLabel("Offer & Funnel")}
                 <div style={rowS}>
@@ -1941,6 +1949,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
         {ov && <span className="badge badge-red" style={{ fontSize: 10 }}>Overdue</span>}
         {ad.parentId && <span className="badge badge-green" style={{ fontSize: 10 }}>var</span>}
         {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 10 }}>{unresolvedRevs} rev</span>}
+        {ad.strategy?.ad_tier && <span className="badge" style={{ fontSize: 9, background: ad.strategy.ad_tier === "Premium" ? "rgba(245,158,11,0.12)" : "rgba(148,163,184,0.12)", color: ad.strategy.ad_tier === "Premium" ? "#f59e0b" : "#94a3b8" }}>{ad.strategy.ad_tier}</span>}
       </div>
 
       {/* Checklist progress */}
