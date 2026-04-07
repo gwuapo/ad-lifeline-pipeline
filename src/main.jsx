@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Component } from "react";
 import ReactDOM from "react-dom/client";
 import { supabase } from "./supabase.js";
 import { ThemeProvider } from "./ThemeContext.jsx";
@@ -9,6 +9,44 @@ import App from "./App.jsx";
 import { fetchWorkspaces, createWorkspace, fetchEditorProfile, acceptPendingInvites } from "./supabaseData.js";
 import { loadWorkspaceKeys } from "./apiKeys.js";
 import "./styles.css";
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("App crashed:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ minHeight: "100vh", background: "#0a0a0f", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: 420, maxWidth: "100%", background: "#13131a", border: "1px solid #23232f", borderRadius: 16, padding: "36px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>Something went wrong</div>
+            <p style={{ fontSize: 13, color: "#888", marginBottom: 16, lineHeight: 1.6 }}>
+              {this.state.error?.message || "An unexpected error occurred."}
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <button onClick={() => { localStorage.clear(); window.location.reload(); }}
+                style={{ padding: "10px 20px", borderRadius: 8, background: "#6366f1", color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                Clear Cache & Reload
+              </button>
+              <button onClick={() => window.location.reload()}
+                style={{ padding: "10px 20px", borderRadius: 8, background: "#23232f", color: "#ccc", border: "1px solid #33333f", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                Reload
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function SetPasswordScreen({ email, displayName, onComplete }) {
   const [password, setPassword] = useState("");
@@ -93,7 +131,17 @@ function Root() {
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+      // Validate session isn't stale/corrupted
+      if (session && !session.user?.id) {
+        console.warn("Stale session detected, signing out");
+        supabase.auth.signOut();
+        setSession(null);
+      } else {
+        setSession(session);
+      }
+    }).catch((e) => {
+      console.error("getSession failed:", e);
+      setSession(null);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -109,17 +157,25 @@ function Root() {
   // Once we have a session, load workspaces + editor profile check
   useEffect(() => {
     if (!session) { setLoading(false); return; }
+    if (!session.user?.id) { setLoading(false); return; }
 
+    let cancelled = false;
     const init = async () => {
       try {
         // Accept any pending workspace invites for this email
         try { await acceptPendingInvites(); } catch (e) { console.log("No pending invites or table not ready:", e.message); }
 
-        const ws = await fetchWorkspaces();
+        let ws = [];
+        try {
+          ws = await fetchWorkspaces();
+        } catch (e) {
+          console.error("fetchWorkspaces failed:", e);
+          ws = [];
+        }
+        if (cancelled) return;
         setWorkspaces(ws);
 
         // Restore last active workspace from localStorage or pick first
-        // If saved workspace no longer exists (deleted), fall back to first available
         const savedWsId = localStorage.getItem("al_active_workspace");
         let wsId;
         if (savedWsId && ws.find(w => w.id === savedWsId)) {
@@ -132,25 +188,35 @@ function Root() {
         }
         if (wsId) {
           setActiveWorkspaceId(wsId);
-          loadWorkspaceKeys(wsId);
+          try { loadWorkspaceKeys(wsId); } catch (e) { console.error("loadWorkspaceKeys failed:", e); }
         }
 
-        // Check editor onboarding
+        // Check editor onboarding -- wrap in try/catch so a failed profile fetch never blocks the app
         const role = session.user?.user_metadata?.role || "founder";
         if (role === "editor") {
-          const profile = await fetchEditorProfile(session.user.id);
-          setEditorOnboarded(!!(profile?.display_name && profile?.portfolio_url && profile?.compensation_rate && profile?.weekly_minutes));
+          try {
+            const profile = await fetchEditorProfile(session.user.id);
+            if (!cancelled) {
+              setEditorOnboarded(!!(profile?.display_name && profile?.portfolio_url && profile?.compensation_rate && profile?.weekly_minutes));
+            }
+          } catch (e) {
+            console.error("fetchEditorProfile failed:", e);
+            if (!cancelled) setEditorOnboarded(false);
+          }
         } else {
-          setEditorOnboarded(true); // founders skip onboarding
+          setEditorOnboarded(true);
         }
       } catch (e) {
         console.error("Init error:", e);
-        setWorkspaces([]);
-        setEditorOnboarded(true);
+        if (!cancelled) {
+          setWorkspaces([]);
+          setEditorOnboarded(true);
+        }
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     };
     init();
+    return () => { cancelled = true; };
   }, [session]);
 
   // Update last_active timestamp
@@ -294,8 +360,10 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <Root />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <Root />
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
