@@ -115,19 +115,29 @@ function Root() {
   const [authError, setAuthError] = useState(null);
   const [needsPassword, setNeedsPassword] = useState(false);
 
+  // Signal that React mounted successfully (hides HTML fallback)
+  useEffect(() => { window.__appMounted = true; }, []);
+
   useEffect(() => {
     // Handle auth error redirects and invite link detection
-    const hash = window.location.hash;
-    if (hash.includes("error=")) {
-      const params = new URLSearchParams(hash.replace("#", ""));
-      const errDesc = params.get("error_description");
-      if (errDesc) {
-        setAuthError(errDesc.replace(/\+/g, " "));
+    try {
+      const hash = window.location.hash || "";
+      if (hash.includes("error=")) {
+        const params = new URLSearchParams(hash.replace("#", ""));
+        const errDesc = params.get("error_description");
+        if (errDesc) {
+          setAuthError(errDesc.replace(/\+/g, " "));
+        }
+        // Always strip error hash from URL so it doesn't persist
         window.history.replaceState(null, "", window.location.pathname);
       }
-    }
-    if (hash.includes("type=invite") || hash.includes("type=magiclink")) {
-      setNeedsPassword(true);
+      if (hash.includes("type=invite") || hash.includes("type=magiclink")) {
+        setNeedsPassword(true);
+      }
+    } catch (e) {
+      console.error("Hash parsing failed:", e);
+      // Strip the problematic hash entirely
+      window.history.replaceState(null, "", window.location.pathname);
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {

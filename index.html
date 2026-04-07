@@ -4,9 +4,66 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ad Lifeline Pipeline</title>
+    <style>
+      body { margin: 0; background: #0a0a0f; }
+      #app-fallback {
+        display: flex; align-items: center; justify-content: center;
+        min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #888; font-size: 13px; text-align: center; padding: 20px;
+      }
+      #app-fallback .fb-card {
+        background: #13131a; border: 1px solid #23232f; border-radius: 16px;
+        padding: 36px 32px; max-width: 420px; width: 100%;
+      }
+      #app-fallback h2 { color: #e2e2e8; font-size: 18px; margin: 0 0 8px; }
+      #app-fallback p { margin: 0 0 16px; line-height: 1.6; }
+      #app-fallback button {
+        padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer;
+        font-size: 13px; font-weight: 600; margin: 4px;
+      }
+      #app-fallback .btn-primary { background: #6366f1; color: #fff; }
+      #app-fallback .btn-ghost { background: #23232f; color: #ccc; border: 1px solid #33333f; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="app-fallback" style="display:none">
+      <div class="fb-card">
+        <h2>Something went wrong</h2>
+        <p id="fallback-msg">The app failed to load. This can happen if you clicked an expired invite link or have cached data from a previous session.</p>
+        <div>
+          <button class="btn-primary" onclick="localStorage.clear();sessionStorage.clear();window.location.href=window.location.origin">Clear Cache & Go to Login</button>
+          <button class="btn-ghost" onclick="window.location.href=window.location.origin">Go to Login</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      // If the URL has an error hash from Supabase, strip it and redirect to clean login
+      (function() {
+        var h = window.location.hash;
+        if (h && h.indexOf('error=') !== -1) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      })();
+      // Show fallback if React doesn't mount within 8 seconds
+      window.__appMounted = false;
+      setTimeout(function() {
+        if (!window.__appMounted) {
+          document.getElementById('app-fallback').style.display = 'flex';
+        }
+      }, 8000);
+    </script>
+    <script>
+      // Global error handler to catch module load failures
+      window.addEventListener('error', function(e) {
+        console.error('Global error:', e.error || e.message);
+        if (!window.__appMounted) {
+          document.getElementById('app-fallback').style.display = 'flex';
+          var msg = document.getElementById('fallback-msg');
+          if (msg) msg.textContent = 'App failed to load: ' + (e.message || 'Unknown error') + '. Try clearing cache.';
+        }
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
