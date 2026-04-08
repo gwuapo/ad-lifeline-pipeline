@@ -63,7 +63,7 @@ function SetPasswordScreen({ email, displayName, onComplete }) {
     try {
       const { error: updateErr } = await supabase.auth.updateUser({
         password,
-        data: { display_name: name.trim() || email.split("@")[0] },
+        data: { display_name: name.trim() || email.split("@")[0], _password_set: true },
       });
       if (updateErr) throw updateErr;
       onComplete();
@@ -119,7 +119,8 @@ function Root() {
   useEffect(() => { window.__appMounted = true; }, []);
 
   useEffect(() => {
-    // Handle auth error redirects and invite link detection
+    // Capture hash flags BEFORE Supabase consumes them
+    let hashHadInvite = false;
     try {
       const hash = window.location.hash || "";
       if (hash.includes("error=")) {
@@ -128,26 +129,37 @@ function Root() {
         if (errDesc) {
           setAuthError(errDesc.replace(/\+/g, " "));
         }
-        // Always strip error hash from URL so it doesn't persist
         window.history.replaceState(null, "", window.location.pathname);
       }
-      if (hash.includes("type=invite") || hash.includes("type=magiclink")) {
-        setNeedsPassword(true);
+      if (hash.includes("type=invite") || hash.includes("type=magiclink") || hash.includes("type=signup") || hash.includes("type=recovery")) {
+        hashHadInvite = true;
       }
     } catch (e) {
       console.error("Hash parsing failed:", e);
-      // Strip the problematic hash entirely
       window.history.replaceState(null, "", window.location.pathname);
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      // Validate session isn't stale/corrupted
       if (session && !session.user?.id) {
         console.warn("Stale session detected, signing out");
         supabase.auth.signOut();
         setSession(null);
       } else {
         setSession(session);
+        // Detect if this is a new invite user who hasn't set a password yet
+        if (session && hashHadInvite) {
+          setNeedsPassword(true);
+        } else if (session) {
+          // Check if user was created via invite and never signed in with password
+          // (last_sign_in_at being very close to created_at means they only used the invite link)
+          const meta = session.user?.user_metadata || {};
+          const createdAt = new Date(session.user?.created_at).getTime();
+          const lastSignIn = new Date(session.user?.last_sign_in_at).getTime();
+          const neverSetPassword = !meta._password_set && (lastSignIn - createdAt < 60000);
+          if (neverSetPassword && meta.role && meta.role !== "founder") {
+            setNeedsPassword(true);
+          }
+        }
       }
     }).catch((e) => {
       console.error("getSession failed:", e);
@@ -157,6 +169,10 @@ function Root() {
       (event, session) => {
         setSession(session);
         if (event === "PASSWORD_RECOVERY") {
+          setNeedsPassword(true);
+        }
+        // Detect invite/signup events from Supabase
+        if ((event === "SIGNED_IN" || event === "USER_UPDATED") && hashHadInvite) {
           setNeedsPassword(true);
         }
       }
