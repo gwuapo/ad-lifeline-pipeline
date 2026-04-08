@@ -2054,6 +2054,16 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
   const [selectedEditor, setSelectedEditor] = useState(null);
   const [allProfiles, setAllProfiles] = useState({});
   const [commissionEditor, setCommissionEditor] = useState(null);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [resendingId, setResendingId] = useState(null);
+
+  const loadInvites = async () => {
+    if (!activeWorkspaceId) return;
+    try {
+      const { data, error } = await supabase.from("workspace_invites").select("*").eq("workspace_id", activeWorkspaceId).order("created_at", { ascending: false });
+      if (!error) setPendingInvites(data || []);
+    } catch {}
+  };
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -2062,6 +2072,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
       profiles.forEach(p => { map[p.display_name || p.editor_name] = p; });
       setAllProfiles(map);
     }).catch(() => {});
+    loadInvites();
   }, [activeWorkspaceId]);
 
   const handleInvite = async () => {
@@ -2069,26 +2080,60 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
     setInviteLoading(true);
     setInviteResult(null);
     try {
-      const { data: userId } = await supabase.rpc("get_user_id_by_email", { lookup_email: inviteEmail.trim() });
-      if (!userId) {
-        setInviteResult({ ok: false, msg: "User not found. They must sign up first." });
-        setInviteLoading(false);
-        setTimeout(() => setInviteResult(null), 4000);
-        return;
-      }
-      // Get their display name from profile or email
-      const profile = await fetchEditorProfile(userId);
-      const editorName = profile?.display_name || inviteEmail.split("@")[0];
-      await addMemberToWorkspace(activeWorkspaceId, userId, inviteRole, editorName);
-      if (inviteRole !== "voice_actor") addEditor(editorName);
-      setInviteResult({ ok: true, msg: `Added ${editorName} as ${inviteRole.replace("_", " ")}` });
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole, workspaceId: activeWorkspaceId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to invite");
+      setInviteResult({ ok: true, msg: data.message || `Invite sent to ${inviteEmail}` });
       setInviteEmail("");
       setShowAdd(false);
+      loadInvites();
+      // If user was added directly (already had account), refresh profiles
+      if (data.status === "added") {
+        fetchAllEditorProfiles(activeWorkspaceId).then(profiles => {
+          const map = {};
+          profiles.forEach(p => { map[p.display_name || p.editor_name] = p; });
+          setAllProfiles(map);
+        }).catch(() => {});
+      }
     } catch (e) {
-      setInviteResult({ ok: false, msg: e.message || "Failed to add editor" });
+      setInviteResult({ ok: false, msg: e.message || "Failed to invite" });
     }
     setInviteLoading(false);
-    setTimeout(() => setInviteResult(null), 4000);
+    setTimeout(() => setInviteResult(null), 6000);
+  };
+
+  const handleResendInvite = async (invite) => {
+    setResendingId(invite.id);
+    try {
+      // Revoke old, send new
+      await supabase.from("workspace_invites").delete().eq("id", invite.id);
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ email: invite.email, role: invite.role, workspaceId: activeWorkspaceId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to resend");
+      setInviteResult({ ok: true, msg: data.message || `Re-invite sent to ${invite.email}` });
+      loadInvites();
+    } catch (e) {
+      setInviteResult({ ok: false, msg: e.message || "Failed to resend invite" });
+    }
+    setResendingId(null);
+    setTimeout(() => setInviteResult(null), 6000);
+  };
+
+  const handleRevokeInvite = async (invite) => {
+    try {
+      await supabase.from("workspace_invites").delete().eq("id", invite.id);
+      setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
+    } catch {}
   };
 
   const findProfile = (name) => {
@@ -2118,7 +2163,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
       {showAdd && <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
           <div style={{ flex: 1 }}>
-            <label className="label" style={{ marginTop: 0 }}>Editor Email</label>
+            <label className="label" style={{ marginTop: 0 }}>Email</label>
             <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleInvite()} className="input" placeholder="email@example.com" autoFocus />
           </div>
           <div>
@@ -2129,7 +2174,7 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
             </select>
           </div>
           <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()} className="btn btn-primary btn-sm" style={{ alignSelf: "flex-end" }}>
-            {inviteLoading ? "Adding..." : "Invite to Workspace"}
+            {inviteLoading ? "Sending..." : "Send Invite"}
           </button>
         </div>
         {inviteResult && (
@@ -2142,8 +2187,56 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
             {inviteResult.ok ? "✓" : "!"} {inviteResult.msg}
           </div>
         )}
-        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>The editor must have an Ad Lifeline account first.</p>
+        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>An invite email will be sent. If they already have an account, they'll be added instantly.</p>
       </div>}
+
+      {/* ── PENDING INVITES ── */}
+      {pendingInvites.filter(i => i.status === "pending").length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="section-title" style={{ fontSize: 12, marginBottom: 8 }}>Pending Invites</div>
+          {pendingInvites.filter(i => i.status === "pending").map(invite => (
+            <div key={invite.id} className="card-flat" style={{ marginBottom: 6, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", background: "var(--yellow-bg)", border: "1px solid var(--yellow-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✉</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{invite.email}</div>
+                  <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
+                    {invite.role?.replace("_", " ")} · Invited {new Date(invite.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "var(--yellow-bg)", border: "1px solid var(--yellow-border)", color: "var(--yellow)", textTransform: "uppercase", letterSpacing: 0.5 }}>Invited</span>
+                <button onClick={() => handleResendInvite(invite)} disabled={resendingId === invite.id} className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "4px 8px" }}>
+                  {resendingId === invite.id ? "..." : "Resend"}
+                </button>
+                <button onClick={() => handleRevokeInvite(invite)} className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "4px 8px", color: "var(--red)" }}>Revoke</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Show accepted invites */}
+      {pendingInvites.filter(i => i.status === "accepted").length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="section-title" style={{ fontSize: 12, marginBottom: 8 }}>Recently Joined</div>
+          {pendingInvites.filter(i => i.status === "accepted").slice(0, 5).map(invite => (
+            <div key={invite.id} className="card-flat" style={{ marginBottom: 6, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: "var(--radius-full)", background: "var(--green-bg)", border: "1px solid var(--green-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✓</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{invite.email}</div>
+                  <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
+                    {invite.role?.replace("_", " ")} · Joined {invite.accepted_at ? new Date(invite.accepted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "recently"}
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "var(--green-bg)", border: "1px solid var(--green-border)", color: "var(--green)", textTransform: "uppercase", letterSpacing: 0.5 }}>Joined</span>
+            </div>
+          ))}
+        </div>
+      )}
       {/* ── VOICE ACTORS TAB ── */}
       {editorTab === "voice_actors" && (
         <div>
