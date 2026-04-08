@@ -406,8 +406,8 @@ function TeamTab({ activeWorkspaceId, workspaces, session }) {
 
         {/* Remove confirmation modal */}
         {removeConfirm && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }} onClick={() => setRemoveConfirm(null)}>
-            <div onClick={e => e.stopPropagation()} style={{ width: 400, background: "#13131a", border: "1px solid var(--border)", borderRadius: 14, padding: "24px 28px", boxShadow: "0 20px 60px rgba(0,0,0,0.8)" }}>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }} onClick={() => setRemoveConfirm(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: "90vw", background: "#13131a", border: "1px solid var(--border)", borderRadius: 14, padding: "24px 24px", boxShadow: "0 20px 60px rgba(0,0,0,0.8)", overflow: "hidden" }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Remove {removeConfirm.display_name || removeConfirm.email}?</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
                 Choose what to do with this team member:
