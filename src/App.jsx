@@ -2061,8 +2061,17 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
     if (!activeWorkspaceId) return;
     try {
       const { data, error } = await supabase.from("workspace_invites").select("*").eq("workspace_id", activeWorkspaceId).order("created_at", { ascending: false });
-      if (!error) setPendingInvites(data || []);
-    } catch {}
+      if (error) {
+        console.error("loadInvites error:", error);
+        // Fallback: try via the getWorkspaceInvites function
+        try {
+          const fallback = await fetch(`/api/invite?workspaceId=${activeWorkspaceId}`).then(r => r.ok ? r.json() : []);
+          // If RLS blocks direct read, invites still show via the API data we get after sending
+        } catch {}
+      } else {
+        setPendingInvites(data || []);
+      }
+    } catch (e) { console.error("loadInvites exception:", e); }
   };
 
   useEffect(() => {
@@ -2089,8 +2098,20 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to invite");
       setInviteResult({ ok: true, msg: data.message || `Invite sent to ${inviteEmail}` });
+      // Immediately add to local pending invites so it shows right away
+      const newInvite = {
+        id: "local-" + Date.now(),
+        workspace_id: activeWorkspaceId,
+        email: inviteEmail.trim().toLowerCase(),
+        role: inviteRole,
+        status: data.status === "added" ? "accepted" : "pending",
+        created_at: new Date().toISOString(),
+        accepted_at: data.status === "added" ? new Date().toISOString() : null,
+      };
+      setPendingInvites(prev => [newInvite, ...prev.filter(i => i.email !== newInvite.email)]);
       setInviteEmail("");
       setShowAdd(false);
+      // Also try to refresh from DB (may update with real IDs)
       loadInvites();
       // If user was added directly (already had account), refresh profiles
       if (data.status === "added") {

@@ -56,11 +56,17 @@ export default async function handler(req, res) {
 
       if (memErr) throw memErr;
 
-      // Mark any pending invite as accepted
+      // Upsert invite record as accepted so it shows in Team tab history
       await supabase
         .from("workspace_invites")
-        .update({ status: "accepted", accepted_at: new Date().toISOString() })
-        .match({ workspace_id: workspaceId, email: email.toLowerCase() });
+        .upsert({
+          workspace_id: workspaceId,
+          email: email.toLowerCase(),
+          role,
+          invited_by: caller.id,
+          status: "accepted",
+          accepted_at: new Date().toISOString(),
+        }, { onConflict: "workspace_id,email" });
 
       return res.status(200).json({ status: "added", message: `${email} added to workspace` });
     }
