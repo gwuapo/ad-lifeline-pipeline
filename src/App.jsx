@@ -98,6 +98,30 @@ const VT = [
   { id: "proof", label: "Proof Block", desc: "Different proof arrangement" },
 ];
 
+// Duration helpers: M.SS format (e.g. "3.40" = 3 min 40 sec = 3.667 min internally)
+const parseMSS = (v) => {
+  if (!v && v !== 0) return 0;
+  const s = String(v);
+  if (s.includes(":")) { const [m, sec] = s.split(":"); return (parseInt(m) || 0) + (parseInt(sec) || 0) / 60; }
+  const dot = s.indexOf(".");
+  if (dot === -1) return parseInt(s) || 0;
+  const mins = parseInt(s.slice(0, dot)) || 0;
+  const secs = parseInt(s.slice(dot + 1)) || 0;
+  return mins + secs / 60;
+};
+const fmtMSS = (dur) => {
+  if (!dur) return "";
+  const mins = Math.floor(dur);
+  const secs = Math.round((dur - mins) * 60);
+  return `${mins}.${secs.toString().padStart(2, "0")}`;
+};
+const displayMSS = (dur) => {
+  if (!dur) return null;
+  const mins = Math.floor(dur);
+  const secs = Math.round((dur - mins) * 60);
+  return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+};
+
 const DT = { green: 2.0, yellow: 1.0, grossMarginPct: 70 }; // ROAS thresholds + gross margin %
 const CL = (roas, t) => roas == null ? "none" : roas >= t.green ? "green" : roas >= t.yellow ? "yellow" : "red";
 const CS = {
@@ -657,7 +681,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
   const doKill = () => dispatch({ type: "KILL", id: ad.id });
   const submitDraft = (type, name, url, duration) => {
     if (!name.trim()) return;
-    const dur = parseFloat(duration) || 0;
+    const dur = parseMSS(duration);
     const draft = { id: uid(), name: name.trim(), url: url.trim() || null, draftType: type, version: ad.drafts.filter(d => d.draftType === type || (!d.draftType && type === "video")).length + 1, ts: now(), status: "in-review" };
     if (type === "video" && dur > 0) draft.duration = dur;
     dispatch({ type: "SUBMIT_DRAFT", id: ad.id, draft });
@@ -973,10 +997,10 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
                 {/* Video Duration */}
                 {!isEditor && (
                   <div style={hCardS} onClick={() => setEditingDuration(true)}>
-                    <div style={hLabelS}><span style={{ fontSize: 13 }}>⏱️</span> Duration (min)</div>
+                    <div style={hLabelS}><span style={{ fontSize: 13 }}>⏱️</span> Duration</div>
                     {editingDuration ? (
-                      <input type="number" step="0.1" min="0" value={ad.video_duration ?? ""} onChange={e => {
-                        const dur = parseFloat(e.target.value) || 0;
+                      <input type="text" value={fmtMSS(ad.video_duration)} onChange={e => {
+                        const dur = parseMSS(e.target.value);
                         const updates = { video_duration: dur };
                         if (!ad.production_cost_override) {
                           const ep = editorProfiles?.[ad.editor];
@@ -990,9 +1014,9 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
                           if ((editorRate > 0 || vaRate > 0) && dur > 0) updates.production_cost = +(editorCost + vaCost).toFixed(2);
                         }
                         dispatch({ type: "UPDATE", id: ad.id, data: updates });
-                      }} onBlur={() => setEditingDuration(false)} autoFocus className="input" placeholder="0" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
+                      }} onBlur={() => setEditingDuration(false)} autoFocus className="input" placeholder="M.SS (e.g. 3.40)" style={{ fontSize: 12, padding: "4px 8px", border: "none", background: "transparent", width: "100%" }} />
                     ) : (
-                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.video_duration ? `${ad.video_duration} min` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
+                      <div style={{ ...hValS, cursor: "pointer" }}>{ad.video_duration ? displayMSS(ad.video_duration) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not set</span>}</div>
                     )}
                   </div>
                 )}
@@ -1454,7 +1478,7 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
                 <input value={draftName} onChange={e => setDraftName(e.target.value)} className="input" placeholder="File name, e.g. whistleblower_edit_v2.mp4" />
                 <input value={draftUrl} onChange={e => setDraftUrl(e.target.value)} className="input" placeholder="URL (Google Drive, Dropbox, Frame.io, etc.)" />
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input type="number" step="0.1" min="0" value={draftDuration} onChange={e => setDraftDuration(e.target.value)} className="input" placeholder="Video length in minutes" style={{ flex: 1 }} />
+                  <input type="text" value={draftDuration} onChange={e => setDraftDuration(e.target.value)} className="input" placeholder="Duration (M.SS, e.g. 3.40 = 3m 40s)" style={{ flex: 1 }} />
                   <button onClick={() => submitDraft("video", draftName, draftUrl, draftDuration)} className="btn btn-primary btn-sm" style={{ opacity: draftName.trim() ? 1 : 0.4, flexShrink: 0 }}>Submit Video Draft</button>
                 </div>
               </div>

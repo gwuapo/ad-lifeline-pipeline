@@ -11,6 +11,13 @@ const STAGES = [
 export default function EditorHomePage({ ads, userName, setPage, activeWorkspaceId, session, myEditorProfile }) {
   const [pointTxns, setPointTxns] = useState([]);
   const [ratings, setRatings] = useState([]);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  // Show welcome video popup once for new editors
+  useEffect(() => {
+    const key = `al_welcome_seen_${session?.user?.id || "anon"}`;
+    if (!localStorage.getItem(key)) setShowWelcome(true);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!activeWorkspaceId) return;
@@ -113,8 +120,51 @@ export default function EditorHomePage({ ads, userName, setPage, activeWorkspace
       .slice(0, 5);
   }, [activeAds]);
 
+  const dismissWelcome = () => {
+    const key = `al_welcome_seen_${session?.user?.id || "anon"}`;
+    localStorage.setItem(key, "1");
+    setShowWelcome(false);
+  };
+
   return (
     <div className="animate-fade" style={{ maxWidth: 1100 }}>
+      {/* ── WELCOME VIDEO POPUP ── */}
+      {showWelcome && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }} onClick={dismissWelcome}>
+          <div onClick={e => e.stopPropagation()} style={{
+            width: 720, maxWidth: "92vw", background: "var(--bg-card)", border: "1px solid var(--border)",
+            borderRadius: 16, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+          }}>
+            <div style={{ padding: "20px 24px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)" }}>Welcome to Ad Lifeline, {userName}!</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>Watch this quick tutorial to get started</div>
+              </div>
+              <button onClick={dismissWelcome} style={{
+                background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8,
+                color: "var(--text-muted)", cursor: "pointer", padding: "6px 12px", fontSize: 12, fontWeight: 600,
+              }}>Skip</button>
+            </div>
+            <div style={{ padding: "8px 24px 20px" }}>
+              <div style={{ position: "relative", paddingBottom: "56.25%", borderRadius: 10, overflow: "hidden", background: "#000" }}>
+                <iframe
+                  src="https://www.youtube.com/embed/B4BbRujb2i0?rel=0"
+                  title="Welcome Tutorial"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }}
+                />
+              </div>
+            </div>
+            <div style={{ padding: "0 24px 20px", textAlign: "center" }}>
+              <button onClick={dismissWelcome} className="btn btn-primary" style={{ padding: "10px 32px", fontSize: 13 }}>
+                Got it, let's go!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── PAYMENT SETUP BANNER ── */}
       {!hasPayment && (
         <div onClick={() => setPage("settings")} style={{

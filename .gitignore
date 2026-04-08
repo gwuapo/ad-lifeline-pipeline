@@ -5,3 +5,4 @@ dist
 error.md
 .vercel
 *.xlsx
+.env*.local
