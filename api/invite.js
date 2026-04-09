@@ -74,7 +74,7 @@ export default async function handler(req, res) {
     // User doesn't exist -- send Supabase invite email
     const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(email, {
       data: { role, display_name: email.split("@")[0] },
-      redirectTo: `${req.headers.origin || process.env.APP_URL || "https://ads.nexusholdings.io"}`,
+      redirectTo: `${req.headers.origin || process.env.APP_URL || "https://studio.nexusholdings.io"}`,
     });
 
     if (inviteErr) {
@@ -94,7 +94,7 @@ export default async function handler(req, res) {
           return res.status(200).json({ status: "added", message: `${email} added to workspace (existing account).` });
         }
         // If still not found, re-send via magic link as fallback
-        const { error: magicErr } = await supabase.auth.admin.generateLink({ type: "magiclink", email, options: { redirectTo: `${req.headers.origin || process.env.APP_URL || "https://ads.nexusholdings.io"}` } });
+        const { error: magicErr } = await supabase.auth.admin.generateLink({ type: "magiclink", email, options: { redirectTo: `${req.headers.origin || process.env.APP_URL || "https://studio.nexusholdings.io"}` } });
         if (magicErr) console.error("Magic link fallback:", magicErr);
         // Reset invite to pending so it can be accepted on login
         await supabase

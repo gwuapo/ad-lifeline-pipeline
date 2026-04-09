@@ -89,8 +89,7 @@
 
             var blocked = window.__loadStage === 'html-parsed';
             var diagnosis = blocked
-              ? 'LIKELY CAUSE: Script blocked by ad blocker or browser extension.\n'
-                + 'The domain "ads.nexusholdings.io" contains "ads" which triggers ad blockers.\n\n'
+              ? 'LIKELY CAUSE: Script blocked by ad blocker or browser extension.\n\n'
                 + 'FIX: Disable your ad blocker for this site, or try incognito with extensions disabled.'
               : 'The app started loading but got stuck at: ' + window.__loadStage;
 
