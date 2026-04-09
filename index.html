@@ -72,6 +72,7 @@
         window.__appMounted = false;
         window.__loadStage = 'html-parsed';
         window.__loadTimeline = ['[' + new Date().toISOString() + '] HTML parsed'];
+        window.trackStage = trackStage;
 
         function trackStage(stage) {
           window.__loadStage = stage;
@@ -83,20 +84,32 @@
           if (!window.__appMounted) {
             document.getElementById('app-fallback').style.display = 'flex';
             var dbg = document.getElementById('fallback-debug');
-            if (dbg && window.__errorLog.length === 0) {
-              // No errors captured -- it's a loading/timeout issue, not a crash
-              var lsKeys = [];
-              try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); lsKeys.push(k); } } catch(e) {}
+            var lsKeys = [];
+            try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); lsKeys.push(k); } } catch(e) {}
+
+            var blocked = window.__loadStage === 'html-parsed';
+            var diagnosis = blocked
+              ? 'LIKELY CAUSE: Script blocked by ad blocker or browser extension.\n'
+                + 'The domain "ads.nexusholdings.io" contains "ads" which triggers ad blockers.\n\n'
+                + 'FIX: Disable your ad blocker for this site, or try incognito with extensions disabled.'
+              : 'The app started loading but got stuck at: ' + window.__loadStage;
+
+            if (dbg) {
               dbg.style.display = 'block';
-              dbg.textContent = 'ERROR CODE: MOUNT_TIMEOUT\n\n'
-                + 'App did not mount within 10 seconds.\n'
-                + 'Last stage reached: ' + window.__loadStage + '\n\n'
+              dbg.textContent = 'ERROR CODE: ' + (blocked ? 'SCRIPT_BLOCKED' : 'MOUNT_TIMEOUT') + '\n\n'
+                + diagnosis + '\n\n'
                 + 'Timeline:\n' + window.__loadTimeline.join('\n') + '\n\n'
                 + 'URL: ' + window.location.href + '\n'
                 + 'UserAgent: ' + navigator.userAgent.substring(0, 120) + '\n'
                 + 'localStorage keys (' + lsKeys.length + '): ' + lsKeys.join(', ') + '\n'
                 + 'Online: ' + navigator.onLine + '\n'
+                + 'Errors: ' + window.__errorLog.length + '\n'
                 + 'Time: ' + new Date().toISOString();
+            }
+
+            var msg = document.getElementById('fallback-msg');
+            if (msg && blocked) {
+              msg.textContent = 'Your ad blocker or browser extension is blocking this app from loading. Please disable it for this site, or open in incognito mode with extensions disabled.';
             }
           }
         }, 10000);
