@@ -32,35 +32,60 @@
         <h2>Something went wrong</h2>
         <p id="fallback-msg">The app failed to load. This can happen if you clicked an expired invite link or have cached data from a previous session.</p>
         <div>
-          <button class="btn-primary" onclick="localStorage.clear();sessionStorage.clear();window.location.href=window.location.origin">Clear Cache & Go to Login</button>
-          <button class="btn-ghost" onclick="window.location.href=window.location.origin">Go to Login</button>
+          <button class="btn-primary" onclick="localStorage.clear();sessionStorage.clear();if(caches){caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})};setTimeout(function(){window.location.replace(window.location.origin)},200)">Clear Cache & Go to Login</button>
+          <button class="btn-ghost" onclick="window.location.replace(window.location.origin)">Go to Login</button>
         </div>
       </div>
     </div>
     <script>
-      // If the URL has an error hash from Supabase, strip it and redirect to clean login
       (function() {
+        // Strip error hashes from Supabase redirects
         var h = window.location.hash;
         if (h && h.indexOf('error=') !== -1) {
           window.history.replaceState(null, '', window.location.pathname);
         }
+
+        // Detect and fix corrupted Supabase auth tokens in localStorage
+        // This is the #1 cause of Chrome white-page crashes
+        try {
+          var keys = Object.keys(localStorage);
+          for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            if (k.indexOf('supabase') !== -1 || k.indexOf('sb-') !== -1) {
+              try {
+                var v = localStorage.getItem(k);
+                if (v && v.charAt(0) === '{') JSON.parse(v);
+              } catch (parseErr) {
+                console.warn('Removing corrupted auth key:', k);
+                localStorage.removeItem(k);
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        // Show fallback if React doesn't mount within 6 seconds
+        window.__appMounted = false;
+        setTimeout(function() {
+          if (!window.__appMounted) {
+            document.getElementById('app-fallback').style.display = 'flex';
+          }
+        }, 6000);
       })();
-      // Show fallback if React doesn't mount within 8 seconds
-      window.__appMounted = false;
-      setTimeout(function() {
-        if (!window.__appMounted) {
-          document.getElementById('app-fallback').style.display = 'flex';
-        }
-      }, 8000);
-    </script>
-    <script>
-      // Global error handler to catch module load failures
+
       window.addEventListener('error', function(e) {
         console.error('Global error:', e.error || e.message);
         if (!window.__appMounted) {
           document.getElementById('app-fallback').style.display = 'flex';
           var msg = document.getElementById('fallback-msg');
           if (msg) msg.textContent = 'App failed to load: ' + (e.message || 'Unknown error') + '. Try clearing cache.';
+        }
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error('Unhandled rejection:', e.reason);
+        if (!window.__appMounted) {
+          document.getElementById('app-fallback').style.display = 'flex';
+          var msg = document.getElementById('fallback-msg');
+          if (msg) msg.textContent = 'App failed to load. Try clearing cache and reloading.';
         }
       });
     </script>

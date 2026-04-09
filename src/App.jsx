@@ -22,7 +22,7 @@ import MarketplacePage from "./MarketplacePage.jsx";
 import EditorHomePage from "./EditorHomePage.jsx";
 import DateRangePicker from "./DateRangePicker.jsx";
 import AnalyticsPage from "./AnalyticsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -2060,18 +2060,9 @@ function EditorPanel({ ads, th, editors, addEditor, removeEditor, workspaces, ac
   const loadInvites = async () => {
     if (!activeWorkspaceId) return;
     try {
-      const { data, error } = await supabase.from("workspace_invites").select("*").eq("workspace_id", activeWorkspaceId).order("created_at", { ascending: false });
-      if (error) {
-        console.error("loadInvites error:", error);
-        // Fallback: try via the getWorkspaceInvites function
-        try {
-          const fallback = await fetch(`/api/invite?workspaceId=${activeWorkspaceId}`).then(r => r.ok ? r.json() : []);
-          // If RLS blocks direct read, invites still show via the API data we get after sending
-        } catch {}
-      } else {
-        setPendingInvites(data || []);
-      }
-    } catch (e) { console.error("loadInvites exception:", e); }
+      const data = await getWorkspaceInvites(activeWorkspaceId);
+      setPendingInvites(data || []);
+    } catch (e) { console.error("loadInvites error:", e); }
   };
 
   useEffect(() => {
