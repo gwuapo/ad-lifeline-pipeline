@@ -31,9 +31,11 @@
       <div class="fb-card">
         <h2>Something went wrong</h2>
         <p id="fallback-msg">The app failed to load. This can happen if you clicked an expired invite link or have cached data from a previous session.</p>
+        <pre id="fallback-debug" style="text-align:left;font-size:10px;color:#f87171;background:#1a1a24;padding:12px;border-radius:8px;margin:12px 0;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;display:none"></pre>
         <div>
           <button class="btn-primary" onclick="localStorage.clear();sessionStorage.clear();if(caches){caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})};setTimeout(function(){window.location.replace(window.location.origin)},200)">Clear Cache & Go to Login</button>
           <button class="btn-ghost" onclick="window.location.replace(window.location.origin)">Go to Login</button>
+          <button class="btn-ghost" onclick="var d=document.getElementById('fallback-debug');d.style.display=d.style.display==='none'?'block':'none'">Show Error Details</button>
         </div>
       </div>
     </div>
@@ -72,20 +74,45 @@
         }, 6000);
       })();
 
+      window.__errorLog = [];
+      function logErr(type, detail) {
+        var entry = '[' + type + '] ' + detail;
+        window.__errorLog.push(entry);
+        var dbg = document.getElementById('fallback-debug');
+        if (dbg) {
+          // Collect diagnostic info
+          var lsKeys = [];
+          try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); lsKeys.push(k + '=' + (localStorage.getItem(k) || '').substring(0, 60)); } } catch(e) {}
+          dbg.textContent = 'ERROR CODE: CHROME_INIT_FAIL\n\n'
+            + 'Errors:\n' + window.__errorLog.join('\n') + '\n\n'
+            + 'URL: ' + window.location.href + '\n'
+            + 'Hash: ' + window.location.hash + '\n'
+            + 'UserAgent: ' + navigator.userAgent.substring(0, 100) + '\n'
+            + 'localStorage keys: ' + lsKeys.join(', ') + '\n'
+            + 'Time: ' + new Date().toISOString();
+        }
+      }
+
       window.addEventListener('error', function(e) {
         console.error('Global error:', e.error || e.message);
+        var detail = (e.message || 'Unknown') + ' at ' + (e.filename || '?') + ':' + (e.lineno || '?');
+        if (e.error && e.error.stack) detail += '\nStack: ' + e.error.stack.substring(0, 300);
+        logErr('JS', detail);
         if (!window.__appMounted) {
           document.getElementById('app-fallback').style.display = 'flex';
           var msg = document.getElementById('fallback-msg');
-          if (msg) msg.textContent = 'App failed to load: ' + (e.message || 'Unknown error') + '. Try clearing cache.';
+          if (msg) msg.textContent = 'App crashed. Click "Show Error Details" and send a screenshot to your admin.';
         }
       });
       window.addEventListener('unhandledrejection', function(e) {
         console.error('Unhandled rejection:', e.reason);
+        var detail = e.reason ? (e.reason.message || e.reason.toString()).substring(0, 300) : 'Unknown promise rejection';
+        if (e.reason && e.reason.stack) detail += '\nStack: ' + e.reason.stack.substring(0, 300);
+        logErr('PROMISE', detail);
         if (!window.__appMounted) {
           document.getElementById('app-fallback').style.display = 'flex';
           var msg = document.getElementById('fallback-msg');
-          if (msg) msg.textContent = 'App failed to load. Try clearing cache and reloading.';
+          if (msg) msg.textContent = 'App crashed. Click "Show Error Details" and send a screenshot to your admin.';
         }
       });
     </script>
