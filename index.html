@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Ad Lifeline Pipeline</title>
     <style>
       body { margin: 0; background: #0a0a0f; }
@@ -65,13 +68,38 @@
           }
         } catch (e) { /* ignore */ }
 
-        // Show fallback if React doesn't mount within 6 seconds
+        // Track loading stages
         window.__appMounted = false;
+        window.__loadStage = 'html-parsed';
+        window.__loadTimeline = ['[' + new Date().toISOString() + '] HTML parsed'];
+
+        function trackStage(stage) {
+          window.__loadStage = stage;
+          window.__loadTimeline.push('[' + new Date().toISOString() + '] ' + stage);
+        }
+
+        // Show fallback if React doesn't mount within 10 seconds
         setTimeout(function() {
           if (!window.__appMounted) {
             document.getElementById('app-fallback').style.display = 'flex';
+            var dbg = document.getElementById('fallback-debug');
+            if (dbg && window.__errorLog.length === 0) {
+              // No errors captured -- it's a loading/timeout issue, not a crash
+              var lsKeys = [];
+              try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); lsKeys.push(k); } } catch(e) {}
+              dbg.style.display = 'block';
+              dbg.textContent = 'ERROR CODE: MOUNT_TIMEOUT\n\n'
+                + 'App did not mount within 10 seconds.\n'
+                + 'Last stage reached: ' + window.__loadStage + '\n\n'
+                + 'Timeline:\n' + window.__loadTimeline.join('\n') + '\n\n'
+                + 'URL: ' + window.location.href + '\n'
+                + 'UserAgent: ' + navigator.userAgent.substring(0, 120) + '\n'
+                + 'localStorage keys (' + lsKeys.length + '): ' + lsKeys.join(', ') + '\n'
+                + 'Online: ' + navigator.onLine + '\n'
+                + 'Time: ' + new Date().toISOString();
+            }
           }
-        }, 6000);
+        }, 10000);
       })();
 
       window.__errorLog = [];

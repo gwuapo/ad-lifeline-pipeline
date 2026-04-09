@@ -1,3 +1,4 @@
+if (window.trackStage) window.trackStage('main-module-start');
 import React, { useState, useEffect, Component } from "react";
 import ReactDOM from "react-dom/client";
 import { supabase } from "./supabase.js";
@@ -116,7 +117,10 @@ function Root() {
   const [needsPassword, setNeedsPassword] = useState(false);
 
   // Signal that React mounted successfully (hides HTML fallback)
-  useEffect(() => { window.__appMounted = true; }, []);
+  useEffect(() => {
+    window.__appMounted = true;
+    if (window.trackStage) window.trackStage('react-Root-mounted');
+  }, []);
 
   useEffect(() => {
     // Capture hash flags BEFORE Supabase consumes them
@@ -384,6 +388,7 @@ function Root() {
   );
 }
 
+if (window.trackStage) window.trackStage('all-imports-done-calling-render');
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>

@@ -15,21 +15,23 @@ try {
   }
 } catch (e) { /* ignore */ }
 
-// Create client with crash protection -- if localStorage has a corrupted token,
-// clear it and retry rather than crashing the entire app
+if (window.trackStage) window.trackStage('supabase-module-loaded');
+
 let supabase;
 try {
+  if (window.trackStage) window.trackStage('supabase-createClient-start');
   supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
+  if (window.trackStage) window.trackStage('supabase-createClient-done');
 } catch (e) {
   console.error("Supabase createClient failed, clearing auth storage and retrying:", e);
-  // Clear all Supabase-related localStorage keys
+  if (window.trackStage) window.trackStage('supabase-createClient-FAILED: ' + (e.message || '').substring(0, 100));
   try {
     Object.keys(localStorage).forEach(k => {
       if (k.includes("supabase") || k.includes("sb-")) localStorage.removeItem(k);
     });
   } catch (clearErr) { localStorage.clear(); }
-  // Retry
   supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
+  if (window.trackStage) window.trackStage('supabase-createClient-retry-done');
 }
 
 export { supabase };
