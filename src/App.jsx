@@ -439,8 +439,10 @@ function NewAdForm({ onClose, dispatch, editors }) {
 function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, loading, loadEngagement, activeWorkspaceId, session, dispatch, userName, editorProfiles }) {
   const [ttUrl, setTtUrl] = useState(ad.engagement_tiktok_url || "");
   const [igUrl, setIgUrl] = useState(ad.engagement_ig_url || "");
-  const [newComment, setNewComment] = useState("");
-  const [newProfileId, setNewProfileId] = useState("");
+  const [ttComment, setTtComment] = useState("");
+  const [ttProfileId, setTtProfileId] = useState("");
+  const [igComment, setIgComment] = useState("");
+  const [igProfileId, setIgProfileId] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { loadEngagement(); }, [loadEngagement]);
@@ -451,23 +453,24 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
   };
 
   const handleAssign = async (platform) => {
-    if (!newComment.trim() || !newProfileId || !activeWorkspaceId) return;
+    const profileId = platform === "tiktok" ? ttProfileId : igProfileId;
+    const comment = platform === "tiktok" ? ttComment : igComment;
+    if (!comment.trim() || !profileId || !activeWorkspaceId) return;
     setSaving(true);
     try {
       const data = await createCommentAssignment({
         workspace_id: activeWorkspaceId,
         ad_id: String(ad.id),
-        social_profile_id: newProfileId,
+        social_profile_id: profileId,
         platform,
         ad_url: platform === "tiktok" ? ttUrl.trim() : igUrl.trim(),
-        comment_text: newComment.trim(),
+        comment_text: comment.trim(),
         status: "pending",
         assigned_by: session?.user?.id,
       });
       setAssignments(prev => [...prev, data]);
-      setNewComment("");
-      setNewProfileId("");
-      // Notify editor
+      if (platform === "tiktok") { setTtComment(""); setTtProfileId(""); }
+      else { setIgComment(""); setIgProfileId(""); }
       const ep = editorProfiles?.[ad.editor];
       if (ep?.user_id) {
         createNotification(activeWorkspaceId, ep.user_id, `New comment to post on "${ad.name}"`, "comment_assignment").catch(() => {});
@@ -543,7 +546,7 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
     );
   };
 
-  const renderPlatformSection = (platform, icon, platformProfiles, platformAssignments, adUrl, setAdUrl) => (
+  const renderPlatformSection = (platform, icon, platformProfiles, platformAssignments, adUrl, setAdUrl, profileId, setProfileId, comment, setComment) => (
     <div style={sectionStyle}>
       {platformHeader(icon, platform === "tiktok" ? "TikTok" : "Instagram", platformAssignments.length)}
 
@@ -567,13 +570,13 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
       {!isEditor && platformProfiles.length > 0 && (
         <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 8, background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>Assign comment</div>
-          <select value={newProfileId} onChange={e => setNewProfileId(e.target.value)} className="input" style={{ fontSize: 12, marginBottom: 6 }}>
+          <select value={profileId} onChange={e => setProfileId(e.target.value)} className="input" style={{ fontSize: 12, marginBottom: 6 }}>
             <option value="">Select profile...</option>
             {platformProfiles.map(p => <option key={p.id} value={p.id}>@{p.username} ({p.gender})</option>)}
           </select>
           <div style={{ display: "flex", gap: 6 }}>
-            <input value={newComment} onChange={e => setNewComment(e.target.value)} className="input" placeholder="Comment text..." style={{ flex: 1, fontSize: 12 }} />
-            <button onClick={() => handleAssign(platform)} disabled={saving || !newComment.trim() || !newProfileId} className="btn btn-primary btn-sm">
+            <input value={comment} onChange={e => setComment(e.target.value)} className="input" placeholder="Comment text..." style={{ flex: 1, fontSize: 12 }} />
+            <button onClick={() => handleAssign(platform)} disabled={saving || !comment.trim() || !profileId} className="btn btn-primary btn-sm">
               {saving ? "..." : "Assign"}
             </button>
           </div>
@@ -603,8 +606,8 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
         </div>
       </div>
 
-      {renderPlatformSection("tiktok", "🎵", ttProfiles, ttAssignments, ttUrl, setTtUrl)}
-      {renderPlatformSection("instagram", "📸", igProfiles, igAssignments, igUrl, setIgUrl)}
+      {renderPlatformSection("tiktok", "🎵", ttProfiles, ttAssignments, ttUrl, setTtUrl, ttProfileId, setTtProfileId, ttComment, setTtComment)}
+      {renderPlatformSection("instagram", "📸", igProfiles, igAssignments, igUrl, setIgUrl, igProfileId, setIgProfileId, igComment, setIgComment)}
     </div>
   );
 }
