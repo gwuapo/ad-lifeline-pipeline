@@ -443,7 +443,7 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
   const [ttProfileId, setTtProfileId] = useState("");
   const [igComment, setIgComment] = useState("");
   const [igProfileId, setIgProfileId] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [savingPlatform, setSavingPlatform] = useState(null);
 
   useEffect(() => { loadEngagement(); }, [loadEngagement]);
   useEffect(() => { setTtUrl(ad.engagement_tiktok_url || ""); setIgUrl(ad.engagement_ig_url || ""); }, [ad.engagement_tiktok_url, ad.engagement_ig_url]);
@@ -456,7 +456,7 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
     const profileId = platform === "tiktok" ? ttProfileId : igProfileId;
     const comment = platform === "tiktok" ? ttComment : igComment;
     if (!comment.trim() || !profileId || !activeWorkspaceId) return;
-    setSaving(true);
+    setSavingPlatform(platform);
     try {
       const data = await createCommentAssignment({
         workspace_id: activeWorkspaceId,
@@ -476,7 +476,7 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
         createNotification(activeWorkspaceId, ep.user_id, `New comment to post on "${ad.name}"`, "comment_assignment").catch(() => {});
       }
     } catch (e) { alert("Error: " + e.message); }
-    setSaving(false);
+    setSavingPlatform(null);
   };
 
   const handleMarkPosted = async (id) => {
@@ -576,8 +576,8 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
           </select>
           <div style={{ display: "flex", gap: 6 }}>
             <input value={comment} onChange={e => setComment(e.target.value)} className="input" placeholder="Comment text..." style={{ flex: 1, fontSize: 12 }} />
-            <button onClick={() => handleAssign(platform)} disabled={saving || !comment.trim() || !profileId} className="btn btn-primary btn-sm">
-              {saving ? "..." : "Assign"}
+            <button onClick={() => handleAssign(platform)} disabled={savingPlatform || !comment.trim() || !profileId} className="btn btn-primary btn-sm">
+              {savingPlatform === platform ? "..." : "Assign"}
             </button>
           </div>
         </div>
