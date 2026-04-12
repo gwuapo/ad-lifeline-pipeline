@@ -555,12 +555,17 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <input value={adUrl} onChange={e => setAdUrl(e.target.value)} onBlur={saveUrls} className="input" placeholder={`${platform === "tiktok" ? "TikTok" : "Instagram"} ad URL`} style={{ flex: 1, fontSize: 12 }} />
         </div>
-      ) : adUrl ? (
-        <a href={adUrl} target="_blank" rel="noopener noreferrer" style={{
-          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", marginBottom: 10,
-          borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent-border)", fontSize: 12, color: "var(--accent-light)", fontWeight: 600, textDecoration: "none",
-        }}>Open {platform === "tiktok" ? "TikTok" : "Instagram"} Ad ↗</a>
-      ) : null}
+      ) : (() => {
+        const url = adUrl || platformAssignments.find(a => a.ad_url)?.ad_url || "";
+        return url ? (
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{
+            display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", marginBottom: 10,
+            borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent-border)", fontSize: 13, color: "var(--accent-light)", fontWeight: 600, textDecoration: "none",
+          }}>Open {platform === "tiktok" ? "TikTok" : "Instagram"} Ad ↗</a>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontStyle: "italic" }}>No {platform === "tiktok" ? "TikTok" : "Instagram"} ad URL set yet.</div>
+        );
+      })()}
 
       {/* Assignments list */}
       {platformAssignments.length === 0 && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>No comments assigned yet.</div>}
