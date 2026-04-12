@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { fetchEditorProfile, upsertEditorProfile } from "./supabaseData.js";
+import { fetchEditorProfile, upsertEditorProfile, fetchSocialProfiles, upsertSocialProfile, deleteSocialProfile } from "./supabaseData.js";
 
 const PAYMENT_METHODS = [
   { key: "usd_bank", label: "USD Bank Account", fields: [
@@ -29,7 +29,7 @@ const PAYMENT_METHODS = [
   ]},
 ];
 
-export default function EditorSettings({ userId, userName }) {
+export default function EditorSettings({ userId, userName, activeWorkspaceId }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,6 +41,14 @@ export default function EditorSettings({ userId, userName }) {
   const [paymentMethods, setPaymentMethods] = useState({});
   const [activePayment, setActivePayment] = useState("usd_bank");
   const fileRef = useRef(null);
+
+  // Social profiles
+  const [socialProfiles, setSocialProfiles] = useState([]);
+  const [spPlatform, setSpPlatform] = useState("tiktok");
+  const [spUsername, setSpUsername] = useState("");
+  const [spUrl, setSpUrl] = useState("");
+  const [spGender, setSpGender] = useState("male");
+  const [spSaving, setSpSaving] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -55,7 +63,38 @@ export default function EditorSettings({ userId, userName }) {
       }
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [userId]);
+    if (activeWorkspaceId) {
+      fetchSocialProfiles(activeWorkspaceId, userId).then(setSocialProfiles).catch(() => {});
+    }
+  }, [userId, activeWorkspaceId]);
+
+  const handleAddProfile = async () => {
+    if (!spUsername.trim() || !activeWorkspaceId) return;
+    setSpSaving(true);
+    try {
+      const data = await upsertSocialProfile({
+        user_id: userId,
+        workspace_id: activeWorkspaceId,
+        platform: spPlatform,
+        username: spUsername.trim().replace(/^@/, ""),
+        profile_url: spUrl.trim() || null,
+        gender: spGender,
+      });
+      setSocialProfiles(prev => [...prev.filter(p => p.id !== data.id), data]);
+      setSpUsername("");
+      setSpUrl("");
+    } catch (e) {
+      alert("Error adding profile: " + e.message);
+    }
+    setSpSaving(false);
+  };
+
+  const handleDeleteProfile = async (id) => {
+    try {
+      await deleteSocialProfile(id);
+      setSocialProfiles(prev => prev.filter(p => p.id !== id));
+    } catch (e) { alert("Error: " + e.message); }
+  };
 
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
@@ -138,6 +177,53 @@ export default function EditorSettings({ userId, userName }) {
             <span style={{ color: "var(--text-muted)", marginLeft: 4, fontSize: 10 }}>(set by admin)</span>
           </div>
         )}
+      </div>
+
+      {/* Social Profiles Card */}
+      <div style={cardS}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>Social Profiles</div>
+        <p style={mutedS}>Add your TikTok and Instagram profiles used for ad commenting.</p>
+
+        {/* Existing profiles */}
+        {socialProfiles.length > 0 && (
+          <div style={{ marginTop: 12, marginBottom: 14 }}>
+            {socialProfiles.map(sp => (
+              <div key={sp.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", marginBottom: 4, background: "var(--bg-elevated)", borderRadius: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 14 }}>{sp.platform === "tiktok" ? "🎵" : "📸"}</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>@{sp.username}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                      {sp.platform} · {sp.gender}
+                      {sp.profile_url && <> · <a href={sp.profile_url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>Profile</a></>}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => handleDeleteProfile(sp.id)} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 14, padding: 4 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new profile */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+          <select value={spPlatform} onChange={e => setSpPlatform(e.target.value)} style={{ ...inputS, width: 110, flex: "none" }}>
+            <option value="tiktok">TikTok</option>
+            <option value="instagram">Instagram</option>
+          </select>
+          <input value={spUsername} onChange={e => setSpUsername(e.target.value)} style={{ ...inputS, flex: 1, minWidth: 120 }} placeholder="@username" />
+          <select value={spGender} onChange={e => setSpGender(e.target.value)} style={{ ...inputS, width: 100, flex: "none" }}>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="neither">Neither</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <input value={spUrl} onChange={e => setSpUrl(e.target.value)} style={{ ...inputS, flex: 1 }} placeholder="Profile URL (optional)" />
+          <button onClick={handleAddProfile} disabled={spSaving || !spUsername.trim()} className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}>
+            {spSaving ? "..." : "Add"}
+          </button>
+        </div>
       </div>
 
       {/* Payment Methods Card */}

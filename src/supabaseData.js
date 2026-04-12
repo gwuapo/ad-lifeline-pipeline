@@ -963,3 +963,71 @@ export async function getDeliverableRatings(workspaceId, adId = null) {
   if (error) throw error;
   return data || [];
 }
+
+// ════════════════════════════════════════════════
+// SOCIAL PROFILES
+// ════════════════════════════════════════════════
+
+export async function fetchSocialProfiles(workspaceId, userId = null) {
+  let q = supabase.from("social_profiles").select("*").eq("workspace_id", workspaceId);
+  if (userId) q = q.eq("user_id", userId);
+  const { data, error } = await q.order("platform").order("username");
+  if (error) { console.error("fetchSocialProfiles:", error); return []; }
+  return data || [];
+}
+
+export async function upsertSocialProfile(profile) {
+  const { data, error } = await supabase
+    .from("social_profiles")
+    .upsert(profile, { onConflict: "user_id,platform,username" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteSocialProfile(id) {
+  const { error } = await supabase.from("social_profiles").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ════════════════════════════════════════════════
+// COMMENT ASSIGNMENTS
+// ════════════════════════════════════════════════
+
+export async function fetchCommentAssignments(workspaceId, adId) {
+  const { data, error } = await supabase
+    .from("comment_assignments")
+    .select("*, social_profiles(username, profile_url, gender, platform)")
+    .eq("workspace_id", workspaceId)
+    .eq("ad_id", adId)
+    .order("created_at");
+  if (error) { console.error("fetchCommentAssignments:", error); return []; }
+  return data || [];
+}
+
+export async function createCommentAssignment(assignment) {
+  const { data, error } = await supabase
+    .from("comment_assignments")
+    .insert(assignment)
+    .select("*, social_profiles(username, profile_url, gender, platform)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateCommentAssignment(id, updates) {
+  const { data, error } = await supabase
+    .from("comment_assignments")
+    .update(updates)
+    .eq("id", id)
+    .select("*, social_profiles(username, profile_url, gender, platform)")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteCommentAssignment(id) {
+  const { error } = await supabase.from("comment_assignments").delete().eq("id", id);
+  if (error) throw error;
+}

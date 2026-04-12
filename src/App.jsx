@@ -22,7 +22,7 @@ import MarketplacePage from "./MarketplacePage.jsx";
 import EditorHomePage from "./EditorHomePage.jsx";
 import DateRangePicker from "./DateRangePicker.jsx";
 import AnalyticsPage from "./AnalyticsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -433,6 +433,183 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // ════════════════════════════════════════════════
 // AD DETAIL PANEL
 // ════════════════════════════════════════════════
+// ENGAGEMENT TAB COMPONENT
+// ════════════════════════════════════════════════
+
+function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, loading, loadEngagement, activeWorkspaceId, session, dispatch, userName, editorProfiles }) {
+  const [ttUrl, setTtUrl] = useState(ad.engagement_tiktok_url || "");
+  const [igUrl, setIgUrl] = useState(ad.engagement_ig_url || "");
+  const [newComment, setNewComment] = useState("");
+  const [newProfileId, setNewProfileId] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { loadEngagement(); }, [loadEngagement]);
+  useEffect(() => { setTtUrl(ad.engagement_tiktok_url || ""); setIgUrl(ad.engagement_ig_url || ""); }, [ad.engagement_tiktok_url, ad.engagement_ig_url]);
+
+  const saveUrls = () => {
+    dispatch({ type: "UPDATE", id: ad.id, data: { engagement_tiktok_url: ttUrl.trim(), engagement_ig_url: igUrl.trim() } });
+  };
+
+  const handleAssign = async (platform) => {
+    if (!newComment.trim() || !newProfileId || !activeWorkspaceId) return;
+    setSaving(true);
+    try {
+      const data = await createCommentAssignment({
+        workspace_id: activeWorkspaceId,
+        ad_id: String(ad.id),
+        social_profile_id: newProfileId,
+        platform,
+        ad_url: platform === "tiktok" ? ttUrl.trim() : igUrl.trim(),
+        comment_text: newComment.trim(),
+        status: "pending",
+        assigned_by: session?.user?.id,
+      });
+      setAssignments(prev => [...prev, data]);
+      setNewComment("");
+      setNewProfileId("");
+      // Notify editor
+      const ep = editorProfiles?.[ad.editor];
+      if (ep?.user_id) {
+        createNotification(activeWorkspaceId, ep.user_id, `New comment to post on "${ad.name}"`, "comment_assignment").catch(() => {});
+      }
+    } catch (e) { alert("Error: " + e.message); }
+    setSaving(false);
+  };
+
+  const handleMarkPosted = async (id) => {
+    try {
+      const data = await updateCommentAssignment(id, { status: "posted", posted_at: new Date().toISOString() });
+      setAssignments(prev => prev.map(a => a.id === id ? data : a));
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteCommentAssignment(id);
+      setAssignments(prev => prev.filter(a => a.id !== id));
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const ttProfiles = profiles.filter(p => p.platform === "tiktok");
+  const igProfiles = profiles.filter(p => p.platform === "instagram");
+  const ttAssignments = assignments.filter(a => a.platform === "tiktok");
+  const igAssignments = assignments.filter(a => a.platform === "instagram");
+  const pendingCount = assignments.filter(a => a.status === "pending").length;
+  const postedCount = assignments.filter(a => a.status === "posted").length;
+
+  if (loading) return <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading...</div>;
+
+  const sectionStyle = { marginBottom: 20 };
+  const platformHeader = (icon, label, count) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <span style={{ fontSize: 16 }}>{icon}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{label}</span>
+      {count > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 99, background: "var(--accent-bg)", color: "var(--accent)", fontWeight: 700 }}>{count}</span>}
+    </div>
+  );
+
+  const renderAssignment = (a) => {
+    const sp = a.social_profiles || {};
+    return (
+      <div key={a.id} style={{
+        padding: "10px 12px", marginBottom: 6, borderRadius: 8,
+        background: a.status === "posted" ? "var(--green-bg)" : "var(--bg-elevated)",
+        border: `1px solid ${a.status === "posted" ? "var(--green-border)" : "var(--border)"}`,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 3 }}>
+              @{sp.username || "?"} · {sp.gender || "?"}
+              {sp.profile_url && <> · <a href={sp.profile_url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>Profile</a></>}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>{a.comment_text}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+            {a.status === "pending" && isEditor && (
+              <button onClick={() => handleMarkPosted(a.id)} className="btn btn-primary btn-xs">Posted</button>
+            )}
+            {a.status === "posted" && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--green)", padding: "2px 6px", borderRadius: 99, background: "var(--green-bg)", border: "1px solid var(--green-border)" }}>POSTED</span>
+            )}
+            {!isEditor && (
+              <button onClick={() => handleDelete(a.id)} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 13, padding: 2 }}>×</button>
+            )}
+          </div>
+        </div>
+        {a.status === "posted" && a.posted_at && (
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Posted {new Date(a.posted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPlatformSection = (platform, icon, platformProfiles, platformAssignments, adUrl, setAdUrl) => (
+    <div style={sectionStyle}>
+      {platformHeader(icon, platform === "tiktok" ? "TikTok" : "Instagram", platformAssignments.length)}
+
+      {/* Ad URL */}
+      {!isEditor ? (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <input value={adUrl} onChange={e => setAdUrl(e.target.value)} onBlur={saveUrls} className="input" placeholder={`${platform === "tiktok" ? "TikTok" : "Instagram"} ad URL`} style={{ flex: 1, fontSize: 12 }} />
+        </div>
+      ) : adUrl ? (
+        <a href={adUrl} target="_blank" rel="noopener noreferrer" style={{
+          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", marginBottom: 10,
+          borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent-border)", fontSize: 12, color: "var(--accent-light)", fontWeight: 600, textDecoration: "none",
+        }}>Open {platform === "tiktok" ? "TikTok" : "Instagram"} Ad ↗</a>
+      ) : null}
+
+      {/* Assignments list */}
+      {platformAssignments.length === 0 && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>No comments assigned yet.</div>}
+      {platformAssignments.map(renderAssignment)}
+
+      {/* Assign new comment (founder only) */}
+      {!isEditor && platformProfiles.length > 0 && (
+        <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 8, background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>Assign comment</div>
+          <select value={newProfileId} onChange={e => setNewProfileId(e.target.value)} className="input" style={{ fontSize: 12, marginBottom: 6 }}>
+            <option value="">Select profile...</option>
+            {platformProfiles.map(p => <option key={p.id} value={p.id}>@{p.username} ({p.gender})</option>)}
+          </select>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={newComment} onChange={e => setNewComment(e.target.value)} className="input" placeholder="Comment text..." style={{ flex: 1, fontSize: 12 }} />
+            <button onClick={() => handleAssign(platform)} disabled={saving || !newComment.trim() || !newProfileId} className="btn btn-primary btn-sm">
+              {saving ? "..." : "Assign"}
+            </button>
+          </div>
+        </div>
+      )}
+      {!isEditor && platformProfiles.length === 0 && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>No {platform} profiles set up by {ad.editor}. They need to add profiles in Settings.</div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="animate-fade">
+      {/* Summary */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+        <div className="card-flat" style={{ flex: 1, padding: "10px 14px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: pendingCount > 0 ? "var(--yellow)" : "var(--text-muted)", fontFamily: "var(--fm)" }}>{pendingCount}</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>PENDING</div>
+        </div>
+        <div className="card-flat" style={{ flex: 1, padding: "10px 14px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--green)", fontFamily: "var(--fm)" }}>{postedCount}</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>POSTED</div>
+        </div>
+        <div className="card-flat" style={{ flex: 1, padding: "10px 14px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--accent-light)", fontFamily: "var(--fm)" }}>{profiles.length}</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>PROFILES</div>
+        </div>
+      </div>
+
+      {renderPlatformSection("tiktok", "🎵", ttProfiles, ttAssignments, ttUrl, setTtUrl)}
+      {renderPlatformSection("instagram", "📸", igProfiles, igAssignments, igUrl, setIgUrl)}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════
 
 function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors, userName, activeWorkspaceId, session, initialTab, strategyData, editorProfiles }) {
   const [tab, setTab] = useState(initialTab || "overview");
@@ -713,9 +890,32 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
 
   const [commentFilter, setCommentFilter] = useState("all");
 
+  // Engagement tab state
+  const [engProfiles, setEngProfiles] = useState([]);
+  const [engAssignments, setEngAssignments] = useState([]);
+  const [engLoading, setEngLoading] = useState(false);
+
+  const loadEngagement = useCallback(async () => {
+    if (!activeWorkspaceId || !ad.editor) return;
+    setEngLoading(true);
+    try {
+      // Find the editor's user_id from editorProfiles
+      const ep = editorProfiles?.[ad.editor];
+      const editorUserId = ep?.user_id;
+      const [profiles, assignments] = await Promise.all([
+        editorUserId ? fetchSocialProfiles(activeWorkspaceId, editorUserId) : fetchSocialProfiles(activeWorkspaceId),
+        fetchCommentAssignments(activeWorkspaceId, String(ad.id)),
+      ]);
+      setEngProfiles(profiles);
+      setEngAssignments(assignments);
+    } catch (e) { console.error("loadEngagement:", e); }
+    setEngLoading(false);
+  }, [activeWorkspaceId, ad.id, ad.editor, editorProfiles]);
+
   const tabs = [
     { id: "overview", l: "Overview" },
     { id: "drafts", l: `Drafts (${ad.drafts.length})` },
+    ...(ad.editor ? [{ id: "engagement", l: `Engagement` }] : []),
     ...(!isEditor ? [
       { id: "metrics", l: `Metrics (${ad.metrics.length})` },
       { id: "comments", l: `Comments (${ad.comments.length})` },
@@ -1509,6 +1709,22 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
           </div>
         </div>
       )}
+
+      {/* ── ENGAGEMENT (Comment Assignments) ── */}
+      {tab === "engagement" && <EngagementTab
+        ad={ad}
+        isEditor={isEditor}
+        profiles={engProfiles}
+        assignments={engAssignments}
+        setAssignments={setEngAssignments}
+        loading={engLoading}
+        loadEngagement={loadEngagement}
+        activeWorkspaceId={activeWorkspaceId}
+        session={session}
+        dispatch={dispatch}
+        userName={userName}
+        editorProfiles={editorProfiles}
+      />}
 
       {/* ── METRICS ── */}
       {tab === "metrics" && (
@@ -3468,7 +3684,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {page === "marketplace" && <MarketplacePage activeWorkspaceId={activeWorkspaceId} role={role} session={session} userName={userName} editors={editors} editorProfiles={editorProfiles} />}
 
         {/* ── SETTINGS PAGE ── */}
-        {page === "settings" && (role === "editor" || role === "voice_actor") && <EditorSettings userId={session?.user?.id} userName={userName} />}
+        {page === "settings" && (role === "editor" || role === "voice_actor") && <EditorSettings userId={session?.user?.id} userName={userName} activeWorkspaceId={activeWorkspaceId} />}
         {page === "settings" && role !== "editor" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
 
         {/* Modals (only NewAdForm stays as modal) */}
