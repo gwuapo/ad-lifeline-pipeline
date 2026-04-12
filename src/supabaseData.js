@@ -1031,3 +1031,34 @@ export async function deleteCommentAssignment(id) {
   const { error } = await supabase.from("comment_assignments").delete().eq("id", id);
   if (error) throw error;
 }
+
+// ════════════════════════════════════════════════
+// ENGAGEMENT VIDEOS
+// ════════════════════════════════════════════════
+
+export async function fetchEngagementVideos(workspaceId, adId) {
+  const { data, error } = await supabase
+    .from("engagement_videos")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("ad_id", adId)
+    .order("platform")
+    .order("video_number");
+  if (error) { console.error("fetchEngagementVideos:", error); return []; }
+  return data || [];
+}
+
+export async function upsertEngagementVideo(video) {
+  const { data, error } = await supabase
+    .from("engagement_videos")
+    .upsert(video, { onConflict: "workspace_id,ad_id,platform,video_number" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteEngagementVideo(id) {
+  const { error } = await supabase.from("engagement_videos").delete().eq("id", id);
+  if (error) throw error;
+}

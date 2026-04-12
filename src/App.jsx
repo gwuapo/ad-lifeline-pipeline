@@ -22,7 +22,7 @@ import MarketplacePage from "./MarketplacePage.jsx";
 import EditorHomePage from "./EditorHomePage.jsx";
 import DateRangePicker from "./DateRangePicker.jsx";
 import AnalyticsPage from "./AnalyticsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment, fetchEngagementVideos, upsertEngagementVideo, deleteEngagementVideo } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -437,46 +437,82 @@ function NewAdForm({ onClose, dispatch, editors }) {
 // ════════════════════════════════════════════════
 
 function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, loading, loadEngagement, activeWorkspaceId, session, dispatch, userName, editorProfiles }) {
-  const [ttUrl, setTtUrl] = useState(ad.engagement_tiktok_url || "");
-  const [igUrl, setIgUrl] = useState(ad.engagement_ig_url || "");
-  const [ttComment, setTtComment] = useState("");
-  const [ttProfileId, setTtProfileId] = useState("");
-  const [igComment, setIgComment] = useState("");
-  const [igProfileId, setIgProfileId] = useState("");
-  const [savingPlatform, setSavingPlatform] = useState(null);
+  const [videos, setVideos] = useState([]);
+  const [savingVideo, setSavingVideo] = useState(null);
+  const [commentInputs, setCommentInputs] = useState({});
 
   useEffect(() => { loadEngagement(); }, [loadEngagement]);
-  useEffect(() => { setTtUrl(ad.engagement_tiktok_url || ""); setIgUrl(ad.engagement_ig_url || ""); }, [ad.engagement_tiktok_url, ad.engagement_ig_url]);
 
-  const saveUrls = () => {
-    dispatch({ type: "UPDATE", id: ad.id, data: { engagement_tiktok_url: ttUrl.trim(), engagement_ig_url: igUrl.trim() } });
+  // Load videos
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    fetchEngagementVideos(activeWorkspaceId, String(ad.id)).then(setVideos).catch(() => {});
+  }, [activeWorkspaceId, ad.id]);
+
+  const getNextVideoNum = (platform) => {
+    const nums = videos.filter(v => v.platform === platform).map(v => v.video_number);
+    return nums.length > 0 ? Math.max(...nums) + 1 : 1;
   };
 
-  const handleAssign = async (platform) => {
-    const profileId = platform === "tiktok" ? ttProfileId : igProfileId;
-    const comment = platform === "tiktok" ? ttComment : igComment;
-    if (!comment.trim() || !profileId || !activeWorkspaceId) return;
-    setSavingPlatform(platform);
+  const handleAddVideo = async (platform) => {
+    if (!activeWorkspaceId) return;
     try {
+      const data = await upsertEngagementVideo({
+        workspace_id: activeWorkspaceId,
+        ad_id: String(ad.id),
+        platform,
+        video_number: getNextVideoNum(platform),
+        video_url: "",
+      });
+      setVideos(prev => [...prev, data]);
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const handleVideoUrlChange = (videoId, url) => {
+    setVideos(prev => prev.map(v => v.id === videoId ? { ...v, video_url: url } : v));
+  };
+
+  const handleVideoUrlSave = async (video) => {
+    try {
+      await upsertEngagementVideo({ ...video });
+    } catch (e) { console.error("Save video URL:", e); }
+  };
+
+  const handleDeleteVideo = async (videoId) => {
+    try {
+      await deleteEngagementVideo(videoId);
+      setVideos(prev => prev.filter(v => v.id !== videoId));
+      setAssignments(prev => prev.filter(a => a.video_id !== videoId));
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const handleAssign = async (videoId, platform) => {
+    const key = videoId;
+    const input = commentInputs[key] || {};
+    const { profileId, comment } = input;
+    if (!comment?.trim() || !profileId || !activeWorkspaceId) return;
+    setSavingVideo(videoId);
+    try {
+      const video = videos.find(v => v.id === videoId);
       const data = await createCommentAssignment({
         workspace_id: activeWorkspaceId,
         ad_id: String(ad.id),
         social_profile_id: profileId,
         platform,
-        ad_url: platform === "tiktok" ? ttUrl.trim() : igUrl.trim(),
+        ad_url: video?.video_url || "",
         comment_text: comment.trim(),
         status: "pending",
         assigned_by: session?.user?.id,
+        video_id: videoId,
       });
       setAssignments(prev => [...prev, data]);
-      if (platform === "tiktok") { setTtComment(""); setTtProfileId(""); }
-      else { setIgComment(""); setIgProfileId(""); }
+      setCommentInputs(prev => ({ ...prev, [key]: { profileId: "", comment: "" } }));
       const ep = editorProfiles?.[ad.editor];
       if (ep?.user_id) {
-        createNotification(activeWorkspaceId, ep.user_id, `New comment to post on "${ad.name}"`, "comment_assignment").catch(() => {});
+        createNotification(activeWorkspaceId, ep.user_id, `New comment to post on "${ad.name}" - Video ${video?.video_number || ""}`, "comment_assignment").catch(() => {});
       }
     } catch (e) { alert("Error: " + e.message); }
-    setSavingPlatform(null);
+    setSavingVideo(null);
   };
 
   const handleMarkPosted = async (id) => {
@@ -486,109 +522,139 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
     } catch (e) { alert("Error: " + e.message); }
   };
 
-  const handleDelete = async (id) => {
+  const handleDeleteAssignment = async (id) => {
     try {
       await deleteCommentAssignment(id);
       setAssignments(prev => prev.filter(a => a.id !== id));
     } catch (e) { alert("Error: " + e.message); }
   };
 
+  const setInput = (videoId, field, value) => {
+    setCommentInputs(prev => ({ ...prev, [videoId]: { ...(prev[videoId] || {}), [field]: value } }));
+  };
+
   const ttProfiles = profiles.filter(p => p.platform === "tiktok");
   const igProfiles = profiles.filter(p => p.platform === "instagram");
-  const ttAssignments = assignments.filter(a => a.platform === "tiktok");
-  const igAssignments = assignments.filter(a => a.platform === "instagram");
+  const ttVideos = videos.filter(v => v.platform === "tiktok").sort((a, b) => a.video_number - b.video_number);
+  const igVideos = videos.filter(v => v.platform === "instagram").sort((a, b) => a.video_number - b.video_number);
   const pendingCount = assignments.filter(a => a.status === "pending").length;
   const postedCount = assignments.filter(a => a.status === "posted").length;
 
   if (loading) return <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading...</div>;
 
-  const sectionStyle = { marginBottom: 20 };
-  const platformHeader = (icon, label, count) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-      <span style={{ fontSize: 16 }}>{icon}</span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{label}</span>
-      {count > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 99, background: "var(--accent-bg)", color: "var(--accent)", fontWeight: 700 }}>{count}</span>}
-    </div>
-  );
-
   const renderAssignment = (a) => {
     const sp = a.social_profiles || {};
     return (
       <div key={a.id} style={{
-        padding: "10px 12px", marginBottom: 6, borderRadius: 8,
-        background: a.status === "posted" ? "var(--green-bg)" : "var(--bg-elevated)",
-        border: `1px solid ${a.status === "posted" ? "var(--green-border)" : "var(--border)"}`,
+        padding: "8px 10px", marginBottom: 4, borderRadius: 6,
+        background: a.status === "posted" ? "var(--green-bg)" : "var(--bg-card)",
+        border: `1px solid ${a.status === "posted" ? "var(--green-border)" : "var(--border-light)"}`,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 3 }}>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>
               @{sp.username || "?"} · {sp.gender || "?"}
               {sp.profile_url && <> · <a href={sp.profile_url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-light)" }}>Profile</a></>}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>{a.comment_text}</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-primary)", lineHeight: 1.5 }}>{a.comment_text}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             {a.status === "pending" && isEditor && (
               <button onClick={() => handleMarkPosted(a.id)} className="btn btn-primary btn-xs">Posted</button>
             )}
             {a.status === "posted" && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--green)", padding: "2px 6px", borderRadius: 99, background: "var(--green-bg)", border: "1px solid var(--green-border)" }}>POSTED</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: "var(--green)", padding: "2px 6px", borderRadius: 99, background: "var(--green-bg)", border: "1px solid var(--green-border)" }}>POSTED</span>
             )}
             {!isEditor && (
-              <button onClick={() => handleDelete(a.id)} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 13, padding: 2 }}>×</button>
+              <button onClick={() => handleDeleteAssignment(a.id)} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 13, padding: 2 }}>×</button>
             )}
           </div>
         </div>
         {a.status === "posted" && a.posted_at && (
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Posted {new Date(a.posted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+          <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>Posted {new Date(a.posted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
         )}
       </div>
     );
   };
 
-  const renderPlatformSection = (platform, icon, platformProfiles, platformAssignments, adUrl, setAdUrl, profileId, setProfileId, comment, setComment) => (
-    <div style={sectionStyle}>
-      {platformHeader(icon, platform === "tiktok" ? "TikTok" : "Instagram", platformAssignments.length)}
+  const renderVideoCard = (video, platformProfiles) => {
+    const videoAssignments = assignments.filter(a => a.video_id === video.id);
+    const input = commentInputs[video.id] || {};
+    const videoPending = videoAssignments.filter(a => a.status === "pending").length;
+    const videoPosted = videoAssignments.filter(a => a.status === "posted").length;
 
-      {/* Ad URL */}
-      {!isEditor ? (
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          <input value={adUrl} onChange={e => setAdUrl(e.target.value)} onBlur={saveUrls} className="input" placeholder={`${platform === "tiktok" ? "TikTok" : "Instagram"} ad URL`} style={{ flex: 1, fontSize: 12 }} />
+    return (
+      <div key={video.id} className="card-flat" style={{ marginBottom: 10, padding: "12px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+            Video {video.video_number}
+            {videoPending > 0 && <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 99, background: "var(--yellow-bg)", color: "var(--yellow)", fontWeight: 700 }}>{videoPending} pending</span>}
+            {videoPosted > 0 && <span style={{ marginLeft: 4, fontSize: 10, padding: "1px 6px", borderRadius: 99, background: "var(--green-bg)", color: "var(--green)", fontWeight: 700 }}>{videoPosted} posted</span>}
+          </div>
+          {!isEditor && (
+            <button onClick={() => handleDeleteVideo(video.id)} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 12, padding: 2 }}>Remove</button>
+          )}
         </div>
-      ) : (() => {
-        const url = adUrl || platformAssignments.find(a => a.ad_url)?.ad_url || "";
-        return url ? (
-          <a href={url} target="_blank" rel="noopener noreferrer" style={{
-            display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", marginBottom: 10,
-            borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent-border)", fontSize: 13, color: "var(--accent-light)", fontWeight: 600, textDecoration: "none",
-          }}>Open {platform === "tiktok" ? "TikTok" : "Instagram"} Ad ↗</a>
+
+        {/* Video URL */}
+        {!isEditor ? (
+          <input value={video.video_url || ""} onChange={e => handleVideoUrlChange(video.id, e.target.value)} onBlur={() => handleVideoUrlSave(video)} className="input" placeholder="Paste video URL..." style={{ fontSize: 12, marginBottom: 8 }} />
+        ) : video.video_url ? (
+          <a href={video.video_url} target="_blank" rel="noopener noreferrer" style={{
+            display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", marginBottom: 8,
+            borderRadius: 8, background: "var(--accent-bg)", border: "1px solid var(--accent-border)", fontSize: 12, color: "var(--accent-light)", fontWeight: 600, textDecoration: "none",
+          }}>Open Video {video.video_number} ↗</a>
         ) : (
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontStyle: "italic" }}>No {platform === "tiktok" ? "TikTok" : "Instagram"} ad URL set yet.</div>
-        );
-      })()}
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, fontStyle: "italic" }}>No URL set yet.</div>
+        )}
 
-      {/* Assignments list */}
-      {platformAssignments.length === 0 && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>No comments assigned yet.</div>}
-      {platformAssignments.map(renderAssignment)}
+        {/* Assigned comments */}
+        {videoAssignments.map(renderAssignment)}
 
-      {/* Assign new comment (founder only) */}
-      {!isEditor && platformProfiles.length > 0 && (
-        <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 8, background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>Assign comment</div>
-          <select value={profileId} onChange={e => setProfileId(e.target.value)} className="input" style={{ fontSize: 12, marginBottom: 6 }}>
-            <option value="">Select profile...</option>
-            {platformProfiles.map(p => <option key={p.id} value={p.id}>@{p.username} ({p.gender})</option>)}
-          </select>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={comment} onChange={e => setComment(e.target.value)} className="input" placeholder="Comment text..." style={{ flex: 1, fontSize: 12 }} />
-            <button onClick={() => handleAssign(platform)} disabled={savingPlatform || !comment.trim() || !profileId} className="btn btn-primary btn-sm">
-              {savingPlatform === platform ? "..." : "Assign"}
-            </button>
+        {/* Assign new (founder only) */}
+        {!isEditor && platformProfiles.length > 0 && (
+          <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 6, background: "var(--bg-elevated)", border: "1px solid var(--border-light)" }}>
+            <select value={input.profileId || ""} onChange={e => setInput(video.id, "profileId", e.target.value)} className="input" style={{ fontSize: 11, marginBottom: 4 }}>
+              <option value="">Select profile...</option>
+              {platformProfiles.map(p => <option key={p.id} value={p.id}>@{p.username} ({p.gender})</option>)}
+            </select>
+            <div style={{ display: "flex", gap: 4 }}>
+              <input value={input.comment || ""} onChange={e => setInput(video.id, "comment", e.target.value)} className="input" placeholder="Comment text..." style={{ flex: 1, fontSize: 11 }} />
+              <button onClick={() => handleAssign(video.id, video.platform)} disabled={savingVideo === video.id || !input.comment?.trim() || !input.profileId} className="btn btn-primary btn-xs">
+                {savingVideo === video.id ? "..." : "Assign"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPlatform = (platform, icon, platformVideos, platformProfiles) => (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16 }}>{icon}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{platform === "tiktok" ? "TikTok" : "Instagram"}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{platformVideos.length} video{platformVideos.length !== 1 ? "s" : ""}</span>
+        </div>
+        {!isEditor && (
+          <button onClick={() => handleAddVideo(platform)} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>+ Add Video</button>
+        )}
+      </div>
+
+      {platformVideos.length === 0 && (
+        <div className="card-flat" style={{ padding: "20px", textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            {isEditor ? "No videos added yet." : "No videos yet. Click \"+ Add Video\" to get started."}
           </div>
         </div>
       )}
-      {!isEditor && platformProfiles.length === 0 && (
-        <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>No {platform} profiles set up by {ad.editor}. They need to add profiles in Settings.</div>
+
+      {platformVideos.map(v => renderVideoCard(v, platformProfiles))}
+
+      {!isEditor && platformProfiles.length === 0 && platformVideos.length > 0 && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic", marginTop: 4 }}>No {platform} profiles set up by {ad.editor}. They need to add profiles in Settings.</div>
       )}
     </div>
   );
@@ -606,13 +672,13 @@ function EngagementTab({ ad, isEditor, profiles, assignments, setAssignments, lo
           <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>POSTED</div>
         </div>
         <div className="card-flat" style={{ flex: 1, padding: "10px 14px", textAlign: "center" }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--accent-light)", fontFamily: "var(--fm)" }}>{profiles.length}</div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>PROFILES</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--accent-light)", fontFamily: "var(--fm)" }}>{videos.length}</div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600 }}>VIDEOS</div>
         </div>
       </div>
 
-      {renderPlatformSection("tiktok", "🎵", ttProfiles, ttAssignments, ttUrl, setTtUrl, ttProfileId, setTtProfileId, ttComment, setTtComment)}
-      {renderPlatformSection("instagram", "📸", igProfiles, igAssignments, igUrl, setIgUrl, igProfileId, setIgProfileId, igComment, setIgComment)}
+      {renderPlatform("tiktok", "🎵", ttVideos, ttProfiles)}
+      {renderPlatform("instagram", "📸", igVideos, igProfiles)}
     </div>
   );
 }
