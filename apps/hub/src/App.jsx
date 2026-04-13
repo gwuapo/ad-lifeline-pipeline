@@ -27,8 +27,8 @@ const APPS = [
     ),
     gradient: ["#a78bfa", "#7c3aed"],
     glow: "rgba(167,139,250,0.15)",
-    url: null,
-    status: "building",
+    url: "https://ai.nexusholdings.io",
+    status: "live",
     tag: "AI",
   },
   {
