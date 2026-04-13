@@ -291,8 +291,8 @@ export default function App() {
               src="/nexus-logo-light.png"
               alt="Nexus"
               style={{
-                width: 40, height: 40,
-                borderRadius: 10,
+                height: 40, width: "auto",
+                objectFit: "contain",
                 filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.3))",
               }}
             />
