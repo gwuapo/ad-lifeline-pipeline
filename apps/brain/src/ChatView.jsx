@@ -199,22 +199,19 @@ function PillarBackground() {
 
 function EmptyState({ onOpenSettings, hasApiKey }) {
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", position: "relative", paddingBottom: 16 }}>
-      <PillarBackground />
-      <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: 32 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 300, color: "var(--text-primary)", letterSpacing: "-0.3px", marginBottom: 8 }}>
-          What are you thinking about today?
-        </h1>
-        {!hasApiKey && (
-          <button onClick={onOpenSettings} style={{
-            marginTop: 16, background: "rgba(167,139,250,0.15)",
-            border: "1px solid rgba(167,139,250,0.25)", borderRadius: "var(--r-sm)",
-            padding: "8px 16px", color: "var(--accent)", fontSize: 13, fontWeight: 500, cursor: "pointer",
-          }}>
-            Add API key to get started
-          </button>
-        )}
-      </div>
+    <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: 24 }}>
+      <h1 style={{ fontSize: 26, fontWeight: 300, color: "var(--text-primary)", letterSpacing: "-0.3px", marginBottom: 8 }}>
+        What are you thinking about today?
+      </h1>
+      {!hasApiKey && (
+        <button onClick={onOpenSettings} style={{
+          marginTop: 16, background: "rgba(167,139,250,0.15)",
+          border: "1px solid rgba(167,139,250,0.25)", borderRadius: "var(--r-sm)",
+          padding: "8px 16px", color: "var(--accent)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+        }}>
+          Add API key to get started
+        </button>
+      )}
     </div>
   );
 }
@@ -395,38 +392,57 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
         )}
       </div>
 
-      {/* Messages or empty */}
       {!hasMessages ? (
-        <EmptyState onOpenSettings={onOpenSettings} hasApiKey={!!apiKey} />
-      ) : (
-        <div style={{ flex: 1, overflow: "auto", padding: "0 18%", display: "flex", flexDirection: "column" }}>
-          <div style={{ flex: 1, minHeight: 40 }} />
-          {chat.messages.map((msg, i) => <Message key={i} msg={msg} />)}
-          {pendingEstimate && (
-            <CostApproval estimate={pendingEstimate} onApprove={handleApprove} onCancel={handleCancelEstimate} />
-          )}
-          {loading && !pendingEstimate && (
-            <div className="msg-appear" style={{ padding: "12px 0", display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite" }} />
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite 0.2s" }} />
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite 0.4s" }} />
-            </div>
-          )}
-          <div ref={messagesEndRef} style={{ height: 8 }} />
+        /* Centered layout: heading + input as one unit in the middle */
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          position: "relative", padding: "0 18%",
+        }}>
+          <PillarBackground />
+          <EmptyState onOpenSettings={onOpenSettings} hasApiKey={!!apiKey} />
+          <div style={{ width: "100%", position: "relative", zIndex: 2 }}>
+            <InputBar
+              input={input}
+              setInput={setInput}
+              inputRef={inputRef}
+              loading={loading}
+              onSend={handleSend}
+              hasMessages={false}
+              selectedTool={selectedTool}
+              setSelectedTool={setSelectedTool}
+            />
+          </div>
         </div>
+      ) : (
+        <>
+          <div style={{ flex: 1, overflow: "auto", padding: "0 18%", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, minHeight: 40 }} />
+            {chat.messages.map((msg, i) => <Message key={i} msg={msg} />)}
+            {pendingEstimate && (
+              <CostApproval estimate={pendingEstimate} onApprove={handleApprove} onCancel={handleCancelEstimate} />
+            )}
+            {loading && !pendingEstimate && (
+              <div className="msg-appear" style={{ padding: "12px 0", display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite" }} />
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite 0.2s" }} />
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite 0.4s" }} />
+              </div>
+            )}
+            <div ref={messagesEndRef} style={{ height: 8 }} />
+          </div>
+          <InputBar
+            input={input}
+            setInput={setInput}
+            inputRef={inputRef}
+            loading={loading}
+            onSend={handleSend}
+            hasMessages={true}
+            selectedTool={selectedTool}
+            setSelectedTool={setSelectedTool}
+          />
+        </>
       )}
-
-      {/* Input bar */}
-      <InputBar
-        input={input}
-        setInput={setInput}
-        inputRef={inputRef}
-        loading={loading}
-        onSend={handleSend}
-        hasMessages={hasMessages}
-        selectedTool={selectedTool}
-        setSelectedTool={setSelectedTool}
-      />
     </div>
   );
 }
@@ -466,8 +482,7 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
   return (
     <div style={{
       flexShrink: 0,
-      padding: hasMessages ? "12px 20%" : "0 18%",
-      paddingBottom: 20,
+      padding: hasMessages ? "12px 18% 20px" : "0",
       position: "relative",
       zIndex: 2,
     }}>
