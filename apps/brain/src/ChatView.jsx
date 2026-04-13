@@ -20,32 +20,107 @@ function ToolSteps({ steps }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 0" }}>
       {steps.map((step, i) => (
-        <div key={i} className="tool-step" style={{
-          display: "flex", alignItems: "center", gap: 10,
-          animationDelay: `${i * 60}ms`,
-        }}>
+        <div key={i} className="tool-step" style={{ display: "flex", alignItems: "center", gap: 10, animationDelay: `${i * 60}ms` }}>
           <div style={{
             width: 20, height: 20, borderRadius: 6,
-            background: step.done ? "rgba(99,226,160,0.12)" : "var(--accent-dim)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
+            background: step.done ? "rgba(99,226,160,0.12)" : "rgba(167,139,250,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>
             {step.done ? (
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
             ) : (
-              <div style={{
-                width: 8, height: 8, borderRadius: "50%",
-                border: "2px solid var(--accent)",
-                borderTopColor: "transparent",
-                animation: "spin 0.8s linear infinite",
-              }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid var(--accent)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
             )}
           </div>
-          <span style={{ fontSize: 13, color: step.done ? "var(--text-secondary)" : "var(--text-primary)", fontWeight: 400 }}>
-            {step.text}
-          </span>
+          <span style={{ fontSize: 13, color: step.done ? "var(--text-secondary)" : "var(--text-primary)" }}>{step.text}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function UsageBadge({ usage }) {
+  if (!usage) return null;
+  const inputCost = (usage.inputTokens / 1_000_000) * 15;
+  const outputCost = (usage.outputTokens / 1_000_000) * 75;
+  const total = inputCost + outputCost;
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      fontSize: 11, color: "var(--text-dim)", marginTop: 8,
+      padding: "4px 10px", borderRadius: 6,
+      background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)",
+    }}>
+      <span>{(usage.inputTokens + usage.outputTokens).toLocaleString()} tokens</span>
+      <span style={{ color: "var(--text-dim)" }}>|</span>
+      <span>${total.toFixed(3)}</span>
+    </div>
+  );
+}
+
+function CostApproval({ estimate, onApprove, onCancel }) {
+  return (
+    <div className="msg-appear" style={{ padding: "4px 0" }}>
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: "var(--r-md)",
+        padding: "16px 20px",
+        maxWidth: "80%",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+          </svg>
+          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>Estimated Cost</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 20, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.5px" }}>Tokens</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", fontFeatureSettings: "'tnum'" }}>
+              ~{estimate.totalTokens?.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.5px" }}>Cost Range</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: "var(--text-primary)", fontFeatureSettings: "'tnum'" }}>
+              ${estimate.estimatedCost?.low} – ${estimate.estimatedCost?.high}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.5px" }}>Model</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)" }}>
+              Opus 4
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={onApprove}
+            style={{
+              padding: "8px 20px", borderRadius: 10,
+              background: "var(--accent)", border: "none",
+              color: "#fff", fontSize: 13, fontWeight: 600,
+              cursor: "pointer", transition: "all 0.15s",
+            }}
+          >
+            Run
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "8px 16px", borderRadius: 10,
+              background: "none", border: "1px solid var(--border)",
+              color: "var(--text-secondary)", fontSize: 13, fontWeight: 500,
+              cursor: "pointer", transition: "all 0.15s",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -53,11 +128,7 @@ function ToolSteps({ steps }) {
 function Message({ msg }) {
   const isUser = msg.role === "user";
   return (
-    <div className="msg-appear" style={{
-      display: "flex",
-      justifyContent: isUser ? "flex-end" : "flex-start",
-      padding: "4px 0",
-    }}>
+    <div className="msg-appear" style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", padding: "4px 0" }}>
       <div style={{
         maxWidth: isUser ? "70%" : "80%",
         padding: isUser ? "10px 16px" : "2px 0",
@@ -67,17 +138,14 @@ function Message({ msg }) {
       }}>
         {msg.toolSteps && <ToolSteps steps={msg.toolSteps} />}
         {msg.content && (
-          <div style={{
-            fontSize: 14, lineHeight: 1.65, color: "var(--text-primary)",
-            letterSpacing: "0.1px", fontWeight: 400,
-          }}>
+          <div style={{ fontSize: 14, lineHeight: 1.65, color: "var(--text-primary)", letterSpacing: "0.1px" }}>
             <ReactMarkdown
               components={{
                 p: ({ children }) => <p style={{ margin: "6px 0" }}>{children}</p>,
-                strong: ({ children }) => <strong style={{ fontWeight: 600, color: "var(--text-primary)" }}>{children}</strong>,
-                h1: ({ children }) => <h1 style={{ fontSize: 20, fontWeight: 600, margin: "16px 0 8px", color: "var(--text-primary)" }}>{children}</h1>,
-                h2: ({ children }) => <h2 style={{ fontSize: 17, fontWeight: 600, margin: "14px 0 6px", color: "var(--text-primary)" }}>{children}</h2>,
-                h3: ({ children }) => <h3 style={{ fontSize: 15, fontWeight: 600, margin: "12px 0 4px", color: "var(--text-primary)" }}>{children}</h3>,
+                strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                h1: ({ children }) => <h1 style={{ fontSize: 20, fontWeight: 600, margin: "16px 0 8px" }}>{children}</h1>,
+                h2: ({ children }) => <h2 style={{ fontSize: 17, fontWeight: 600, margin: "14px 0 6px" }}>{children}</h2>,
+                h3: ({ children }) => <h3 style={{ fontSize: 15, fontWeight: 600, margin: "12px 0 4px" }}>{children}</h3>,
                 ul: ({ children }) => <ul style={{ paddingLeft: 20, margin: "6px 0" }}>{children}</ul>,
                 ol: ({ children }) => <ol style={{ paddingLeft: 20, margin: "6px 0" }}>{children}</ol>,
                 li: ({ children }) => <li style={{ margin: "3px 0", color: "var(--text-secondary)" }}>{children}</li>,
@@ -85,11 +153,10 @@ function Message({ msg }) {
                   ? <code style={{ background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: 5, fontSize: 13 }}>{children}</code>
                   : <pre style={{ background: "rgba(255,255,255,0.04)", padding: 14, borderRadius: 10, overflow: "auto", fontSize: 13, margin: "8px 0", border: "1px solid var(--border)" }}><code>{children}</code></pre>,
               }}
-            >
-              {msg.content}
-            </ReactMarkdown>
+            >{msg.content}</ReactMarkdown>
           </div>
         )}
+        {msg.usage && <UsageBadge usage={msg.usage} />}
       </div>
     </div>
   );
@@ -119,30 +186,18 @@ function PillarBackground() {
 
 function EmptyState({ onOpenSettings, hasApiKey }) {
   return (
-    <div style={{
-      flex: 1, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-      position: "relative",
-    }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
       <PillarBackground />
       <div style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-        <h1 style={{
-          fontSize: 26, fontWeight: 300, color: "var(--text-primary)",
-          letterSpacing: "-0.3px", marginBottom: 8,
-        }}>
+        <h1 style={{ fontSize: 26, fontWeight: 300, color: "var(--text-primary)", letterSpacing: "-0.3px", marginBottom: 8 }}>
           What are you thinking about today?
         </h1>
         {!hasApiKey && (
-          <button
-            onClick={onOpenSettings}
-            style={{
-              marginTop: 16, background: "var(--accent-dim)",
-              border: "1px solid rgba(167,139,250,0.25)",
-              borderRadius: "var(--r-sm)", padding: "8px 16px",
-              color: "var(--accent)", fontSize: 13, fontWeight: 500,
-              cursor: "pointer", transition: "all 0.15s",
-            }}
-          >
+          <button onClick={onOpenSettings} style={{
+            marginTop: 16, background: "rgba(167,139,250,0.15)",
+            border: "1px solid rgba(167,139,250,0.25)", borderRadius: "var(--r-sm)",
+            padding: "8px 16px", color: "var(--accent)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+          }}>
             Add API key to get started
           </button>
         )}
@@ -154,66 +209,100 @@ function EmptyState({ onOpenSettings, hasApiKey }) {
 export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sidebarOpen, onToggleSidebar, onOpenSettings }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pendingEstimate, setPendingEstimate] = useState(null);
+  const [pendingMessages, setPendingMessages] = useState(null);
+  const [pendingChatId, setPendingChatId] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat?.messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat?.messages]);
+  useEffect(() => { inputRef.current?.focus(); }, [chat?.id]);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [chat?.id]);
+  const detectsTool = (text) => {
+    return text.includes("[Angle Finder]") || text.includes("[Ad Copy]") || text.includes("[Static Ad]");
+  };
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
     const userMsg = { role: "user", content: input.trim() };
     let chatId = chat?.id;
-
-    if (!chatId) {
-      chatId = onNewChat();
-    }
+    if (!chatId) chatId = onNewChat();
 
     const title = input.trim().slice(0, 50) + (input.trim().length > 50 ? "..." : "");
-
     onUpdateChat(chatId, prev => ({
       ...prev,
       title: prev.messages.length === 0 ? title : prev.title,
       messages: [...prev.messages, userMsg],
     }));
 
+    const allMessages = [...(chat?.messages || []), userMsg];
     setInput("");
-    setLoading(true);
 
     if (!apiKey) {
       onUpdateChat(chatId, prev => ({
         ...prev,
         messages: [...prev.messages, { role: "assistant", content: "Please add your Anthropic API key in Settings to start chatting." }],
       }));
-      setLoading(false);
       return;
     }
+
+    // If a tool is detected, get estimate first
+    if (detectsTool(userMsg.content)) {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey, messages: allMessages, action: "estimate" }),
+        });
+        const estimate = await res.json();
+        setPendingEstimate(estimate);
+        setPendingMessages(allMessages);
+        setPendingChatId(chatId);
+        setLoading(false);
+        return;
+      } catch (err) {
+        setLoading(false);
+      }
+    }
+
+    // No tool = execute directly (cheap general chat)
+    await executeChat(chatId, allMessages);
+  };
+
+  const handleApprove = () => {
+    const chatId = pendingChatId;
+    const messages = pendingMessages;
+    setPendingEstimate(null);
+    setPendingMessages(null);
+    setPendingChatId(null);
+    executeChat(chatId, messages);
+  };
+
+  const handleCancelEstimate = () => {
+    setPendingEstimate(null);
+    setPendingMessages(null);
+    setPendingChatId(null);
+  };
+
+  const executeChat = async (chatId, allMessages) => {
+    setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apiKey,
-          messages: [...(chat?.messages || []), userMsg],
-        }),
+        body: JSON.stringify({ apiKey, messages: allMessages }),
       });
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || `HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantContent = "";
       let toolSteps = [];
+      let usage = null;
 
       onUpdateChat(chatId, prev => ({
         ...prev,
@@ -223,7 +312,6 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split("\n").filter(l => l.trim());
 
@@ -231,10 +319,8 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
           if (!line.startsWith("data: ")) continue;
           const data = line.slice(6);
           if (data === "[DONE]") break;
-
           try {
             const parsed = JSON.parse(data);
-
             if (parsed.type === "tool_step") {
               toolSteps = [...toolSteps, { text: parsed.text, done: false }];
               onUpdateChat(chatId, prev => {
@@ -256,6 +342,13 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
                 msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: assistantContent };
                 return { ...prev, messages: msgs };
               });
+            } else if (parsed.type === "usage") {
+              usage = { inputTokens: parsed.inputTokens, outputTokens: parsed.outputTokens };
+              onUpdateChat(chatId, prev => {
+                const msgs = [...prev.messages];
+                msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], usage };
+                return { ...prev, messages: msgs };
+              });
             }
           } catch {}
         }
@@ -263,10 +356,7 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
     } catch (err) {
       onUpdateChat(chatId, prev => ({
         ...prev,
-        messages: [...prev.messages, {
-          role: "assistant",
-          content: `Error: ${err.message}. Check your API key in Settings.`,
-        }],
+        messages: [...prev.messages, { role: "assistant", content: `Error: ${err.message}. Check your API key in Settings.` }],
       }));
     } finally {
       setLoading(false);
@@ -278,43 +368,27 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
       {/* Top bar */}
-      <div style={{
-        padding: "12px 20px",
-        display: "flex", alignItems: "center", gap: 10,
-        flexShrink: 0,
-      }}>
+      <div style={{ padding: "12px 20px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         {!sidebarOpen && (
-          <button
-            onClick={onToggleSidebar}
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "var(--text-tertiary)", padding: 4, lineHeight: 0,
-            }}
-          >
+          <button onClick={onToggleSidebar} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, lineHeight: 0 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
         )}
       </div>
 
-      {/* Messages or empty state */}
+      {/* Messages or empty */}
       {!hasMessages ? (
         <EmptyState onOpenSettings={onOpenSettings} hasApiKey={!!apiKey} />
       ) : (
-        <div style={{
-          flex: 1, overflow: "auto",
-          padding: "0 20%",
-          display: "flex", flexDirection: "column",
-        }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "0 20%", display: "flex", flexDirection: "column" }}>
           <div style={{ flex: 1 }} />
-          {chat.messages.map((msg, i) => (
-            <Message key={i} msg={msg} />
-          ))}
-          {loading && (
+          {chat.messages.map((msg, i) => <Message key={i} msg={msg} />)}
+          {pendingEstimate && (
+            <CostApproval estimate={pendingEstimate} onApprove={handleApprove} onCancel={handleCancelEstimate} />
+          )}
+          {loading && !pendingEstimate && (
             <div className="msg-appear" style={{ padding: "8px 0", display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{
-                width: 6, height: 6, borderRadius: "50%",
-                background: "var(--accent)", animation: "pulse 1.2s ease-in-out infinite",
-              }} />
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.2s ease-in-out infinite" }} />
               <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Thinking...</span>
             </div>
           )}
@@ -329,8 +403,7 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
         paddingBottom: hasMessages ? 20 : 0,
         position: hasMessages ? "relative" : "absolute",
         bottom: hasMessages ? undefined : "38%",
-        left: hasMessages ? undefined : 0,
-        right: hasMessages ? undefined : 0,
+        left: hasMessages ? undefined : 0, right: hasMessages ? undefined : 0,
         zIndex: 2,
       }}>
         <div style={{
@@ -338,15 +411,9 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
           border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: "var(--r-input)",
           padding: "4px 4px 4px 18px",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          transition: "all 0.2s",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-        }}
-          onFocus={() => {}}
-        >
+          display: "flex", alignItems: "center", gap: 8,
+          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+        }}>
           <input
             ref={inputRef}
             value={input}
@@ -356,9 +423,8 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
             disabled={loading}
             style={{
               flex: 1, background: "none", border: "none", outline: "none",
-              color: "var(--text-primary)", fontSize: 14, fontWeight: 400,
-              fontFamily: "var(--font)", letterSpacing: "0.1px",
-              padding: "10px 0",
+              color: "var(--text-primary)", fontSize: 14, fontFamily: "var(--font)",
+              letterSpacing: "0.1px", padding: "10px 0",
             }}
           />
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -369,21 +435,13 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
                 title={tool.description}
                 style={{
                   display: "flex", alignItems: "center", gap: 5,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 8, padding: "5px 10px",
-                  color: "var(--text-tertiary)",
-                  cursor: "pointer", fontSize: 11, fontWeight: 500,
-                  transition: "all 0.15s", whiteSpace: "nowrap",
+                  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 8, padding: "5px 10px", color: "var(--text-tertiary)",
+                  cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap",
+                  transition: "all 0.15s",
                 }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-                  e.currentTarget.style.color = "var(--text-secondary)";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-                  e.currentTarget.style.color = "var(--text-tertiary)";
-                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-tertiary)"; }}
               >
                 <ToolIcon type={tool.icon} size={12} />
                 {tool.name}
@@ -396,11 +454,8 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
             style={{
               width: 36, height: 36, borderRadius: 10,
               background: input.trim() ? "var(--text-primary)" : "rgba(255,255,255,0.06)",
-              border: "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: input.trim() ? "pointer" : "default",
-              transition: "all 0.2s",
-              flexShrink: 0,
+              border: "none", display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: input.trim() ? "pointer" : "default", transition: "all 0.2s", flexShrink: 0,
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() ? "var(--bg-void)" : "var(--text-dim)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
