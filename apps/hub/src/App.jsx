@@ -1,136 +1,233 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const APPS = [
   {
     id: "pipeline",
     name: "Ad Lifeline",
-    description: "Ad pipeline management, tracking, and editor workflow",
-    icon: "🎯",
-    gradient: "linear-gradient(135deg, #ff6363 0%, #ff4040 100%)",
+    description: "Pipeline management, ad tracking, editor workflow, and performance analytics",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+      </svg>
+    ),
+    gradient: ["#ff6363", "#e8453a"],
+    glow: "rgba(255,99,99,0.15)",
     url: "https://studio.nexusholdings.io",
     status: "live",
+    tag: "Core",
   },
   {
     id: "brain",
     name: "Stefan Brain",
-    description: "AI-powered marketing material generation and creative tools",
-    icon: "🧠",
-    gradient: "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)",
+    description: "AI creative engine for ad scripts, static ads, landing pages, and voiceovers",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9.5 2A5.5 5.5 0 0 0 5 7.5c0 .96.246 1.863.677 2.65L4 14l3-.8c.927.508 2 .8 3.154.8A5.5 5.5 0 0 0 9.5 2Z"/><path d="M14.5 22a5.5 5.5 0 0 0 .654-10.96 5.5 5.5 0 0 0-9.592-3.463"/><path d="M14.5 22a5.5 5.5 0 0 1-.654-10.96"/><circle cx="9.5" cy="7.5" r="1"/><circle cx="14.5" cy="16.5" r="1"/>
+      </svg>
+    ),
+    gradient: ["#a78bfa", "#7c3aed"],
+    glow: "rgba(167,139,250,0.15)",
     url: null,
-    status: "coming-soon",
+    status: "building",
+    tag: "AI",
   },
   {
     id: "profit",
     name: "Profit Tracker",
-    description: "Financial analytics, ROAS tracking, and revenue forecasting",
-    icon: "📊",
-    gradient: "linear-gradient(135deg, #5fc992 0%, #34d399 100%)",
+    description: "Revenue analytics, margin tracking, ROAS optimization, and financial forecasting",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+    ),
+    gradient: ["#63e2a0", "#22c55e"],
+    glow: "rgba(99,226,160,0.15)",
     url: null,
-    status: "coming-soon",
+    status: "planned",
+    tag: "Finance",
   },
   {
     id: "intel",
     name: "Data Intelligence",
-    description: "Cross-platform data analysis, insights, and decision engine",
-    icon: "⚡",
-    gradient: "linear-gradient(135deg, #55b3ff 0%, #3b82f6 100%)",
+    description: "Cross-platform data synthesis, pattern recognition, and autonomous decision support",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+    ),
+    gradient: ["#6ea8fe", "#3b82f6"],
+    glow: "rgba(110,168,254,0.15)",
     url: null,
     status: "planned",
+    tag: "Intelligence",
   },
 ];
 
-function StatusBadge({ status }) {
-  const config = {
-    live: { label: "Live", color: "#5fc992", bg: "rgba(95,201,146,0.12)" },
-    "coming-soon": { label: "Coming Soon", color: "#ffbc33", bg: "rgba(255,188,51,0.12)" },
-    planned: { label: "Planned", color: "#9c9c9d", bg: "rgba(156,156,157,0.12)" },
+function StatusPill({ status }) {
+  const map = {
+    live: { label: "Live", color: "#63e2a0", bg: "rgba(99,226,160,0.1)", border: "rgba(99,226,160,0.2)" },
+    building: { label: "In Development", color: "#a78bfa", bg: "rgba(167,139,250,0.1)", border: "rgba(167,139,250,0.2)" },
+    planned: { label: "Planned", color: "#6b6b7b", bg: "rgba(107,107,123,0.08)", border: "rgba(107,107,123,0.15)" },
   };
-  const c = config[status] || config.planned;
+  const c = map[status] || map.planned;
   return (
     <span style={{
-      fontSize: 11, fontWeight: 600, letterSpacing: "0.5px",
-      padding: "3px 10px", borderRadius: "var(--r-pill)",
+      display: "inline-flex", alignItems: "center", gap: 6,
+      fontSize: 11, fontWeight: 500, letterSpacing: "0.3px",
+      padding: "4px 10px", borderRadius: 100,
       color: c.color, background: c.bg,
-      textTransform: "uppercase",
+      border: `1px solid ${c.border}`,
     }}>
+      {status === "live" && (
+        <span className="status-dot" style={{ background: c.color, flexShrink: 0 }} />
+      )}
       {c.label}
     </span>
   );
 }
 
-function AppCard({ app, isSelected, onClick }) {
-  const [hovered, setHovered] = useState(false);
-  const active = isSelected || hovered;
+function AppCard({ app, index }) {
+  const isClickable = !!app.url;
 
   return (
     <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className="glass-card"
+      onClick={() => isClickable && window.open(app.url, "_blank")}
       style={{
-        position: "relative",
-        width: 240,
-        minHeight: 260,
-        borderRadius: "var(--r-lg)",
-        background: active
-          ? "linear-gradient(180deg, rgba(27,28,30,0.95) 0%, rgba(16,17,17,0.98) 100%)"
-          : "var(--bg-surface)",
-        border: `1px solid ${active ? "rgba(255,255,255,0.08)" : "var(--border-subtle)"}`,
-        padding: "var(--sp-7)",
-        cursor: app.url ? "pointer" : "default",
-        transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-        transform: active ? "translateY(-4px) scale(1.02)" : "translateY(0) scale(1)",
-        boxShadow: active
-          ? "0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.05)"
-          : "0 2px 8px rgba(0,0,0,0.2)",
+        width: "100%",
+        padding: "28px 26px 24px",
+        cursor: isClickable ? "pointer" : "default",
         display: "flex",
         flexDirection: "column",
-        gap: "var(--sp-5)",
-        overflow: "hidden",
-        flexShrink: 0,
+        gap: 18,
+        animation: `fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) ${120 + index * 70}ms both`,
       }}
     >
-      {active && (
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div style={{
-          position: "absolute", top: 0, left: 0, right: 0, height: 2,
-          background: app.gradient,
-          borderRadius: "var(--r-lg) var(--r-lg) 0 0",
-        }} />
-      )}
-
-      <div style={{
-        width: 48, height: 48, borderRadius: "var(--r-md)",
-        background: app.gradient,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 22,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
-      }}>
-        {app.icon}
+          width: 44, height: 44, borderRadius: 13,
+          background: `linear-gradient(135deg, ${app.gradient[0]}, ${app.gradient[1]})`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#fff",
+          boxShadow: `0 8px 20px ${app.glow}, inset 0 1px 0 rgba(255,255,255,0.2)`,
+          flexShrink: 0,
+        }}>
+          {app.icon}
+        </div>
+        <StatusPill status={app.status} />
       </div>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
+      <div>
         <div style={{
-          fontSize: 18, fontWeight: 600, color: "var(--text-primary)",
-          lineHeight: 1.2,
+          fontSize: 17, fontWeight: 600, color: "var(--text-primary)",
+          letterSpacing: "-0.01em", lineHeight: 1.2, marginBottom: 8,
         }}>
           {app.name}
         </div>
         <div style={{
-          fontSize: 13, fontWeight: 400, color: "var(--text-tertiary)",
-          lineHeight: 1.5,
+          fontSize: 13, fontWeight: 400, color: "var(--text-secondary)",
+          lineHeight: 1.55, letterSpacing: "0.1px",
         }}>
           {app.description}
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <StatusBadge status={app.status} />
-        {app.url && (
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ color: "var(--text-dim)" }}>
-            <path d="M6 3L11 8L6 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginTop: "auto", paddingTop: 4,
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)",
+          letterSpacing: "0.5px", textTransform: "uppercase",
+        }}>
+          {app.tag}
+        </span>
+        {isClickable && (
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.3s ease",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 17L17 7"/><path d="M7 7h10v10"/>
+            </svg>
+          </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function AuroraBackground() {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, overflow: "hidden",
+      background: "#050507", zIndex: 0,
+    }}>
+      {/* Base gradient mesh */}
+      <div style={{
+        position: "absolute", inset: 0,
+        background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(88,28,135,0.15) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 70% 100%, rgba(30,58,138,0.12) 0%, transparent 50%), radial-gradient(ellipse 50% 40% at 20% 80%, rgba(15,82,186,0.08) 0%, transparent 50%)",
+      }} />
+
+      {/* Animated aurora orbs */}
+      <div style={{
+        position: "absolute",
+        width: "60vw", height: "60vw", maxWidth: 800, maxHeight: 800,
+        top: "-20%", left: "15%",
+        background: "radial-gradient(circle, rgba(120,80,220,0.12) 0%, rgba(60,40,160,0.05) 40%, transparent 70%)",
+        borderRadius: "50%",
+        filter: "blur(60px)",
+        animation: "aurora 20s ease-in-out infinite",
+      }} />
+      <div style={{
+        position: "absolute",
+        width: "50vw", height: "50vw", maxWidth: 700, maxHeight: 700,
+        bottom: "-15%", right: "10%",
+        background: "radial-gradient(circle, rgba(50,100,220,0.1) 0%, rgba(30,60,180,0.04) 40%, transparent 70%)",
+        borderRadius: "50%",
+        filter: "blur(80px)",
+        animation: "aurora 25s ease-in-out infinite reverse",
+      }} />
+      <div style={{
+        position: "absolute",
+        width: "35vw", height: "35vw", maxWidth: 500, maxHeight: 500,
+        top: "40%", right: "30%",
+        background: "radial-gradient(circle, rgba(167,139,250,0.06) 0%, transparent 60%)",
+        borderRadius: "50%",
+        filter: "blur(60px)",
+        animation: "aurora 18s ease-in-out infinite 5s",
+      }} />
+
+      {/* Light pillars (PS5-inspired) */}
+      <div style={{
+        position: "absolute",
+        bottom: 0, left: 0, right: 0, height: "55%",
+        display: "flex", justifyContent: "center", gap: "3vw",
+        opacity: 0.25,
+        maskImage: "linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%)",
+        WebkitMaskImage: "linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%)",
+      }}>
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} style={{
+            width: "2.5vw", maxWidth: 28, height: "100%",
+            background: `linear-gradient(to top, rgba(100,140,255,${0.3 + (i % 3) * 0.1}), transparent)`,
+            borderRadius: "4px 4px 0 0",
+            animation: `pillars ${3 + (i % 4) * 0.8}s ease-in-out infinite ${i * 0.3}s`,
+            transformOrigin: "bottom",
+          }} />
+        ))}
+      </div>
+
+      {/* Noise texture overlay */}
+      <div style={{
+        position: "absolute", inset: 0,
+        opacity: 0.03,
+        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+        backgroundSize: "128px 128px",
+      }} />
     </div>
   );
 }
@@ -146,17 +243,20 @@ function TimeDisplay() {
   const date = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   return (
-    <div style={{ textAlign: "center", marginBottom: "var(--sp-10)" }}>
+    <div style={{
+      textAlign: "center", marginBottom: 52,
+      animation: "fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 50ms both",
+    }}>
       <div style={{
-        fontSize: 56, fontWeight: 300, color: "var(--text-primary)",
-        letterSpacing: "-1px", lineHeight: 1.1,
+        fontSize: 64, fontWeight: 200, color: "var(--text-primary)",
+        letterSpacing: "-2px", lineHeight: 1,
         fontFeatureSettings: "'tnum'",
       }}>
         {time}
       </div>
       <div style={{
-        fontSize: 15, fontWeight: 400, color: "var(--text-tertiary)",
-        marginTop: "var(--sp-3)", letterSpacing: "0.3px",
+        fontSize: 14, fontWeight: 400, color: "var(--text-tertiary)",
+        marginTop: 10, letterSpacing: "0.5px",
       }}>
         {date}
       </div>
@@ -165,119 +265,64 @@ function TimeDisplay() {
 }
 
 export default function App() {
-  const [selectedApp, setSelectedApp] = useState(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 50);
-    return () => clearTimeout(t);
-  }, []);
-
-  const handleAppClick = (app) => {
-    setSelectedApp(app.id);
-    if (app.url) {
-      window.open(app.url, "_blank");
-    }
-  };
-
   return (
-    <div style={{
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "var(--sp-8)",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      {/* Ambient glow */}
-      <div style={{
-        position: "absolute",
-        top: "-20%", left: "50%", transform: "translateX(-50%)",
-        width: "80%", height: "60%",
-        background: "radial-gradient(ellipse, rgba(85,179,255,0.04) 0%, transparent 70%)",
-        pointerEvents: "none",
-      }} />
-      <div style={{
-        position: "absolute",
-        bottom: "-10%", left: "30%",
-        width: "40%", height: "40%",
-        background: "radial-gradient(ellipse, rgba(167,139,250,0.03) 0%, transparent 70%)",
-        pointerEvents: "none",
-      }} />
+    <div style={{ height: "100%", position: "relative" }}>
+      <AuroraBackground />
 
       <div style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(20px)",
-        transition: "all 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
+        position: "relative", zIndex: 1,
+        height: "100%",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        width: "100%",
-        maxWidth: 1100,
+        justifyContent: "center",
+        padding: "32px 24px",
       }}>
-        {/* Logo */}
         <div style={{
-          marginBottom: "var(--sp-8)",
-          display: "flex", alignItems: "center", gap: "var(--sp-4)",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", width: "100%", maxWidth: 1060,
         }}>
-          <img
-            src="/nexus-logo-light.png"
-            alt="Nexus"
-            style={{ width: 36, height: 36, borderRadius: "var(--r-sm)" }}
-          />
-          <span style={{
-            fontSize: 20, fontWeight: 600, color: "var(--text-primary)",
-            letterSpacing: "0.5px",
+          {/* Logo */}
+          <div style={{
+            marginBottom: 36,
+            animation: "fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both",
           }}>
-            NEXUS
-          </span>
-        </div>
-
-        <TimeDisplay />
-
-        {/* App grid */}
-        <div style={{
-          display: "flex",
-          gap: "var(--sp-6)",
-          justifyContent: "center",
-          flexWrap: "wrap",
-        }}>
-          {APPS.map((app, i) => (
-            <div
-              key={app.id}
+            <img
+              src="/nexus-logo-light.png"
+              alt="Nexus"
               style={{
-                opacity: mounted ? 1 : 0,
-                transform: mounted ? "translateY(0)" : "translateY(30px)",
-                transition: `all 0.6s cubic-bezier(0.16, 1, 0.3, 1) ${150 + i * 80}ms`,
+                width: 40, height: 40,
+                borderRadius: 10,
+                filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.3))",
               }}
-            >
-              <AppCard
-                app={app}
-                isSelected={selectedApp === app.id}
-                onClick={() => handleAppClick(app)}
-              />
-            </div>
-          ))}
-        </div>
+            />
+          </div>
 
-        {/* Footer */}
-        <div style={{
-          marginTop: "var(--sp-10)",
-          fontSize: 12,
-          color: "var(--text-dim)",
-          letterSpacing: "0.3px",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sp-3)",
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%",
-            background: "var(--accent-green)",
-            boxShadow: "0 0 6px rgba(95,201,146,0.4)",
-          }} />
-          All systems operational
+          <TimeDisplay />
+
+          {/* App grid */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 16,
+            width: "100%",
+          }}>
+            {APPS.map((app, i) => (
+              <AppCard key={app.id} app={app} index={i} />
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            marginTop: 44,
+            display: "flex", alignItems: "center", gap: 8,
+            fontSize: 12, fontWeight: 400, color: "var(--text-dim)",
+            letterSpacing: "0.2px",
+            animation: "fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) 600ms both",
+          }}>
+            <span className="status-dot" style={{ background: "#63e2a0" }} />
+            <span>All systems operational</span>
+          </div>
         </div>
       </div>
     </div>
