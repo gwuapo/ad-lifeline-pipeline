@@ -212,6 +212,7 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
   const [pendingEstimate, setPendingEstimate] = useState(null);
   const [pendingMessages, setPendingMessages] = useState(null);
   const [pendingChatId, setPendingChatId] = useState(null);
+  const [selectedTool, setSelectedTool] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -225,11 +226,15 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const userMsg = { role: "user", content: input.trim() };
+    const rawInput = input.trim();
+    const toolTag = selectedTool ? `[${selectedTool.name}] ` : "";
+    const fullContent = rawInput.includes("[") ? rawInput : toolTag + rawInput;
+
+    const userMsg = { role: "user", content: fullContent };
     let chatId = chat?.id;
     if (!chatId) chatId = onNewChat();
 
-    const title = input.trim().slice(0, 50) + (input.trim().length > 50 ? "..." : "");
+    const title = rawInput.slice(0, 50) + (rawInput.length > 50 ? "..." : "");
     onUpdateChat(chatId, prev => ({
       ...prev,
       title: prev.messages.length === 0 ? title : prev.title,
@@ -238,6 +243,7 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
 
     const allMessages = [...(chat?.messages || []), userMsg];
     setInput("");
+    setSelectedTool(null);
 
     if (!apiKey) {
       onUpdateChat(chatId, prev => ({
@@ -248,7 +254,7 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
     }
 
     // If a tool is detected, get estimate first
-    if (detectsTool(userMsg.content)) {
+    if (detectsTool(fullContent)) {
       setLoading(true);
       try {
         const res = await fetch("/api/chat", {
@@ -397,69 +403,249 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
       )}
 
       {/* Input bar */}
-      <div style={{
-        flexShrink: 0,
-        padding: hasMessages ? "12px 20%" : "0 15%",
-        paddingBottom: hasMessages ? 20 : 0,
-        position: hasMessages ? "relative" : "absolute",
-        bottom: hasMessages ? undefined : "38%",
-        left: hasMessages ? undefined : 0, right: hasMessages ? undefined : 0,
-        zIndex: 2,
-      }}>
+      <InputBar
+        input={input}
+        setInput={setInput}
+        inputRef={inputRef}
+        loading={loading}
+        onSend={handleSend}
+        hasMessages={hasMessages}
+        selectedTool={selectedTool}
+        setSelectedTool={setSelectedTool}
+      />
+    </div>
+  );
+}
+
+function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, selectedTool, setSelectedTool }) {
+  const [showTools, setShowTools] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
+  const toolsRef = useRef(null);
+  const attachRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (toolsRef.current && !toolsRef.current.contains(e.target)) setShowTools(false);
+      if (attachRef.current && !attachRef.current.contains(e.target)) setShowAttach(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelectTool = (tool) => {
+    if (selectedTool?.id === tool.id) {
+      setSelectedTool(null);
+    } else {
+      setSelectedTool(tool);
+    }
+    setShowTools(false);
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onSend();
+    }
+  };
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      padding: hasMessages ? "12px 20%" : "0 18%",
+      paddingBottom: hasMessages ? 20 : 0,
+      position: hasMessages ? "relative" : "absolute",
+      bottom: hasMessages ? undefined : "36%",
+      left: hasMessages ? undefined : 0, right: hasMessages ? undefined : 0,
+      zIndex: 2,
+    }}>
+      {/* Selected tool badge */}
+      {selectedTool && (
         <div style={{
-          background: "rgba(255,255,255,0.06)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: "var(--r-input)",
-          padding: "4px 4px 4px 18px",
-          display: "flex", alignItems: "center", gap: 8,
-          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "5px 12px", marginBottom: 8,
+          background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.2)",
+          borderRadius: 8, fontSize: 12, fontWeight: 500, color: "var(--accent)",
         }}>
-          <input
+          <ToolIcon type={selectedTool.icon} size={13} />
+          {selectedTool.name}
+          <button
+            onClick={() => setSelectedTool(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, lineHeight: 0, marginLeft: 2 }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      )}
+
+      <div style={{
+        background: "rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 16,
+        overflow: "hidden",
+      }}>
+        {/* Text area row */}
+        <div style={{ padding: "12px 16px 8px", minHeight: 44 }}>
+          <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="How can I help you today?"
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything"
             disabled={loading}
+            rows={1}
             style={{
-              flex: 1, background: "none", border: "none", outline: "none",
+              width: "100%", background: "none", border: "none", outline: "none", resize: "none",
               color: "var(--text-primary)", fontSize: 14, fontFamily: "var(--font)",
-              letterSpacing: "0.1px", padding: "10px 0",
+              letterSpacing: "0.1px", lineHeight: 1.5,
             }}
+            onInput={e => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; }}
           />
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {TOOLS.map(tool => (
+        </div>
+
+        {/* Bottom toolbar */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "6px 10px 8px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            {/* + Attach button */}
+            <div ref={attachRef} style={{ position: "relative" }}>
               <button
-                key={tool.id}
-                onClick={() => setInput(prev => prev + (prev ? " " : "") + `[${tool.name}] `)}
-                title={tool.description}
+                onClick={() => { setShowAttach(p => !p); setShowTools(false); }}
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: showAttach ? "rgba(255,255,255,0.08)" : "transparent",
+                  border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--text-tertiary)", transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { if (!showAttach) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                onMouseLeave={e => { if (!showAttach) e.currentTarget.style.background = "transparent"; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              {showAttach && (
+                <div style={{
+                  position: "absolute", bottom: "calc(100% + 6px)", left: 0,
+                  background: "rgba(18,18,22,0.96)", border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 12, padding: 6, minWidth: 180,
+                  backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+                }}>
+                  {[
+                    { label: "Upload image", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> },
+                    { label: "Upload document", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg> },
+                    { label: "Paste from clipboard", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg> },
+                  ].map((item, i) => (
+                    <button
+                      key={i}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, width: "100%",
+                        padding: "8px 12px", borderRadius: 8,
+                        background: "transparent", border: "none",
+                        color: "var(--text-secondary)", fontSize: 13, fontWeight: 400,
+                        cursor: "pointer", transition: "background 0.12s", textAlign: "left",
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    >
+                      <span style={{ color: "var(--text-tertiary)", lineHeight: 0 }}>{item.icon}</span>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Tools dropdown */}
+            <div ref={toolsRef} style={{ position: "relative" }}>
+              <button
+                onClick={() => { setShowTools(p => !p); setShowAttach(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 5,
-                  background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 8, padding: "5px 10px", color: "var(--text-tertiary)",
-                  cursor: "pointer", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap",
+                  height: 32, padding: "0 10px", borderRadius: 8,
+                  background: showTools ? "rgba(255,255,255,0.08)" : "transparent",
+                  border: "none", cursor: "pointer",
+                  color: "var(--text-tertiary)", fontSize: 13, fontWeight: 500,
                   transition: "all 0.15s",
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "var(--text-tertiary)"; }}
+                onMouseEnter={e => { if (!showTools) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                onMouseLeave={e => { if (!showTools) e.currentTarget.style.background = "transparent"; }}
               >
-                <ToolIcon type={tool.icon} size={12} />
-                {tool.name}
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                </svg>
+                Tools
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6"/></svg>
               </button>
-            ))}
+              {showTools && (
+                <div style={{
+                  position: "absolute", bottom: "calc(100% + 6px)", left: 0,
+                  background: "rgba(18,18,22,0.96)", border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 12, padding: 6, minWidth: 240,
+                  backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+                }}>
+                  <div style={{ padding: "6px 12px 8px", fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Select a tool
+                  </div>
+                  {TOOLS.map(tool => (
+                    <button
+                      key={tool.id}
+                      onClick={() => handleSelectTool(tool)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, width: "100%",
+                        padding: "9px 12px", borderRadius: 8,
+                        background: selectedTool?.id === tool.id ? "rgba(167,139,250,0.1)" : "transparent",
+                        border: "none", cursor: "pointer",
+                        transition: "background 0.12s", textAlign: "left",
+                      }}
+                      onMouseEnter={e => { if (selectedTool?.id !== tool.id) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                      onMouseLeave={e => { if (selectedTool?.id !== tool.id) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <div style={{
+                        width: 28, height: 28, borderRadius: 7,
+                        background: selectedTool?.id === tool.id ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.05)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: selectedTool?.id === tool.id ? "var(--accent)" : "var(--text-tertiary)",
+                        flexShrink: 0,
+                      }}>
+                        <ToolIcon type={tool.icon} size={14} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: selectedTool?.id === tool.id ? "var(--accent)" : "var(--text-primary)" }}>
+                          {tool.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>
+                          {tool.description}
+                        </div>
+                      </div>
+                      {selectedTool?.id === tool.id && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto", flexShrink: 0 }}>
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Send button */}
           <button
-            onClick={handleSend}
+            onClick={onSend}
             disabled={!input.trim() || loading}
             style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: input.trim() ? "var(--text-primary)" : "rgba(255,255,255,0.06)",
+              width: 34, height: 34, borderRadius: 10,
+              background: input.trim() ? "var(--accent)" : "rgba(255,255,255,0.06)",
               border: "none", display: "flex", alignItems: "center", justifyContent: "center",
               cursor: input.trim() ? "pointer" : "default", transition: "all 0.2s", flexShrink: 0,
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() ? "var(--bg-void)" : "var(--text-dim)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() ? "#fff" : "var(--text-dim)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V5M5 12l7-7 7 7"/>
             </svg>
           </button>
         </div>
