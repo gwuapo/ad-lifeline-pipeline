@@ -1,0 +1,84 @@
+:root {
+  /* Raycast-inspired palette */
+  --bg-void: #07080a;
+  --bg-surface: #101111;
+  --bg-card: #1b1c1e;
+  --bg-elevated: #252829;
+
+  --text-primary: #f9f9f9;
+  --text-secondary: #cecece;
+  --text-tertiary: #9c9c9d;
+  --text-dim: #6a6b6c;
+
+  --border: #252829;
+  --border-subtle: #1b1c1e;
+
+  --accent-red: #ff6363;
+  --accent-blue: #55b3ff;
+  --accent-green: #5fc992;
+  --accent-yellow: #ffbc33;
+  --accent-purple: #a78bfa;
+
+  /* Spacing (8px base) */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 20px;
+  --sp-7: 24px;
+  --sp-8: 32px;
+  --sp-9: 40px;
+  --sp-10: 48px;
+  --sp-12: 64px;
+
+  /* Radii */
+  --r-sm: 6px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-pill: 86px;
+
+  /* Font */
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-void);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.2px;
+}
+
+#root {
+  height: 100%;
+}
+
+::selection {
+  background: rgba(85, 179, 255, 0.25);
+  color: var(--text-primary);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 3px;
+}
