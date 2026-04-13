@@ -449,44 +449,88 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
 
 function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, selectedTool, setSelectedTool }) {
   const [showTools, setShowTools] = useState(false);
-  const [showAttach, setShowAttach] = useState(false);
+  const [listening, setListening] = useState(false);
   const toolsRef = useRef(null);
-  const attachRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
       if (toolsRef.current && !toolsRef.current.contains(e.target)) setShowTools(false);
-      if (attachRef.current && !attachRef.current.contains(e.target)) setShowAttach(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const handleSelectTool = (tool) => {
-    if (selectedTool?.id === tool.id) {
-      setSelectedTool(null);
-    } else {
-      setSelectedTool(tool);
-    }
+    setSelectedTool(selectedTool?.id === tool.id ? null : tool);
     setShowTools(false);
     inputRef.current?.focus();
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      onSend();
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+  };
+
+  const handleFileSelect = (e) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    const names = Array.from(files).map(f => f.name).join(", ");
+    setInput(prev => prev + (prev ? "\n" : "") + `[Attached: ${names}]`);
+    inputRef.current?.focus();
+    e.target.value = "";
+  };
+
+  const toggleVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Voice dictation not supported in this browser. Use Chrome or Edge."); return; }
+
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setListening(false);
+      return;
     }
+
+    const recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognitionRef.current = recognition;
+
+    let finalTranscript = "";
+
+    recognition.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finalTranscript += e.results[i][0].transcript + " ";
+        } else {
+          interim = e.results[i][0].transcript;
+        }
+      }
+      setInput(prev => {
+        const base = prev.replace(/\u200B.*$/, "").trimEnd();
+        const combined = (base ? base + " " : "") + finalTranscript + (interim ? "\u200B" + interim : "");
+        return combined.trimStart();
+      });
+    };
+
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+      setInput(prev => prev.replace(/\u200B/g, "").trimEnd());
+    };
+
+    recognition.start();
+    setListening(true);
   };
 
   return (
     <div style={{
       flexShrink: 0,
       padding: hasMessages ? "12px 18% 20px" : "0",
-      position: "relative",
-      zIndex: 2,
+      position: "relative", zIndex: 2,
     }}>
-      {/* Selected tool badge */}
       {selectedTool && (
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 6,
@@ -496,21 +540,19 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
         }}>
           <ToolIcon type={selectedTool.icon} size={13} />
           {selectedTool.name}
-          <button
-            onClick={() => setSelectedTool(null)}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, lineHeight: 0, marginLeft: 2 }}
-          >
+          <button onClick={() => setSelectedTool(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, lineHeight: 0, marginLeft: 2 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
       )}
+
+      <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv" style={{ display: "none" }} onChange={handleFileSelect} />
 
       <div style={{
         background: "rgba(255,255,255,0.05)",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 16,
       }}>
-        {/* Text area row */}
         <div style={{ padding: "12px 16px 8px", minHeight: 44 }}>
           <textarea
             ref={inputRef}
@@ -529,65 +571,27 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
           />
         </div>
 
-        {/* Bottom toolbar */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "6px 10px 8px",
-        }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px 8px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-            {/* + Attach button */}
-            <div ref={attachRef} style={{ position: "relative" }}>
-              <button
-                onClick={() => { setShowAttach(p => !p); setShowTools(false); }}
-                style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: showAttach ? "rgba(255,255,255,0.08)" : "transparent",
-                  border: "none", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "var(--text-tertiary)", transition: "all 0.15s",
-                }}
-                onMouseEnter={e => { if (!showAttach) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
-                onMouseLeave={e => { if (!showAttach) e.currentTarget.style.background = "transparent"; }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
-              </button>
-              {showAttach && (
-                <div style={{
-                  position: "absolute", bottom: "calc(100% + 6px)", left: 0,
-                  background: "rgba(18,18,22,0.96)", border: "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: 12, padding: 6, minWidth: 180,
-                  backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-                  boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
-                }}>
-                  {[
-                    { label: "Upload image", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> },
-                    { label: "Upload document", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg> },
-                    { label: "Paste from clipboard", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg> },
-                  ].map((item, i) => (
-                    <button
-                      key={i}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 10, width: "100%",
-                        padding: "8px 12px", borderRadius: 8,
-                        background: "transparent", border: "none",
-                        color: "var(--text-secondary)", fontSize: 13, fontWeight: 400,
-                        cursor: "pointer", transition: "background 0.12s", textAlign: "left",
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                    >
-                      <span style={{ color: "var(--text-tertiary)", lineHeight: 0 }}>{item.icon}</span>
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* + File upload */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                width: 32, height: 32, borderRadius: 8, background: "transparent",
+                border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                color: "var(--text-tertiary)", transition: "all 0.15s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              title="Upload files or images"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
 
             {/* Tools dropdown */}
             <div ref={toolsRef} style={{ position: "relative" }}>
               <button
-                onClick={() => { setShowTools(p => !p); setShowAttach(false); }}
+                onClick={() => setShowTools(p => !p)}
                 style={{
                   display: "flex", alignItems: "center", gap: 5,
                   height: 32, padding: "0 10px", borderRadius: 8,
@@ -624,8 +628,7 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
                         display: "flex", alignItems: "center", gap: 10, width: "100%",
                         padding: "9px 12px", borderRadius: 8,
                         background: selectedTool?.id === tool.id ? "rgba(167,139,250,0.1)" : "transparent",
-                        border: "none", cursor: "pointer",
-                        transition: "background 0.12s", textAlign: "left",
+                        border: "none", cursor: "pointer", transition: "background 0.12s", textAlign: "left",
                       }}
                       onMouseEnter={e => { if (selectedTool?.id !== tool.id) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
                       onMouseLeave={e => { if (selectedTool?.id !== tool.id) e.currentTarget.style.background = "transparent"; }}
@@ -634,23 +637,16 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
                         width: 28, height: 28, borderRadius: 7,
                         background: selectedTool?.id === tool.id ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.05)",
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        color: selectedTool?.id === tool.id ? "var(--accent)" : "var(--text-tertiary)",
-                        flexShrink: 0,
+                        color: selectedTool?.id === tool.id ? "var(--accent)" : "var(--text-tertiary)", flexShrink: 0,
                       }}>
                         <ToolIcon type={tool.icon} size={14} />
                       </div>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: selectedTool?.id === tool.id ? "var(--accent)" : "var(--text-primary)" }}>
-                          {tool.name}
-                        </div>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>
-                          {tool.description}
-                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: selectedTool?.id === tool.id ? "var(--accent)" : "var(--text-primary)" }}>{tool.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>{tool.description}</div>
                       </div>
                       {selectedTool?.id === tool.id && (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto", flexShrink: 0 }}>
-                          <path d="M20 6L9 17l-5-5"/>
-                        </svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto", flexShrink: 0 }}><path d="M20 6L9 17l-5-5"/></svg>
                       )}
                     </button>
                   ))}
@@ -659,21 +655,47 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
             </div>
           </div>
 
-          {/* Send button */}
-          <button
-            onClick={onSend}
-            disabled={!input.trim() || loading}
-            style={{
-              width: 34, height: 34, borderRadius: 10,
-              background: input.trim() ? "var(--accent)" : "rgba(255,255,255,0.06)",
-              border: "none", display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: input.trim() ? "pointer" : "default", transition: "all 0.2s", flexShrink: 0,
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() ? "#fff" : "var(--text-dim)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V5M5 12l7-7 7 7"/>
-            </svg>
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {/* Mic button */}
+            <button
+              onClick={toggleVoice}
+              style={{
+                width: 34, height: 34, borderRadius: 10,
+                background: listening ? "rgba(255,99,99,0.15)" : "transparent",
+                border: listening ? "1px solid rgba(255,99,99,0.3)" : "none",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", transition: "all 0.2s", flexShrink: 0,
+                color: listening ? "var(--red)" : "var(--text-tertiary)",
+              }}
+              onMouseEnter={e => { if (!listening) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+              onMouseLeave={e => { if (!listening) e.currentTarget.style.background = "transparent"; }}
+              title={listening ? "Stop dictation" : "Voice dictation"}
+            >
+              {listening ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>
+                </svg>
+              )}
+            </button>
+
+            {/* Send button */}
+            <button
+              onClick={onSend}
+              disabled={!input.trim() || loading}
+              style={{
+                width: 34, height: 34, borderRadius: 10,
+                background: input.trim() ? "var(--accent)" : "rgba(255,255,255,0.06)",
+                border: "none", display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: input.trim() ? "pointer" : "default", transition: "all 0.2s", flexShrink: 0,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={input.trim() ? "#fff" : "var(--text-dim)"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 19V5M5 12l7-7 7 7"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
