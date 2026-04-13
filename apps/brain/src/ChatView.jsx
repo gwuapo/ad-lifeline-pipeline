@@ -18,21 +18,19 @@ function ToolIcon({ type, size = 14 }) {
 
 function ToolSteps({ steps }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 0" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {steps.map((step, i) => (
-        <div key={i} className="tool-step" style={{ display: "flex", alignItems: "center", gap: 10, animationDelay: `${i * 60}ms` }}>
-          <div style={{
-            width: 20, height: 20, borderRadius: 6,
-            background: step.done ? "rgba(99,226,160,0.12)" : "rgba(167,139,250,0.15)",
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          }}>
-            {step.done ? (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-            ) : (
-              <div style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid var(--accent)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
-            )}
-          </div>
-          <span style={{ fontSize: 13, color: step.done ? "var(--text-secondary)" : "var(--text-primary)" }}>{step.text}</span>
+        <div key={i} className="tool-step" style={{ display: "flex", alignItems: "center", gap: 8, animationDelay: `${i * 50}ms` }}>
+          {step.done ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M20 6L9 17l-5-5"/></svg>
+          ) : (
+            <div style={{ width: 13, height: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px solid var(--text-tertiary)", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
+            </div>
+          )}
+          <span style={{ fontSize: 13, color: step.done ? "var(--text-dim)" : "var(--text-secondary)", fontWeight: step.done ? 400 : 500 }}>
+            {step.text}
+          </span>
         </div>
       ))}
     </div>
@@ -127,37 +125,52 @@ function CostApproval({ estimate, onApprove, onCancel }) {
 
 function Message({ msg }) {
   const isUser = msg.role === "user";
-  return (
-    <div className="msg-appear" style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", padding: "4px 0" }}>
-      <div style={{
-        maxWidth: isUser ? "70%" : "80%",
-        padding: isUser ? "10px 16px" : "2px 0",
-        borderRadius: isUser ? "var(--r-md)" : 0,
-        background: isUser ? "rgba(255,255,255,0.06)" : "transparent",
-        border: isUser ? "1px solid rgba(255,255,255,0.06)" : "none",
-      }}>
-        {msg.toolSteps && <ToolSteps steps={msg.toolSteps} />}
-        {msg.content && (
-          <div style={{ fontSize: 14, lineHeight: 1.65, color: "var(--text-primary)", letterSpacing: "0.1px" }}>
-            <ReactMarkdown
-              components={{
-                p: ({ children }) => <p style={{ margin: "6px 0" }}>{children}</p>,
-                strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
-                h1: ({ children }) => <h1 style={{ fontSize: 20, fontWeight: 600, margin: "16px 0 8px" }}>{children}</h1>,
-                h2: ({ children }) => <h2 style={{ fontSize: 17, fontWeight: 600, margin: "14px 0 6px" }}>{children}</h2>,
-                h3: ({ children }) => <h3 style={{ fontSize: 15, fontWeight: 600, margin: "12px 0 4px" }}>{children}</h3>,
-                ul: ({ children }) => <ul style={{ paddingLeft: 20, margin: "6px 0" }}>{children}</ul>,
-                ol: ({ children }) => <ol style={{ paddingLeft: 20, margin: "6px 0" }}>{children}</ol>,
-                li: ({ children }) => <li style={{ margin: "3px 0", color: "var(--text-secondary)" }}>{children}</li>,
-                code: ({ inline, children }) => inline
-                  ? <code style={{ background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: 5, fontSize: 13 }}>{children}</code>
-                  : <pre style={{ background: "rgba(255,255,255,0.04)", padding: 14, borderRadius: 10, overflow: "auto", fontSize: 13, margin: "8px 0", border: "1px solid var(--border)" }}><code>{children}</code></pre>,
-              }}
-            >{msg.content}</ReactMarkdown>
-          </div>
-        )}
-        {msg.usage && <UsageBadge usage={msg.usage} />}
+
+  if (isUser) {
+    return (
+      <div className="msg-appear" style={{ display: "flex", justifyContent: "flex-end", padding: "12px 0 4px" }}>
+        <div style={{
+          fontSize: 14, lineHeight: 1.5, color: "var(--text-secondary)",
+          fontWeight: 400, maxWidth: "75%", textAlign: "right",
+        }}>
+          {msg.content}
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="msg-appear" style={{ padding: "8px 0 16px" }}>
+      {msg.toolSteps && msg.toolSteps.length > 0 && (
+        <div style={{
+          border: "1px solid var(--border)",
+          borderRadius: 12, padding: "12px 16px", marginBottom: 16,
+          background: "rgba(255,255,255,0.02)",
+        }}>
+          <ToolSteps steps={msg.toolSteps} />
+        </div>
+      )}
+      {msg.content && (
+        <div style={{ fontSize: 14.5, lineHeight: 1.75, color: "var(--text-primary)", letterSpacing: "0.01em", fontWeight: 400 }}>
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p style={{ margin: "10px 0" }}>{children}</p>,
+              strong: ({ children }) => <strong style={{ fontWeight: 600, color: "var(--text-primary)" }}>{children}</strong>,
+              h1: ({ children }) => <h1 style={{ fontSize: 18, fontWeight: 600, margin: "24px 0 8px", color: "var(--text-primary)", letterSpacing: "-0.01em" }}>{children}</h1>,
+              h2: ({ children }) => <h2 style={{ fontSize: 16, fontWeight: 600, margin: "20px 0 6px", color: "var(--text-primary)", letterSpacing: "-0.01em" }}>{children}</h2>,
+              h3: ({ children }) => <h3 style={{ fontSize: 14.5, fontWeight: 600, margin: "16px 0 4px", color: "var(--text-primary)" }}>{children}</h3>,
+              ul: ({ children }) => <ul style={{ paddingLeft: 18, margin: "8px 0" }}>{children}</ul>,
+              ol: ({ children }) => <ol style={{ paddingLeft: 18, margin: "8px 0" }}>{children}</ol>,
+              li: ({ children }) => <li style={{ margin: "4px 0", color: "var(--text-secondary)", lineHeight: 1.7 }}>{children}</li>,
+              hr: () => <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "20px 0" }} />,
+              code: ({ inline, children }) => inline
+                ? <code style={{ background: "rgba(255,255,255,0.06)", padding: "1px 5px", borderRadius: 4, fontSize: 13, fontFamily: "'SF Mono', 'Fira Code', monospace" }}>{children}</code>
+                : <pre style={{ background: "rgba(255,255,255,0.03)", padding: "14px 16px", borderRadius: 10, overflow: "auto", fontSize: 13, margin: "12px 0", border: "1px solid var(--border)", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6 }}><code>{children}</code></pre>,
+            }}
+          >{msg.content}</ReactMarkdown>
+        </div>
+      )}
+      {msg.usage && <UsageBadge usage={msg.usage} />}
     </div>
   );
 }
@@ -386,19 +399,20 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
       {!hasMessages ? (
         <EmptyState onOpenSettings={onOpenSettings} hasApiKey={!!apiKey} />
       ) : (
-        <div style={{ flex: 1, overflow: "auto", padding: "0 20%", display: "flex", flexDirection: "column" }}>
-          <div style={{ flex: 1 }} />
+        <div style={{ flex: 1, overflow: "auto", padding: "0 18%", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, minHeight: 40 }} />
           {chat.messages.map((msg, i) => <Message key={i} msg={msg} />)}
           {pendingEstimate && (
             <CostApproval estimate={pendingEstimate} onApprove={handleApprove} onCancel={handleCancelEstimate} />
           )}
           {loading && !pendingEstimate && (
-            <div className="msg-appear" style={{ padding: "8px 0", display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: "pulse 1.2s ease-in-out infinite" }} />
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Thinking...</span>
+            <div className="msg-appear" style={{ padding: "12px 0", display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite" }} />
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite 0.2s" }} />
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--text-tertiary)", animation: "pulse 1.4s ease-in-out infinite 0.4s" }} />
             </div>
           )}
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} style={{ height: 8 }} />
         </div>
       )}
 
