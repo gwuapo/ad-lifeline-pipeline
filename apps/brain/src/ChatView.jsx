@@ -186,9 +186,9 @@ function PillarBackground() {
 
 function EmptyState({ onOpenSettings, hasApiKey }) {
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", position: "relative", paddingBottom: 16 }}>
       <PillarBackground />
-      <div style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
+      <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: 32 }}>
         <h1 style={{ fontSize: 26, fontWeight: 300, color: "var(--text-primary)", letterSpacing: "-0.3px", marginBottom: 8 }}>
           What are you thinking about today?
         </h1>
@@ -453,10 +453,8 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
     <div style={{
       flexShrink: 0,
       padding: hasMessages ? "12px 20%" : "0 18%",
-      paddingBottom: hasMessages ? 20 : 0,
-      position: hasMessages ? "relative" : "absolute",
-      bottom: hasMessages ? undefined : "36%",
-      left: hasMessages ? undefined : 0, right: hasMessages ? undefined : 0,
+      paddingBottom: 20,
+      position: "relative",
       zIndex: 2,
     }}>
       {/* Selected tool badge */}
@@ -482,7 +480,6 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
         background: "rgba(255,255,255,0.05)",
         border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 16,
-        overflow: "hidden",
       }}>
         {/* Text area row */}
         <div style={{ padding: "12px 16px 8px", minHeight: 44 }}>
