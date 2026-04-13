@@ -288,7 +288,7 @@ export default function App() {
             animation: "fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both",
           }}>
             <img
-              src="/nexus-logo-light.png"
+              src="/nexus-logo-dark.png"
               alt="Nexus"
               style={{
                 height: 40, width: "auto",
