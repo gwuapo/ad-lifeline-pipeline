@@ -1,8 +1,4 @@
 {
   "name": "nexus-platform",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
+  "private": true
 }
