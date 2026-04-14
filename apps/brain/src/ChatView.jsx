@@ -449,6 +449,7 @@ export default function ChatView({ chat, apiKey, onUpdateChat, onNewChat, sideba
 
 function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, selectedTool, setSelectedTool }) {
   const [showTools, setShowTools] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
   const [listening, setListening] = useState(false);
   const toolsRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -457,6 +458,7 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
   useEffect(() => {
     const handler = (e) => {
       if (toolsRef.current && !toolsRef.current.contains(e.target)) setShowTools(false);
+      if (!e.target.closest("[data-attach]")) setShowAttach(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -573,20 +575,49 @@ function InputBar({ input, setInput, inputRef, loading, onSend, hasMessages, sel
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px 8px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-            {/* + File upload */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                width: 32, height: 32, borderRadius: 8, background: "transparent",
-                border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                color: "var(--text-tertiary)", transition: "all 0.15s",
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-              title="Upload files or images"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
+            {/* + Attach drawer */}
+            <div data-attach style={{ position: "relative" }}>
+              <button
+                onClick={() => { setShowAttach(p => !p); setShowTools(false); }}
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: showAttach ? "rgba(255,255,255,0.08)" : "transparent",
+                  border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--text-tertiary)", transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { if (!showAttach) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+                onMouseLeave={e => { if (!showAttach) e.currentTarget.style.background = "transparent"; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              {showAttach && (
+                <div style={{
+                  position: "absolute", bottom: "calc(100% + 6px)", left: 0,
+                  background: "rgba(18,18,22,0.96)", border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 12, padding: 6, minWidth: 200,
+                  backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+                }}>
+                  <button
+                    onClick={() => { fileInputRef.current?.click(); setShowAttach(false); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, width: "100%",
+                      padding: "9px 12px", borderRadius: 8,
+                      background: "transparent", border: "none",
+                      color: "var(--text-secondary)", fontSize: 13, fontWeight: 400,
+                      cursor: "pointer", transition: "background 0.12s", textAlign: "left",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                    Add images and files
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Tools dropdown */}
             <div ref={toolsRef} style={{ position: "relative" }}>
