@@ -5,7 +5,7 @@ import Sidebar from "./Sidebar";
 import ChatView from "./ChatView";
 import SettingsModal from "./SettingsModal";
 
-const ALLOWED_ROLES = ["founder", "manager"];
+const ALLOWED_ROLES = ["founder"];
 
 const STORAGE_KEY = "nexus_brain_data";
 
