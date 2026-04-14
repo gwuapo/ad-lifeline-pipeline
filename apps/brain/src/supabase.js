@@ -1,0 +1,30 @@
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
+
+export async function getSessionUser() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user || null;
+}
+
+export async function getUserRole(userId) {
+  const { data } = await supabase
+    .from("workspace_members")
+    .select("role, workspace_id")
+    .eq("user_id", userId);
+  if (!data || data.length === 0) return null;
+  return data[0];
+}
+
+export async function signIn(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+export async function signOut() {
+  await supabase.auth.signOut();
+}

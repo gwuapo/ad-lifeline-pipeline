@@ -130,6 +130,7 @@ function ProjectItem({ project, chats, activeChatId, onSelectChat, onNewChat, on
 export default function Sidebar({
   open, onToggle, chats, projects, activeChatId,
   onSelectChat, onNewChat, onDeleteChat, onCreateProject, onDeleteProject, onOpenSettings,
+  onSignOut, userName,
 }) {
   const [newProjectName, setNewProjectName] = useState("");
   const [showNewProject, setShowNewProject] = useState(false);
@@ -283,30 +284,63 @@ export default function Sidebar({
 
       {/* Footer */}
       <div style={{
-        padding: "12px 16px",
+        padding: "10px 12px",
         borderTop: "1px solid var(--border)",
-        flexShrink: 0,
+        flexShrink: 0, display: "flex", flexDirection: "column", gap: 4,
       }}>
         <button
           onClick={onOpenSettings}
           style={{
-            width: "100%",
-            display: "flex", alignItems: "center", gap: 8,
-            background: "none", border: "none",
-            color: "var(--text-tertiary)",
-            cursor: "pointer", padding: "8px 8px",
-            borderRadius: "var(--r-sm)",
-            fontSize: 13, fontWeight: 400,
-            transition: "all 0.15s",
+            width: "100%", display: "flex", alignItems: "center", gap: 8,
+            background: "none", border: "none", color: "var(--text-tertiary)",
+            cursor: "pointer", padding: "7px 8px", borderRadius: "var(--r-sm)",
+            fontSize: 13, fontWeight: 400, transition: "all 0.15s",
           }}
           onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
           onMouseLeave={e => e.currentTarget.style.background = "none"}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
           </svg>
           Settings
         </button>
+
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "6px 8px", borderRadius: "var(--r-sm)",
+        }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: 7,
+            background: "rgba(167,139,250,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, fontWeight: 600, color: "var(--accent)", flexShrink: 0,
+          }}>
+            {(userName || "U")[0].toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 12, fontWeight: 400, color: "var(--text-secondary)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {userName || "User"}
+            </div>
+          </div>
+          <button
+            onClick={onSignOut}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "var(--text-dim)", padding: 2, lineHeight: 0,
+              transition: "color 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--text-secondary)"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--text-dim)"}
+            title="Sign out"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );
