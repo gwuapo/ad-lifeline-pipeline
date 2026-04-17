@@ -3729,21 +3729,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 )}
               </div>}
 
-              {/* Stage flow bar */}
-              <div style={{ display: "flex", alignItems: "center", marginBottom: 16, padding: "6px 10px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)", overflowX: "auto", gap: 2 }}>
-                {visibleStages.map((s, i) => (
-                  <div key={s.id} style={{ display: "flex", alignItems: "center", flex: "0 0 auto", minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px" }}>
-                      <span style={{ fontSize: 10 }}>{s.icon}</span>
-                      <span style={{ fontSize: 10, color: "var(--text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>{s.label}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: s.color, background: s.color + "18", padding: "0 5px", borderRadius: 8, fontFamily: "var(--fm)" }}>
-                        {visibleAds.filter(a => a.stage === s.id).length}
-                      </span>
-                    </div>
-                    {i < visibleStages.length - 1 && <span style={{ color: "var(--text-muted)", fontSize: 8, margin: "0 2px" }}>→</span>}
-                  </div>
-                ))}
-              </div>
+              {/* Stage flow bar removed -- counts already visible in column headers */}
               </>;
             })()}
 
