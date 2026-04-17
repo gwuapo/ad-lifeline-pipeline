@@ -3761,7 +3761,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                 const overWip = wipLimit && stageAds.length > wipLimit;
                 return (
                   <div key={stage.id}
-                    style={{ minWidth: 220, maxWidth: 260, flex: "0 0 220px", background: isOver ? "rgba(99,102,241,0.04)" : "transparent", borderRadius: "var(--radius-md)", padding: "8px 6px", transition: "background 0.15s" }}
+                    style={{ minWidth: 220, flex: kanbanStages.length <= 5 ? "1 1 0%" : "0 0 220px", maxWidth: kanbanStages.length <= 5 ? "none" : 260, background: isOver ? "rgba(99,102,241,0.04)" : "transparent", borderRadius: "var(--radius-md)", padding: "8px 6px", transition: "background 0.15s" }}
                     onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
                     onDragLeave={() => setDragOver(null)}
                     onDrop={e => { e.preventDefault(); if (did.current != null) tryMove(did.current, stage.id); did.current = null; setDragOver(null); }}>
