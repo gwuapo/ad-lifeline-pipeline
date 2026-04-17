@@ -3709,11 +3709,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               const bufferPct = scriptedCount / bufferTarget;
               const bufferColor = bufferPct >= 0.9 ? "var(--green)" : bufferPct >= 0.6 ? "var(--yellow)" : "var(--red)";
               const breachedAds = visibleAds.filter(a => getSlaStatus(a) === "breached");
-              const visibleStages = STAGES.filter(s => s.id !== "killed");
+              const editorStages = ["assigned", "in_edit", "qa", "live"];
+              const isEditorRole = role === "editor" || role === "voice_actor";
+              const visibleStages = STAGES.filter(s => s.id !== "killed" && (!isEditorRole || editorStages.includes(s.id)));
 
               return <>
-              {/* Buffer + SLA counters */}
-              <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+              {/* Buffer + SLA counters (hidden from editors) */}
+              {!isEditorRole && <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
                   <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Scripted Buffer:</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: bufferColor, fontFamily: "var(--fm)" }}>{scriptedCount}/{bufferTarget}</span>
@@ -3725,7 +3727,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                     <span style={{ fontSize: 13, fontWeight: 700, color: "var(--red)", fontFamily: "var(--fm)" }}>{breachedAds.length}</span>
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* Stage flow bar */}
               <div style={{ display: "flex", alignItems: "center", marginBottom: 16, padding: "6px 10px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)", overflowX: "auto", gap: 2 }}>
@@ -3746,9 +3748,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             })()}
 
             {/* Kanban View */}
-            {pipelineView === "kanban" && <>
+            {pipelineView === "kanban" && (() => {
+              const editorOnlyStages = ["assigned", "in_edit", "qa", "live"];
+              const isEditorView = role === "editor" || role === "voice_actor";
+              const kanbanStages = STAGES.filter(s => s.id !== "killed" && (!isEditorView || editorOnlyStages.includes(s.id)));
+              return <>
             <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
-              {STAGES.filter(s => s.id !== "killed").map(stage => {
+              {kanbanStages.map(stage => {
                 const stageAds = visibleAds.filter(a => a.stage === stage.id);
                 const isOver = dragOver === stage.id;
                 const wipLimit = stage.wipLimit;
@@ -3787,7 +3793,8 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               <span><span style={{ color: "var(--red)" }}>●</span> ROAS &lt; {th.yellow}x Iterate/Kill</span>
               <span style={{ marginLeft: "auto" }}><span style={{ color: "#10b981" }}>●</span> SLA OK <span style={{ color: "#f59e0b" }}>●</span> SLA Warning <span style={{ color: "#ef4444" }}>●</span> SLA Breached</span>
             </div>
-            </>}
+            </>;
+            })()}
 
             {/* Sheet View */}
             {pipelineView === "sheet" && (

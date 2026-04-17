@@ -2,17 +2,10 @@ import { useState, useEffect, useMemo } from "react";
 import { getPointTransactions, getDeliverableRatings } from "./supabaseData.js";
 
 const STAGES = [
-  { id: "inbox", label: "Inbox", color: "#6b7280" },
-  { id: "researching", label: "Researching", color: "#8b5cf6" },
-  { id: "drafting", label: "Drafting", color: "#a78bfa" },
-  { id: "scripted", label: "Scripted", color: "#6366f1" },
-  { id: "briefed", label: "Briefed", color: "#0ea5e9" },
   { id: "assigned", label: "Assigned", color: "#f59e0b" },
   { id: "in_edit", label: "In Edit", color: "#d97706" },
   { id: "qa", label: "QA", color: "#3b82f6" },
-  { id: "ready", label: "Ready", color: "#22d3ee" },
   { id: "live", label: "Live", color: "#10b981" },
-  { id: "analyzed", label: "Analyzed", color: "#14b8a6" },
 ];
 
 export default function EditorHomePage({ ads, userName, setPage, activeWorkspaceId, session, myEditorProfile }) {
