@@ -1139,24 +1139,26 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
         </div>
       )}
 
-      {/* Top bar: breadcrumb + actions */}
+      {/* Top bar: breadcrumb + stage picker + actions */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-tertiary)" }}>
           <span style={{ cursor: "pointer", color: "var(--accent-light)" }} onClick={onClose}>Pipeline</span>
           <span style={{ color: "var(--text-muted)", fontSize: 11 }}>›</span>
-          <span style={{ color: stg.color }}>{stg.label}</span>
+          {ad.stage !== "killed" && _canManage ? (
+            <select
+              value={ad.stage}
+              onChange={e => tryMove(e.target.value)}
+              style={{ background: stg.color + "18", color: stg.color, border: `1px solid ${stg.color}33`, borderRadius: 8, padding: "3px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", outline: "none", fontFamily: "inherit" }}
+            >
+              {STAGES.filter(s => s.id !== "killed").map(s => (
+                <option key={s.id} value={s.id}>{s.icon} {s.label}</option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ color: stg.color, fontWeight: 600 }}>{stg.label}</span>
+          )}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {ad.stage !== "killed" && _canManage && (() => {
-            const curIdx = SO.indexOf(ad.stage);
-            const adjacentStages = [];
-            if (curIdx > 0) adjacentStages.push(SO[curIdx - 1]);
-            if (curIdx < SO.length - 1) adjacentStages.push(SO[curIdx + 1]);
-            return adjacentStages.map(s => {
-              const st = STAGES.find(x => x.id === s);
-              return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "22", fontSize: 11 }}>{st.icon} {st.label}</button>;
-            });
-          })()}
           {ad.stage !== "killed" && _canManage && (
             <button onClick={doKill} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", borderColor: "rgba(239,68,68,0.2)", fontSize: 11 }}>✕ Kill</button>
           )}
@@ -3235,6 +3237,24 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [flywheelStatus, setFlywheelStatus] = useState(null);
   const analyzedWinnersRef = useRef(new Set());
   const did = useRef(null);
+  const kanbanRef = useRef(null);
+  const scrollAnimRef = useRef(null);
+  const handleKanbanDragOver = useCallback((e) => {
+    const container = kanbanRef.current;
+    if (!container || !did.current) return;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX;
+    const edgeZone = 80;
+    const speed = 12;
+    cancelAnimationFrame(scrollAnimRef.current);
+    if (x < rect.left + edgeZone) {
+      const tick = () => { container.scrollLeft -= speed; if (did.current) scrollAnimRef.current = requestAnimationFrame(tick); };
+      scrollAnimRef.current = requestAnimationFrame(tick);
+    } else if (x > rect.right - edgeZone) {
+      const tick = () => { container.scrollLeft += speed; if (did.current) scrollAnimRef.current = requestAnimationFrame(tick); };
+      scrollAnimRef.current = requestAnimationFrame(tick);
+    }
+  }, []);
 
   // Load ads + settings + editors from Supabase when workspace changes
   useEffect(() => {
@@ -3739,7 +3759,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               const isEditorView = role === "editor" || role === "voice_actor";
               const kanbanStages = STAGES.filter(s => s.id !== "killed" && (!isEditorView || editorOnlyStages.includes(s.id)));
               return <>
-            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
+            <div ref={kanbanRef} onDragOver={handleKanbanDragOver} onDragEnd={() => cancelAnimationFrame(scrollAnimRef.current)} style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
               {kanbanStages.map(stage => {
                 const stageAds = visibleAds.filter(a => a.stage === stage.id);
                 const isOver = dragOver === stage.id;
