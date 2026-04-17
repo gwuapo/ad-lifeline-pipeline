@@ -142,21 +142,35 @@ export async function acceptPendingInvites() {
 // WORKSPACE SETTINGS
 // ════════════════════════════════════════════════
 
+export const DEFAULT_SLA_CONFIG = {
+  inbox: null, researching: null, drafting: null, scripted: null,
+  briefed: 24, assigned: 12, in_edit: 72, qa: 24, ready: 24, live: 168, analyzed: 48,
+};
+
 export async function getWorkspaceSettings(workspaceId) {
   const { data, error } = await supabase
     .from("workspace_settings")
     .select("*")
     .eq("workspace_id", workspaceId)
     .single();
-  if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
+  if (error && error.code !== "PGRST116") throw error;
   const defaults = { green: 15, yellow: 25, grossMarginPct: 70 };
-  return data?.thresholds ? { ...defaults, ...data.thresholds } : defaults;
+  const thresholds = data?.thresholds ? { ...defaults, ...data.thresholds } : defaults;
+  const slaConfig = data?.sla_config ? { ...DEFAULT_SLA_CONFIG, ...data.sla_config } : { ...DEFAULT_SLA_CONFIG };
+  return { ...thresholds, slaConfig };
 }
 
 export async function saveWorkspaceSettings(workspaceId, thresholds) {
   const { error } = await supabase
     .from("workspace_settings")
     .upsert({ workspace_id: workspaceId, thresholds }, { onConflict: "workspace_id" });
+  if (error) throw error;
+}
+
+export async function saveSlaConfig(workspaceId, slaConfig) {
+  const { error } = await supabase
+    .from("workspace_settings")
+    .upsert({ workspace_id: workspaceId, sla_config: slaConfig }, { onConflict: "workspace_id" });
   if (error) throw error;
 }
 

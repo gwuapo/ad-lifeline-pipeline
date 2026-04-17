@@ -22,7 +22,7 @@ import MarketplacePage from "./MarketplacePage.jsx";
 import EditorHomePage from "./EditorHomePage.jsx";
 import DateRangePicker from "./DateRangePicker.jsx";
 import AnalyticsPage from "./AnalyticsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment, fetchEngagementVideos, upsertEngagementVideo, deleteEngagementVideo, logStageTransition, fetchStageTransitions } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, saveSlaConfig, DEFAULT_SLA_CONFIG, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment, fetchEngagementVideos, upsertEngagementVideo, deleteEngagementVideo, logStageTransition, fetchStageTransitions } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -320,15 +320,16 @@ function checkGate(ad, fromStage, toStage) {
   return null;
 }
 
-// SLA helpers
-function getSlaStatus(ad) {
+// SLA helpers -- slaOverrides is an object like { briefed: 24, assigned: 12, ... }
+function getSlaStatus(ad, slaOverrides) {
   const stage = STAGES.find(s => s.id === ad.stage);
-  if (!stage?.slaHours) return "none";
+  const slaHours = slaOverrides?.[ad.stage] ?? stage?.slaHours;
+  if (!slaHours) return "none";
   const enteredAt = ad.stage_entered_at || ad.stageEnteredAt;
   if (!enteredAt) return "none";
   const enteredMs = typeof enteredAt === "number" ? enteredAt : new Date(enteredAt).getTime();
   const hoursElapsed = (Date.now() - enteredMs) / (1000 * 60 * 60);
-  const pct = hoursElapsed / stage.slaHours;
+  const pct = hoursElapsed / slaHours;
   if (pct >= 1) return "breached";
   if (pct >= 0.75) return "warning";
   return "ok";
@@ -2334,7 +2335,7 @@ function PipelineSheet({ ads, dispatch, th, onOpenAd, strategyData }) {
 
 // ════════════════════════════════════════════════
 
-function PCard({ ad, th, onClick, onMove, onIterate }) {
+function PCard({ ad, th, onClick, onMove, onIterate, slaConfig }) {
   const bc = bestChannel(ad, th);
   const la = bc ? bc.metric : lm(ad);
   const adRoas = bc?.roas ?? la?.roas ?? 0;
@@ -2343,7 +2344,7 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
   const unresolvedRevs = ad.revisionRequests?.filter(r => !r.resolved).length || 0;
   const hasChData = ad.channelMetrics && Object.values(ad.channelMetrics).some(m => m?.length > 0);
   const noDataYet = !hasChData && ad.stage === "live";
-  const slaStatus = getSlaStatus(ad);
+  const slaStatus = getSlaStatus(ad, slaConfig);
   const slaCl = SLA_COLORS[slaStatus];
   const age = getStageAge(ad);
   const priorityColor = PRIORITY_COLORS[ad.priority] || PRIORITY_COLORS.P2;
@@ -3213,6 +3214,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [presenceState, setPresenceState] = useState({});
   const presenceRef = useRef(null);
   const [th, setTh] = useState(DT);
+  const [slaConfig, setSlaConfig] = useState(null);
   const [role, setRole] = useState(userRole || "founder");
   const isFounderOrAdmin = role === "founder" || role === "admin";
   const isManager = role === "manager";
@@ -3273,7 +3275,9 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         if (cancelled) return;
         setAds(adsData);
         if (stratData) setStrategyData(stratData);
-        setTh(settings);
+        const { slaConfig: loadedSla, ...thresholdSettings } = settings;
+        setTh(thresholdSettings);
+        if (loadedSla) setSlaConfig(loadedSla);
         // Derive editor names from workspace members with editor role
         const editorNames = members.filter(m => m.role === "editor").map(m => m.editor_name || "Editor");
         // Also include unique editor names referenced in ads that may not be members yet
@@ -3728,7 +3732,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               const bufferTarget = 40;
               const bufferPct = scriptedCount / bufferTarget;
               const bufferColor = bufferPct >= 0.9 ? "var(--green)" : bufferPct >= 0.6 ? "var(--yellow)" : "var(--red)";
-              const breachedAds = visibleAds.filter(a => getSlaStatus(a) === "breached");
+              const breachedAds = visibleAds.filter(a => getSlaStatus(a, slaConfig) === "breached");
               const editorStages = ["assigned", "in_edit", "qa", "live"];
               const isEditorRole = role === "editor" || role === "voice_actor";
               const visibleStages = STAGES.filter(s => s.id !== "killed" && (!isEditorRole || editorStages.includes(s.id)));
@@ -3779,13 +3783,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
                           {stageAds.length}{wipLimit ? `/${wipLimit}` : ""}{stage.id === "scripted" ? "/40" : ""}
                         </span>
                       </div>
-                      {stage.slaHours && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{stage.slaHours}h</span>}
+                      {(slaConfig?.[stage.id] || stage.slaHours) && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{slaConfig?.[stage.id] || stage.slaHours}h</span>}
                     </div>
                     {stageAds.length === 0 && <div className="empty-state" style={{ fontSize: 11 }}>Drop ads here</div>}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {stageAds.map(ad => (
                         <div key={ad.id} draggable onDragStart={() => { did.current = ad.id; }} onDragEnd={() => { did.current = null; }}>
-                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} />
+                          <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} slaConfig={slaConfig} />
                         </div>
                       ))}
                     </div>
@@ -3898,7 +3902,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
 
         {/* ── SETTINGS PAGE ── */}
         {page === "settings" && (role === "editor" || role === "voice_actor") && <EditorSettings userId={session?.user?.id} userName={userName} activeWorkspaceId={activeWorkspaceId} />}
-        {page === "settings" && role !== "editor" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
+        {page === "settings" && role !== "editor" && <SettingsPage thresholds={th} setThresholds={(t) => { setTh(t); if (activeWorkspaceId) saveWorkspaceSettings(activeWorkspaceId, t).catch(e => console.error("Save settings:", e)); }} slaConfig={slaConfig || DEFAULT_SLA_CONFIG} setSlaConfig={(c) => { setSlaConfig(c); if (activeWorkspaceId) saveSlaConfig(activeWorkspaceId, c).catch(e => console.error("Save SLA:", e)); }} activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} userName={userName} />}
 
         {/* Modals (only NewAdForm stays as modal) */}
         {newOpen && <NewAdForm onClose={() => setNewOpen(false)} dispatch={dispatch} editors={editors} />}

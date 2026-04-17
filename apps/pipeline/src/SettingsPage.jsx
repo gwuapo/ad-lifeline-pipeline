@@ -19,7 +19,7 @@ const ROLE_LABELS = { founder: "Founder", admin: "Admin", manager: "Manager", st
 const ROLE_COLORS = { founder: "var(--accent-light)", admin: "var(--accent-light)", manager: "#06b6d4", strategist: "var(--green)", editor: "var(--yellow)", voice_actor: "#f472b6" };
 const ROLE_BG = { founder: "var(--accent-bg)", admin: "var(--accent-bg)", manager: "rgba(6,182,212,0.1)", strategist: "var(--green-bg)", editor: "var(--yellow-bg)", voice_actor: "rgba(244,114,182,0.1)" };
 
-export default function SettingsPage({ thresholds, setThresholds, activeWorkspaceId, workspaces, session, userName }) {
+export default function SettingsPage({ thresholds, setThresholds, slaConfig, setSlaConfig, activeWorkspaceId, workspaces, session, userName }) {
   const [tab, setTab] = useState("profile");
 
   return (
@@ -46,7 +46,7 @@ export default function SettingsPage({ thresholds, setThresholds, activeWorkspac
       {tab === "profile" && <ProfileTab session={session} userName={userName} />}
       {tab === "team" && <TeamTab activeWorkspaceId={activeWorkspaceId} workspaces={workspaces} session={session} />}
       {tab === "integrations" && <IntegrationsTab />}
-      {tab === "pipeline" && <PipelineTab thresholds={thresholds} setThresholds={setThresholds} />}
+      {tab === "pipeline" && <PipelineTab thresholds={thresholds} setThresholds={setThresholds} slaConfig={slaConfig} setSlaConfig={setSlaConfig} />}
     </div>
   );
 }
@@ -631,18 +631,78 @@ function IntegrationsTab() {
 // PIPELINE TAB
 // ════════════════════════════════════════════════
 
-function PipelineTab({ thresholds, setThresholds }) {
+const SLA_STAGES = [
+  { id: "inbox",       label: "Inbox",       icon: "💡", desc: "Raw ideas" },
+  { id: "researching", label: "Researching", icon: "🔍", desc: "Developing angle" },
+  { id: "drafting",    label: "Drafting",    icon: "✎",  desc: "Script being written" },
+  { id: "scripted",    label: "Scripted",    icon: "📄", desc: "Buffer for council" },
+  { id: "briefed",     label: "Briefed",     icon: "📋", desc: "Brief being prepared" },
+  { id: "assigned",    label: "Assigned",    icon: "👤", desc: "Waiting for editor" },
+  { id: "in_edit",     label: "In Edit",     icon: "⚡", desc: "Editor working" },
+  { id: "qa",          label: "QA",          icon: "◎",  desc: "Quality review" },
+  { id: "ready",       label: "Ready",       icon: "✓",  desc: "Deploy approval" },
+  { id: "live",        label: "Live",        icon: "▶",  desc: "Running ads" },
+  { id: "analyzed",    label: "Analyzed",    icon: "📊", desc: "Learnings extraction" },
+];
+
+function PipelineTab({ thresholds, setThresholds, slaConfig, setSlaConfig }) {
   const [g, setG] = useState(thresholds.green);
   const [y, setY] = useState(thresholds.yellow);
   const [gm, setGm] = useState(thresholds.grossMarginPct ?? 70);
   const [saved, setSaved] = useState(false);
   const [prompt, setPrompt] = useState(getAnalysisPrompt());
   const [promptSaved, setPromptSaved] = useState(false);
+  const [localSla, setLocalSla] = useState(slaConfig || {});
+  const [slaSaved, setSlaSaved] = useState(false);
 
   const saveThresholds = () => { setThresholds({ green: g, yellow: y, grossMarginPct: gm }); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const saveSla = () => { setSlaConfig(localSla); setSlaSaved(true); setTimeout(() => setSlaSaved(false), 2000); };
 
   return (
     <div>
+      {/* SLA Timeframes */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">Stage Timeframes (SLA)</div>
+        <p style={{ fontSize: 12.5, color: "var(--text-tertiary)", margin: "0 0 14px" }}>
+          Set the maximum hours a card should stay in each stage. Cards exceeding this will show as breached (red). Leave empty or 0 for no limit.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {SLA_STAGES.map(stage => {
+            const val = localSla[stage.id];
+            const hasLimit = val !== null && val !== undefined && val !== "" && val !== 0;
+            return (
+              <div key={stage.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
+                <span style={{ fontSize: 14, width: 24, textAlign: "center" }}>{stage.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{stage.label}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{stage.desc}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="number" min="0" step="1"
+                    value={val ?? ""}
+                    onChange={e => {
+                      const v = e.target.value === "" ? null : Number(e.target.value);
+                      setLocalSla(prev => ({ ...prev, [stage.id]: v }));
+                    }}
+                    placeholder="None"
+                    className="input"
+                    style={{ width: 80, textAlign: "center", fontSize: 12 }}
+                  />
+                  <span style={{ fontSize: 11, color: hasLimit ? "var(--text-secondary)" : "var(--text-muted)", minWidth: 32 }}>
+                    {hasLimit ? "hours" : "—"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+          <button onClick={saveSla} className="btn btn-primary btn-sm">Save Timeframes</button>
+          {slaSaved && <span style={{ fontSize: 12, color: "var(--green-light)", fontWeight: 600 }}>Saved</span>}
+        </div>
+      </div>
+
       {/* ROAS Thresholds */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="section-title">ROAS Thresholds</div>
