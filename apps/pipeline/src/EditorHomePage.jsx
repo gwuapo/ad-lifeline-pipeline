@@ -193,6 +193,29 @@ export default function EditorHomePage({ ads, userName, setPage, activeWorkspace
         </p>
       </div>
 
+      {/* ── PENDING ACCEPTANCE ── */}
+      {(() => {
+        const pendingAccept = activeAds.filter(a => a.stage === "assigned");
+        if (pendingAccept.length === 0) return null;
+        return (
+          <div style={{ padding: "12px 16px", marginBottom: 16, borderRadius: 12, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--yellow)", marginBottom: 8 }}>Pending Acceptance ({pendingAccept.length})</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {pendingAccept.map(ad => {
+                const age = ad.stage_entered_at ? Math.floor((Date.now() - new Date(ad.stage_entered_at).getTime()) / (1000 * 60 * 60)) : null;
+                return (
+                  <div key={ad.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, background: "var(--bg-card)", border: "1px solid var(--border-light)" }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)", flex: 1 }}>{ad.name}</span>
+                    {age !== null && <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--fm)" }}>{age < 24 ? `${age}h ago` : `${Math.floor(age / 24)}d ago`}</span>}
+                    <span style={{ fontSize: 10, color: "var(--yellow)", fontWeight: 600 }}>Waiting for your acceptance</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── STAT CARDS ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
         <StatCard label="Active Ads" value={activeAds.length} icon="📊" color="var(--accent-light)" />

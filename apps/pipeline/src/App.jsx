@@ -20,6 +20,8 @@ import AdCopyPage from "./AdCopyPage.jsx";
 import LandingPageBuilder from "./LandingPageBuilder.jsx";
 import MarketplacePage from "./MarketplacePage.jsx";
 import EditorHomePage from "./EditorHomePage.jsx";
+import FounderDashboard from "./FounderDashboard.jsx";
+import ManagerDashboard from "./ManagerDashboard.jsx";
 import DateRangePicker from "./DateRangePicker.jsx";
 import AnalyticsPage from "./AnalyticsPage.jsx";
 import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, saveSlaConfig, DEFAULT_SLA_CONFIG, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment, fetchEngagementVideos, upsertEngagementVideo, deleteEngagementVideo, logStageTransition, fetchStageTransitions } from "./supabaseData.js";
@@ -3210,7 +3212,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
   const [openAd, setOpenAd] = useState(null);
   const [openAdTab, setOpenAdTab] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [page, setPageRaw] = useState(userRole === "editor" || userRole === "voice_actor" ? "home" : "pipeline");
+  const [page, setPageRaw] = useState("home");
   const [presenceState, setPresenceState] = useState({});
   const presenceRef = useRef(null);
   const [th, setTh] = useState(DT);
@@ -3635,7 +3637,13 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         {syncMsg && <div className={`toast ${syncMsg.ok ? "toast-success" : "toast-error"}`}>{syncMsg.ok ? "🐳" : "⚠"} {syncMsg.text}</div>}
         {flywheelStatus && <div className="toast toast-success">🧠 {flywheelStatus}</div>}
 
-        {/* ── EDITOR HOME ── */}
+        {/* ── HOME DASHBOARDS ── */}
+        {page === "home" && (role === "founder" || role === "admin") && (
+          <FounderDashboard ads={ads} th={th} onOpenAd={(ad) => { setOpenAd(ad); setPage("pipeline"); }} setPage={setPage} />
+        )}
+        {page === "home" && role === "manager" && (
+          <ManagerDashboard ads={ads} editors={editors} editorProfiles={editorProfiles} onOpenAd={(ad) => { setOpenAd(ad); setPage("pipeline"); }} slaConfig={slaConfig || DEFAULT_SLA_CONFIG} />
+        )}
         {page === "home" && (role === "editor" || role === "voice_actor") && (
           <EditorHomePage ads={ads} userName={userName} setPage={setPage} activeWorkspaceId={activeWorkspaceId} session={session} myEditorProfile={myEditorProfile} />
         )}

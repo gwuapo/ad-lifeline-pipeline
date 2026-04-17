@@ -72,9 +72,9 @@ export default function Sidebar({ page, setPage, role, userName, onSignOut, stat
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {NAV_ITEMS.filter(item => {
             if (role === "editor" || role === "voice_actor") return item.id === "home" || item.id === "pipeline" || item.id === "earnings" || item.id === "marketplace";
-            if (role === "manager") return item.id === "pipeline" || item.id === "editors" || item.id === "earnings";
-            if (role === "strategist") return item.id !== "editors" && item.id !== "splittests" && item.id !== "home";
-            return item.id !== "home";
+            if (role === "manager") return item.id === "home" || item.id === "pipeline" || item.id === "editors" || item.id === "earnings";
+            if (role === "strategist") return item.id !== "editors" && item.id !== "splittests";
+            return true;
           }).map(item => (
             <div key={item.id} className={`nav-item ${page === item.id ? "active" : ""}`} onClick={() => setPage(item.id)}>
               <span className="nav-icon">{item.icon}</span>
