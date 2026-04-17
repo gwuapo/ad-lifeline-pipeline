@@ -167,13 +167,33 @@ export async function saveWorkspaceSettings(workspaceId, thresholds) {
 function adToRow(ad, workspaceId) {
   const { id, name, type, stage, editor, deadline, brief, notes, ...rest } = ad;
   return {
-    ...(id && !id.toString().match(/^\d+$/) ? { id } : {}), // keep uuid, skip numeric seed IDs
+    ...(id && !id.toString().match(/^\d+$/) ? { id } : {}),
     workspace_id: workspaceId,
     name, type, stage,
     editor: editor || "",
     deadline: deadline || "",
     brief: brief || "",
     notes: notes || "",
+    // v2 top-level columns
+    avatar_id: rest.avatar_id || null,
+    angle_hypothesis: rest.angle_hypothesis || null,
+    hook_mechanism: rest.hook_mechanism || null,
+    script_body: rest.script_body || null,
+    hook_variants: rest.hook_variants || [],
+    compliance_flags: rest.compliance_flags || [],
+    citations: rest.citations || [],
+    brief_body: rest.brief_body || null,
+    estimated_edit_hours: rest.estimated_edit_hours || null,
+    assigned_editor_id: rest.assigned_editor_id || null,
+    priority: rest.priority || "P2",
+    target_ship_date: rest.target_ship_date || null,
+    result_tag: rest.result_tag || null,
+    learnings_note: rest.learnings_note || null,
+    kill_reason: rest.kill_reason || null,
+    is_blocked: rest.is_blocked || false,
+    blocked_reason: rest.blocked_reason || null,
+    stage_entered_at: rest.stage_entered_at ? new Date(typeof rest.stage_entered_at === "number" ? rest.stage_entered_at : rest.stage_entered_at).toISOString() : new Date().toISOString(),
+    sla_hours: rest.sla_hours || null,
     data: {
       iterations: rest.iterations || 0,
       maxIter: rest.maxIter || 3,
@@ -201,8 +221,8 @@ function adToRow(ad, workspaceId) {
       voice_actor_rate: rest.voice_actor_rate ?? null,
       editor_cost: rest.editor_cost ?? null,
       voice_actor_cost: rest.voice_actor_cost ?? null,
-      // Strategy / Ads Lab fields
       strategy: rest.strategy || {},
+      checklist: rest.checklist || {},
     },
   };
 }
@@ -218,6 +238,27 @@ function rowToAd(row) {
     deadline: row.deadline || "",
     brief: row.brief || "",
     notes: row.notes || "",
+    // v2 fields from top-level columns
+    avatar_id: row.avatar_id || null,
+    angle_hypothesis: row.angle_hypothesis || null,
+    hook_mechanism: row.hook_mechanism || null,
+    script_body: row.script_body || null,
+    hook_variants: row.hook_variants || [],
+    compliance_flags: row.compliance_flags || [],
+    citations: row.citations || [],
+    brief_body: row.brief_body || null,
+    estimated_edit_hours: row.estimated_edit_hours || null,
+    assigned_editor_id: row.assigned_editor_id || null,
+    priority: row.priority || "P2",
+    target_ship_date: row.target_ship_date || null,
+    result_tag: row.result_tag || null,
+    learnings_note: row.learnings_note || null,
+    kill_reason: row.kill_reason || null,
+    is_blocked: row.is_blocked || false,
+    blocked_reason: row.blocked_reason || null,
+    stage_entered_at: row.stage_entered_at || null,
+    sla_hours: row.sla_hours || null,
+    // existing data jsonb fields
     iterations: d.iterations || 0,
     maxIter: d.maxIter || 3,
     iterHistory: d.iterHistory || [],
@@ -246,7 +287,7 @@ function rowToAd(row) {
     voice_actor_cost: d.voice_actor_cost ?? null,
     strategy: d.strategy || {},
     checklist: d.checklist || {},
-    stageEnteredAt: d.stageEnteredAt || new Date(row.created_at || Date.now()).getTime(),
+    stageEnteredAt: d.stageEnteredAt || (row.stage_entered_at ? new Date(row.stage_entered_at).getTime() : new Date(row.created_at || Date.now()).getTime()),
   };
 }
 
@@ -268,7 +309,31 @@ export async function createAd(ad, workspaceId) {
     .select()
     .single();
   if (error) throw error;
+  // Log initial stage transition
+  logStageTransition(data.id, null, data.stage).catch(() => {});
   return rowToAd(data);
+}
+
+export async function logStageTransition(conceptId, fromStage, toStage, notes) {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+  const { error } = await supabase.from("stage_transitions").insert({
+    concept_id: conceptId,
+    from_stage: fromStage,
+    to_stage: toStage,
+    transitioned_by: userId || null,
+    notes: notes || null,
+  });
+  if (error) console.error("Log stage transition error:", error);
+}
+
+export async function fetchStageTransitions(conceptId) {
+  const { data, error } = await supabase
+    .from("stage_transitions")
+    .select("*")
+    .eq("concept_id", conceptId)
+    .order("transitioned_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
 }
 
 export async function updateAd(adId, updates, workspaceId) {

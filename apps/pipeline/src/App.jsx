@@ -22,42 +22,60 @@ import MarketplacePage from "./MarketplacePage.jsx";
 import EditorHomePage from "./EditorHomePage.jsx";
 import DateRangePicker from "./DateRangePicker.jsx";
 import AnalyticsPage from "./AnalyticsPage.jsx";
-import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment, fetchEngagementVideos, upsertEngagementVideo, deleteEngagementVideo } from "./supabaseData.js";
+import { fetchAds, createAd as dbCreateAd, updateAd as dbUpdateAd, subscribeToAds, getWorkspaceSettings, saveWorkspaceSettings, getWorkspaceMembers, addMemberToWorkspace, removeMemberFromWorkspace, fetchAllEditorProfiles, fetchEditorProfile, upsertEditorProfile, createNotification, resolveUserIdByName, getWorkspaceMemberNames, createPresenceChannel, rateDeliverable, getDeliverableRatings, getWorkspaceInvites, fetchSocialProfiles, fetchCommentAssignments, createCommentAssignment, updateCommentAssignment, deleteCommentAssignment, fetchEngagementVideos, upsertEngagementVideo, deleteEngagementVideo, logStageTransition, fetchStageTransitions } from "./supabaseData.js";
 
 // ════════════════════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════════════════════
 
 const STAGES = [
-  { id: "pre", label: "Pre-Production", icon: "✎", color: "#8b5cf6", desc: "Script + brief finalized", exitLabel: "Complete all checklist items" },
-  { id: "in", label: "In-Production", icon: "⚡", color: "#d97706", desc: "Editor working on deliverable", exitLabel: "Complete all checklist items" },
-  { id: "post", label: "Post-Production", icon: "◎", color: "#3b82f6", desc: "Review, revisions, approve", exitLabel: "Complete all checklist items" },
-  { id: "live", label: "Live", icon: "▶", color: "#10b981", desc: "Running — tracking metrics", exitLabel: "CPA verdict" },
-  { id: "killed", label: "Killed", icon: "✕", color: "#ef4444", desc: "Archived", exitLabel: "" },
+  { id: "inbox",       label: "Inbox",       icon: "💡", color: "#6b7280", desc: "Raw ideas, hooks, angles",           owner: "founder",  slaHours: null },
+  { id: "researching", label: "Researching", icon: "🔍", color: "#8b5cf6", desc: "Developing angle with proof",        owner: "founder",  slaHours: null },
+  { id: "drafting",    label: "Drafting",    icon: "✎",  color: "#a78bfa", desc: "Script + hooks being written",       owner: "founder",  slaHours: null },
+  { id: "scripted",    label: "Scripted",    icon: "📄", color: "#6366f1", desc: "Buffer — ready for council",         owner: "founder",  slaHours: null, bufferTarget: 40 },
+  { id: "briefed",     label: "Briefed",     icon: "📋", color: "#0ea5e9", desc: "Brief being prepared",               owner: "creative_director", slaHours: 24 },
+  { id: "assigned",    label: "Assigned",    icon: "👤", color: "#f59e0b", desc: "Waiting for editor acceptance",      owner: "editor",   slaHours: 12 },
+  { id: "in_edit",     label: "In Edit",     icon: "⚡", color: "#d97706", desc: "Editor working on deliverable",      owner: "editor",   slaHours: 72, wipLimit: 2 },
+  { id: "qa",          label: "QA",          icon: "◎",  color: "#3b82f6", desc: "Quality review",                     owner: "creative_director", slaHours: 24 },
+  { id: "ready",       label: "Ready",       icon: "✓",  color: "#22d3ee", desc: "Final deploy approval",              owner: "founder",  slaHours: 24 },
+  { id: "live",        label: "Live",        icon: "▶",  color: "#10b981", desc: "Running — tracking metrics",         owner: "creative_director", slaHours: 168 },
+  { id: "analyzed",    label: "Analyzed",    icon: "📊", color: "#14b8a6", desc: "Learnings extracted",                owner: "founder",  slaHours: 48 },
+  { id: "killed",      label: "Killed",      icon: "✕",  color: "#ef4444", desc: "Archived",                           owner: null, slaHours: null },
 ];
 
 const STAGE_CHECKLIST = {
-  pre: [
-    { key: "idea", label: "Idea finalized", role: "strategist" },
-    { key: "hooks", label: "Hooks written", role: "strategist" },
-    { key: "leads", label: "Leads written", role: "strategist" },
-    { key: "script", label: "Script completed", role: "strategist" },
-    { key: "ad_brief", label: "Ad brief finalized", role: "strategist" },
-    { key: "vo_brief", label: "Voice over brief ready", role: "strategist" },
+  inbox: [],
+  researching: [],
+  drafting: [
+    { key: "script", label: "Script completed", role: "founder" },
+    { key: "hooks", label: "5 hook variants written", role: "founder" },
+    { key: "citations", label: "Citations added", role: "founder" },
+    { key: "compliance", label: "Compliance flags reviewed", role: "founder" },
   ],
-  in: [
-    { key: "vo_submitted", label: "Voice over submitted", role: "editor" },
-    { key: "video_submitted", label: "Video submitted", role: "editor" },
-    { key: "hook_visuals", label: "Hook visuals done", role: "editor" },
+  scripted: [],
+  briefed: [
+    { key: "shot_list", label: "Shot list created", role: "creative_director" },
+    { key: "style_refs", label: "Style references attached", role: "creative_director" },
+    { key: "pacing", label: "Pacing notes written", role: "creative_director" },
+    { key: "editor_proposed", label: "Editor proposed", role: "creative_director" },
   ],
-  post: [
-    { key: "vo_approved", label: "Voice over approved", role: "founder" },
-    { key: "video_approved", label: "Video approved", role: "founder" },
-    { key: "final_greenlit", label: "Final greenlit for launch", role: "founder" },
+  assigned: [],
+  in_edit: [
+    { key: "first_cut", label: "First cut uploaded", role: "editor" },
+  ],
+  qa: [
+    { key: "qa_reviewed", label: "QA review completed", role: "creative_director" },
+  ],
+  ready: [
+    { key: "deploy_approved", label: "Deploy approved", role: "founder" },
   ],
   live: [
-    { key: "ad_ids_matched", label: "Ad IDs auto-matched with Triple Whale", role: "system" },
+    { key: "ad_ids_matched", label: "Ad IDs matched", role: "system" },
     { key: "data_tracking", label: "Data tracking confirmed", role: "system" },
+  ],
+  analyzed: [
+    { key: "result_tagged", label: "Result tagged (winner/loser)", role: "founder" },
+    { key: "learnings_written", label: "Learnings written", role: "founder" },
   ],
 };
 
@@ -84,7 +102,7 @@ function getStaleItems(ad, stage) {
   }
   return staleItems;
 }
-const SO = ["pre", "in", "post", "live"];
+const SO = ["inbox", "researching", "drafting", "scripted", "briefed", "assigned", "in_edit", "qa", "ready", "live", "analyzed"];
 const AD_TYPES = ["VSL", "Video Ad", "UGC", "Image Ad", "Advertorial", "Listicle"];
 const DEFAULT_EDITORS = [];
 
@@ -289,15 +307,52 @@ function checkGate(ad, fromStage, toStage) {
     return `Complete all checklist items before moving: ${incomplete.map(i => i.label).join(", ")}`;
   }
 
-  // Additional hard requirements
-  if (fromStage === "pre" && toStage === "in") {
-    if (!ad.editor) return "Editor must be assigned before moving to In-Production";
+  // Stage-specific hard requirements
+  if (toStage === "scripted" && fromStage === "drafting") {
+    if (!ad.script_body && !ad.brief) return "Script body is required before moving to Scripted";
   }
-  if (fromStage === "post" && toStage === "live") {
-    if (ad.revisionRequests.some(r => !r.resolved)) return "Unresolved revision requests -- resolve before going Live";
+  if (toStage === "assigned" && fromStage === "briefed") {
+    if (!ad.editor) return "Editor must be assigned before moving to Assigned";
+  }
+  if (toStage === "live" && fromStage === "ready") {
+    if (ad.revisionRequests?.some(r => !r.resolved)) return "Unresolved revision requests -- resolve before going Live";
   }
   return null;
 }
+
+// SLA helpers
+function getSlaStatus(ad) {
+  const stage = STAGES.find(s => s.id === ad.stage);
+  if (!stage?.slaHours) return "none";
+  const enteredAt = ad.stage_entered_at || ad.stageEnteredAt;
+  if (!enteredAt) return "none";
+  const enteredMs = typeof enteredAt === "number" ? enteredAt : new Date(enteredAt).getTime();
+  const hoursElapsed = (Date.now() - enteredMs) / (1000 * 60 * 60);
+  const pct = hoursElapsed / stage.slaHours;
+  if (pct >= 1) return "breached";
+  if (pct >= 0.75) return "warning";
+  return "ok";
+}
+
+function getStageAge(ad) {
+  const enteredAt = ad.stage_entered_at || ad.stageEnteredAt;
+  if (!enteredAt) return "";
+  const enteredMs = typeof enteredAt === "number" ? enteredAt : new Date(enteredAt).getTime();
+  const hours = Math.floor((Date.now() - enteredMs) / (1000 * 60 * 60));
+  if (hours < 1) return "<1h";
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+const SLA_COLORS = {
+  ok: { bg: "rgba(16,185,129,0.1)", color: "#10b981" },
+  warning: { bg: "rgba(245,158,11,0.1)", color: "#f59e0b" },
+  breached: { bg: "rgba(239,68,68,0.1)", color: "#ef4444" },
+  none: { bg: "rgba(107,114,128,0.1)", color: "#6b7280" },
+};
+
+const PRIORITY_COLORS = { P0: "#ef4444", P1: "#f59e0b", P2: "#6b7280" };
 
 // ════════════════════════════════════════════════
 // NEW AD FORM
@@ -362,26 +417,50 @@ function PresenceBubbles({ presenceState, currentUserId, currentPage }) {
 }
 
 function NewAdForm({ onClose, dispatch, editors }) {
-  const [f, setF] = useState({ name: "", type: "VSL", editor: "", deadline: "", brief: "", notes: "", channelIds: emptyChIds() });
+  const [f, setF] = useState({ name: "", type: "VSL", editor: "", deadline: "", brief: "", notes: "", channelIds: emptyChIds(), priority: "P2", stage: "inbox" });
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const setChId = (ch, v) => setF(p => ({ ...p, channelIds: { ...p.channelIds, [ch]: v } }));
 
   return (
-    <Modal title="New Ad" onClose={onClose} w={500}>
-      <label className="label" style={{ marginTop: 0 }}>Ad Name</label>
+    <Modal title="New Concept" onClose={onClose} w={500}>
+      <label className="label" style={{ marginTop: 0 }}>Title</label>
       <input value={f.name} onChange={e => set("name", e.target.value)} className="input" placeholder="e.g. Hair Growth VSL v2" />
 
-      <label className="label">Type</label>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        {AD_TYPES.map(t => (
-          <button key={t} onClick={() => set("type", t)} className={`btn btn-xs ${f.type === t ? "" : "btn-ghost"}`}
-            style={f.type === t ? { background: "var(--accent-bg)", color: "var(--accent-light)", border: "1px solid var(--accent-border)" } : {}}>
-            {t}
-          </button>
-        ))}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label className="label">Type</label>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {AD_TYPES.map(t => (
+              <button key={t} onClick={() => set("type", t)} className={`btn btn-xs ${f.type === t ? "" : "btn-ghost"}`}
+                style={f.type === t ? { background: "var(--accent-bg)", color: "var(--accent-light)", border: "1px solid var(--accent-border)" } : {}}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="label">Priority</label>
+          <div style={{ display: "flex", gap: 4 }}>
+            {["P0", "P1", "P2"].map(p => (
+              <button key={p} onClick={() => set("priority", p)} className={`btn btn-xs ${f.priority === p ? "" : "btn-ghost"}`}
+                style={f.priority === p ? { background: PRIORITY_COLORS[p] + "18", color: PRIORITY_COLORS[p], border: `1px solid ${PRIORITY_COLORS[p]}33` } : {}}>
+                <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: PRIORITY_COLORS[p], marginRight: 4 }} />{p}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label className="label">Starting Stage</label>
+          <select value={f.stage} onChange={e => set("stage", e.target.value)} className="input">
+            <option value="inbox">Inbox</option>
+            <option value="researching">Researching</option>
+            <option value="drafting">Drafting</option>
+            <option value="scripted">Scripted</option>
+          </select>
+        </div>
         <div>
           <label className="label">Editor</label>
           <select value={f.editor} onChange={e => set("editor", e.target.value)} className="input">
@@ -389,15 +468,11 @@ function NewAdForm({ onClose, dispatch, editors }) {
             {editors.map(e => <option key={e} value={e}>{e}</option>)}
           </select>
         </div>
-        <div>
-          <label className="label">Deadline</label>
-          <input type="date" value={f.deadline} onChange={e => set("deadline", e.target.value)} className="input" />
-        </div>
       </div>
 
       <details style={{ marginBottom: 6 }}>
         <summary style={{ cursor: "pointer", fontSize: 11.5, color: "var(--text-muted)", fontWeight: 600 }}>
-          Ad Set IDs <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>(optional -- auto-matched by name if blank)</span>
+          Ad Set IDs <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>(optional)</span>
         </summary>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
           {CHANNELS.map(ch => (
@@ -409,11 +484,8 @@ function NewAdForm({ onClose, dispatch, editors }) {
         </div>
       </details>
 
-      <label className="label">Brief</label>
-      <textarea value={f.brief} onChange={e => set("brief", e.target.value)} rows={3} className="input" placeholder="Look/feel, hooks, pacing, references..." />
-
       <label className="label">Notes</label>
-      <input value={f.notes} onChange={e => set("notes", e.target.value)} className="input" placeholder="Quick notes..." />
+      <input value={f.notes} onChange={e => set("notes", e.target.value)} className="input" placeholder="Quick notes, URL, angle idea..." />
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
         <button onClick={onClose} className="btn btn-ghost">Cancel</button>
@@ -1075,12 +1147,18 @@ function AdPanel({ ad, onClose, dispatch, th, allAds, role, editors, voiceActors
           <span style={{ color: stg.color }}>{stg.label}</span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {ad.stage !== "killed" && _canManage && SO.filter(s => s !== ad.stage).map(s => {
-            const st = STAGES.find(x => x.id === s);
-            return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "22", fontSize: 11 }}>{st.icon} {st.label}</button>;
-          })}
-          {ad.iterations >= ad.maxIter && ad.stage === "live" && cl === "red" && (
-            <button onClick={doKill} className="btn btn-danger btn-xs">Kill</button>
+          {ad.stage !== "killed" && _canManage && (() => {
+            const curIdx = SO.indexOf(ad.stage);
+            const adjacentStages = [];
+            if (curIdx > 0) adjacentStages.push(SO[curIdx - 1]);
+            if (curIdx < SO.length - 1) adjacentStages.push(SO[curIdx + 1]);
+            return adjacentStages.map(s => {
+              const st = STAGES.find(x => x.id === s);
+              return <button key={s} onClick={() => tryMove(s)} className="btn btn-ghost btn-xs" style={{ color: st.color, borderColor: st.color + "22", fontSize: 11 }}>{st.icon} {st.label}</button>;
+            });
+          })()}
+          {ad.stage !== "killed" && _canManage && (
+            <button onClick={doKill} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", borderColor: "rgba(239,68,68,0.2)", fontSize: 11 }}>✕ Kill</button>
           )}
           {_isFounderOrAdmin && (
             <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-ghost btn-xs" style={{ color: "var(--red)", fontSize: 14 }} title="Delete ad">🗑</button>
@@ -2261,69 +2339,72 @@ function PCard({ ad, th, onClick, onMove, onIterate }) {
   const cl = ad.stage === "live" ? CL(adRoas || null, th) : "none", cs = CS[cl];
   const ix = SO.indexOf(ad.stage), ov = od(ad.deadline), gdays = gd(ad, th);
   const unresolvedRevs = ad.revisionRequests?.filter(r => !r.resolved).length || 0;
-  const hasIds = hasAnyChId(ad.channelIds);
   const hasChData = ad.channelMetrics && Object.values(ad.channelMetrics).some(m => m?.length > 0);
   const noDataYet = !hasChData && ad.stage === "live";
+  const slaStatus = getSlaStatus(ad);
+  const slaCl = SLA_COLORS[slaStatus];
+  const age = getStageAge(ad);
+  const priorityColor = PRIORITY_COLORS[ad.priority] || PRIORITY_COLORS.P2;
 
   return (
-    <div className="pipeline-card" onClick={() => onClick(ad)}>
+    <div className="pipeline-card" onClick={() => onClick(ad)} style={{ position: "relative" }}>
       {ad.stage === "live" && cl !== "none" && <div className="status-bar" style={{ background: cs.c }} />}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.3, flex: 1 }}>{ad.name}</div>
-        {ad.deadline && <span style={{ fontSize: 10, color: ov ? "var(--red)" : "var(--text-tertiary)", fontFamily: "var(--fm)", flexShrink: 0, marginLeft: 8 }}>{fd(ad.deadline)}</span>}
+
+      {/* Top row: priority dot + title + SLA age */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6, flex: 1, minWidth: 0 }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: priorityColor, flexShrink: 0, marginTop: 4 }} title={ad.priority || "P2"} />
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.3, flex: 1, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{ad.name}</div>
+        </div>
+        {age && (
+          <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 6, background: slaCl.bg, color: slaCl.color, flexShrink: 0, fontFamily: "var(--fm)" }}>{age}</span>
+        )}
       </div>
-      <div style={{ display: "flex", gap: 3, marginBottom: 6, flexWrap: "wrap" }}>
-        <span className="badge" style={{ fontSize: 10 }}>{ad.type}</span>
-        {ad.editor && <span className="badge" style={{ fontSize: 10 }}>@ {ad.editor}</span>}
-        {ad.iterations > 0 && <span className="badge badge-yellow" style={{ fontSize: 10 }}>iter {ad.iterations}</span>}
-        {ov && <span className="badge badge-red" style={{ fontSize: 10 }}>Overdue</span>}
-        {ad.parentId && <span className="badge badge-green" style={{ fontSize: 10 }}>var</span>}
-        {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 10 }}>{unresolvedRevs} rev</span>}
-        {ad.strategy?.ad_tier && <span className="badge" style={{ fontSize: 9, background: ad.strategy.ad_tier === "Premium" ? "rgba(245,158,11,0.12)" : "rgba(148,163,184,0.12)", color: ad.strategy.ad_tier === "Premium" ? "#f59e0b" : "#94a3b8" }}>{ad.strategy.ad_tier}</span>}
+
+      {/* Tags row */}
+      <div style={{ display: "flex", gap: 3, marginBottom: 5, flexWrap: "wrap" }}>
+        {ad.avatar_id && <span className="badge" style={{ fontSize: 9 }}>{ad.avatar_id}</span>}
+        <span className="badge" style={{ fontSize: 9 }}>{ad.type}</span>
+        {ad.editor && <span className="badge" style={{ fontSize: 9 }}>@ {ad.editor}</span>}
+        {ad.iterations > 0 && <span className="badge badge-yellow" style={{ fontSize: 9 }}>iter {ad.iterations}</span>}
+        {ov && <span className="badge badge-red" style={{ fontSize: 9 }}>Overdue</span>}
+        {ad.parentId && <span className="badge badge-green" style={{ fontSize: 9 }}>var</span>}
+        {unresolvedRevs > 0 && <span className="badge badge-yellow" style={{ fontSize: 9 }}>{unresolvedRevs} rev</span>}
+        {ad.is_blocked && <span className="badge badge-red" style={{ fontSize: 9 }}>Blocked</span>}
       </div>
 
       {/* Checklist progress */}
-      {(() => { const cp = getChecklistProgress(ad, ad.stage); const stale = getStaleItems(ad, ad.stage); return cp.total > 0 ? (
-        <div style={{ marginBottom: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-            <span style={{ fontSize: 10, color: cp.pct === 100 ? "var(--green)" : "var(--text-tertiary)" }}>{cp.done}/{cp.total} tasks</span>
-            {stale.length > 0 && <span style={{ fontSize: 9, color: "var(--red)" }}>{stale.length} overdue</span>}
+      {(() => { const cp = getChecklistProgress(ad, ad.stage); return cp.total > 0 ? (
+        <div style={{ marginBottom: 5 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+            <span style={{ fontSize: 9, color: cp.pct === 100 ? "var(--green)" : "var(--text-tertiary)" }}>{cp.done}/{cp.total}</span>
           </div>
-          <div style={{ height: 3, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: 2, width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : stale.length > 0 ? "var(--red)" : "var(--accent)", transition: "width 0.3s ease" }} />
+          <div style={{ height: 2, borderRadius: 1, background: "var(--border)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: cp.pct + "%", background: cp.pct === 100 ? "var(--green)" : "var(--accent)", borderRadius: 1, transition: "width 0.3s ease" }} />
           </div>
         </div>
       ) : null; })()}
 
-      {ad.notes && <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 6, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{ad.notes}</div>}
-
-      {ad.stage === "live" && la && bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
-        <span style={{ color: bc.color, fontSize: 9.5, fontWeight: 600 }}>{bc.label} </span>
-        <span style={{ color: "var(--text-tertiary)" }}>ROAS: </span>
+      {/* Live metrics */}
+      {ad.stage === "live" && la && <div style={{ fontSize: 10, marginBottom: 5, fontFamily: "var(--fm)" }}>
+        {bc && <span style={{ color: bc.color, fontSize: 9, fontWeight: 600 }}>{bc.label} </span>}
+        <span style={{ color: "var(--text-tertiary)" }}>ROAS </span>
         <span style={{ color: cs.c, fontWeight: 700 }}>{adRoas}x</span>
-        {la.cpa > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 6 }}>CPA: {CUR} {la.cpa}</span>}
-        <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
+        {la.cpa > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 4 }}>CPA {CUR} {la.cpa}</span>}
+        <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 4, fontSize: 8 }}>{cs.l}</span>
       </div>}
-      {ad.stage === "live" && la && !bc && <div style={{ fontSize: 11, marginBottom: 6, fontFamily: "var(--fm)" }}>
-        <span style={{ color: "var(--text-tertiary)" }}>ROAS: </span><span style={{ color: cs.c, fontWeight: 700 }}>{adRoas}x</span>
-        {la.cpa > 0 && <span style={{ color: "var(--text-tertiary)", marginLeft: 6 }}>CPA: {CUR} {la.cpa}</span>}
-        <span className="badge" style={{ background: cs.bg, color: cs.c, marginLeft: 6, fontSize: 9 }}>{cs.l}</span>
-      </div>}
+      {noDataYet && <div style={{ fontSize: 9, color: "var(--yellow)", marginBottom: 4 }}>Awaiting sync</div>}
 
-      {noDataYet && <div style={{ fontSize: 10, color: "var(--yellow)", marginBottom: 5 }}>Awaiting sync</div>}
-      {ad.stage === "live" && cl === "green" && <div style={{ fontSize: 10, color: "var(--green)", marginBottom: 5 }}>Scale</div>}
-      {ad.stage === "live" && cl === "red" && <div style={{ fontSize: 10, color: "var(--red)", marginBottom: 5 }}>Iter {ad.iterations}/{ad.maxIter}</div>}
-
+      {/* Bottom row: arrows + icons */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", gap: 3 }}>
-          {ix > 0 && <button onClick={() => onMove(ad.id, SO[ix - 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>←</button>}
-          {ix < 3 && <button onClick={() => onMove(ad.id, SO[ix + 1])} className="btn btn-ghost btn-xs" style={{ padding: "2px 6px", minWidth: 22 }}>→</button>}
+        <div style={{ display: "flex", gap: 2 }}>
+          {ix > 0 && <button onClick={() => onMove(ad.id, SO[ix - 1])} className="btn btn-ghost btn-xs" style={{ padding: "1px 5px", minWidth: 20, fontSize: 10 }}>←</button>}
+          {ix < SO.length - 1 && <button onClick={() => onMove(ad.id, SO[ix + 1])} className="btn btn-ghost btn-xs" style={{ padding: "1px 5px", minWidth: 20, fontSize: 10 }}>→</button>}
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {ad.thread.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>💬 {ad.thread.length}</span>}
-          {ad.learnings.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>🔄 {ad.learnings.length}</span>}
-          {ad.comments.length > 0 && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>💭 {ad.comments.length}</span>}
-          {ad.stage === "live" && cl === "red" && ad.iterations < ad.maxIter && <button onClick={() => onIterate(ad.id)} className="btn btn-danger btn-xs">Iterate</button>}
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          {ad.thread?.length > 0 && <span style={{ fontSize: 8, color: "var(--text-muted)" }}>💬{ad.thread.length}</span>}
+          {ad.comments?.length > 0 && <span style={{ fontSize: 8, color: "var(--text-muted)" }}>💭{ad.comments.length}</span>}
+          {ad.stage === "live" && cl === "red" && ad.iterations < ad.maxIter && <button onClick={() => onIterate(ad.id)} className="btn btn-danger btn-xs" style={{ fontSize: 9, padding: "1px 6px" }}>Iterate</button>}
         </div>
       </div>
     </div>
@@ -3398,7 +3479,12 @@ export default function App({ session, userRole, userName, workspaces, activeWor
     setAds(p => {
       let next;
       switch (a.type) {
-        case "MOVE": next = p.map(x => x.id === a.id ? { ...x, stage: a.stage, stageEnteredAt: Date.now() } : x); break;
+        case "MOVE": {
+          const prev = p.find(x => x.id === a.id);
+          if (prev) logStageTransition(a.id, prev.stage, a.stage).catch(() => {});
+          next = p.map(x => x.id === a.id ? { ...x, stage: a.stage, stageEnteredAt: Date.now(), stage_entered_at: new Date().toISOString() } : x);
+          break;
+        }
         case "UPDATE": next = p.map(x => x.id === a.id ? { ...x, ...a.data } : x); break;
         case "TOGGLE_CHECKLIST": next = p.map(x => {
           if (x.id !== a.id) return x;
@@ -3419,21 +3505,30 @@ export default function App({ session, userRole, userName, workspaces, activeWor
         case "ADD_REVISION": next = p.map(x => x.id === a.id ? { ...x, revisionRequests: [...x.revisionRequests, a.rev] } : x); break;
         case "RESOLVE_REVISION": next = p.map(x => x.id === a.id ? { ...x, revisionRequests: x.revisionRequests.map(r => r.id === a.rid ? { ...r, resolved: true } : r) } : x); break;
         case "APPROVE_DRAFT": next = p.map(x => x.id === a.id ? { ...x, drafts: x.drafts.map(d => d.id === a.did ? { ...d, status: "approved" } : d), finalApproved: true } : x); break;
-        case "ITERATE": next = p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "pre", briefApproved: false, draftSubmitted: false, finalApproved: false, checklist: {}, stageEnteredAt: Date.now(), notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; }); break;
+        case "ITERATE": next = p.map(x => { if (x.id !== a.id) return x; const n = x.iterations + 1; return { ...x, iterations: n, stage: "briefed", briefApproved: false, draftSubmitted: false, finalApproved: false, checklist: {}, stageEnteredAt: Date.now(), stage_entered_at: new Date().toISOString(), notes: "Iter " + n + " — " + a.reason, iterHistory: [...x.iterHistory, { iter: n, reason: a.reason, date: now() }] }; }); break;
         case "KILL": next = p.map(x => x.id === a.id ? { ...x, stage: "killed" } : x); break;
         case "DELETE": next = p.filter(x => x.id !== a.id); break;
         case "ADD_AD": {
-          // Create in Supabase and add to local state
-          const newAd = { name: a.ad.name, type: a.ad.type, stage: "pre", editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "", iterations: 0, maxIter: 3, iterHistory: [], briefApproved: false, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: null, childIds: [], notifications: [], channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics(), checklist: {}, stageEnteredAt: Date.now() };
+          const newAd = {
+            name: a.ad.name, type: a.ad.type, stage: a.ad.stage || "inbox",
+            editor: a.ad.editor || "", deadline: a.ad.deadline || "", brief: a.ad.brief || "", notes: a.ad.notes || "",
+            priority: a.ad.priority || "P2",
+            iterations: 0, maxIter: 3, iterHistory: [],
+            briefApproved: false, draftSubmitted: false, finalApproved: false,
+            drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [],
+            thread: [], parentId: null, childIds: [], notifications: [],
+            channelIds: a.ad.channelIds || emptyChIds(), channelMetrics: emptyChMetrics(),
+            checklist: {}, stageEnteredAt: Date.now(), stage_entered_at: new Date().toISOString(),
+          };
           if (activeWorkspaceId) {
             dbCreateAd(newAd, activeWorkspaceId).then(saved => {
               setAds(curr => [...curr, saved]);
             }).catch(e => console.error("Create ad error:", e));
           }
-          return p; // don't add locally yet — wait for Supabase response
+          return p;
         }
         case "CREATE_VAR": {
-          const varAd = { name: a.name, type: a.type, stage: "pre", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(), checklist: {}, stageEnteredAt: Date.now() };
+          const varAd = { name: a.name, type: a.type, stage: "briefed", editor: "", deadline: "", brief: a.brief || a.vt + " variation", notes: "Variation of #" + a.pid, iterations: 0, maxIter: 3, iterHistory: [], briefApproved: true, draftSubmitted: false, finalApproved: false, drafts: [], revisionRequests: [], metrics: [], comments: [], analyses: [], learnings: [], thread: [], parentId: a.pid, childIds: [], notifications: [], channelIds: emptyChIds(), channelMetrics: emptyChMetrics(), checklist: {}, stageEnteredAt: Date.now(), stage_entered_at: new Date().toISOString(), priority: "P1" };
           if (activeWorkspaceId) {
             dbCreateAd(varAd, activeWorkspaceId).then(saved => {
               setAds(curr => [...curr.map(x => x.id === a.pid ? { ...x, childIds: [...(x.childIds || []), saved.id] } : x), saved]);
@@ -3607,45 +3702,75 @@ export default function App({ session, userRole, userName, workspaces, activeWor
             {/* Scrollable content area */}
             <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
 
-            {/* Stage flow bar -- kanban only */}
-            {pipelineView === "kanban" && (
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 16, padding: "8px 14px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
-              {STAGES.filter(s => s.id !== "killed").map((s, i) => (
-                <div key={s.id} style={{ display: "flex", alignItems: "center", flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 12 }}>{s.icon}</span>
-                    <span style={{ fontSize: 11.5, color: "var(--text-secondary)", fontWeight: 600 }}>{s.label}</span>
-                    <span className="badge" style={{ background: s.color + "18", color: s.color, fontWeight: 700 }}>
-                      {visibleAds.filter(a => a.stage === s.id).length}
-                    </span>
-                  </div>
-                  {i < 3 && <div style={{ flex: 1, textAlign: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 10 }}>→</span></div>}
+            {/* Stage flow bar + buffer/SLA counters -- kanban only */}
+            {pipelineView === "kanban" && (() => {
+              const scriptedCount = visibleAds.filter(a => a.stage === "scripted").length;
+              const bufferTarget = 40;
+              const bufferPct = scriptedCount / bufferTarget;
+              const bufferColor = bufferPct >= 0.9 ? "var(--green)" : bufferPct >= 0.6 ? "var(--yellow)" : "var(--red)";
+              const breachedAds = visibleAds.filter(a => getSlaStatus(a) === "breached");
+              const visibleStages = STAGES.filter(s => s.id !== "killed");
+
+              return <>
+              {/* Buffer + SLA counters */}
+              <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Scripted Buffer:</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: bufferColor, fontFamily: "var(--fm)" }}>{scriptedCount}/{bufferTarget}</span>
                 </div>
-              ))}
-            </div>
-            )}
+                {breachedAds.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "rgba(239,68,68,0.06)", borderRadius: "var(--radius-md)", border: "1px solid rgba(239,68,68,0.15)", cursor: "pointer" }}
+                    title={breachedAds.map(a => `${a.name} (${a.stage})`).join("\n")}>
+                    <span style={{ fontSize: 11, color: "var(--red)" }}>SLA Breached:</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--red)", fontFamily: "var(--fm)" }}>{breachedAds.length}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Stage flow bar */}
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 16, padding: "6px 10px", background: "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)", overflowX: "auto", gap: 2 }}>
+                {visibleStages.map((s, i) => (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", flex: "0 0 auto", minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px" }}>
+                      <span style={{ fontSize: 10 }}>{s.icon}</span>
+                      <span style={{ fontSize: 10, color: "var(--text-secondary)", fontWeight: 600, whiteSpace: "nowrap" }}>{s.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: s.color, background: s.color + "18", padding: "0 5px", borderRadius: 8, fontFamily: "var(--fm)" }}>
+                        {visibleAds.filter(a => a.stage === s.id).length}
+                      </span>
+                    </div>
+                    {i < visibleStages.length - 1 && <span style={{ color: "var(--text-muted)", fontSize: 8, margin: "0 2px" }}>→</span>}
+                  </div>
+                ))}
+              </div>
+              </>;
+            })()}
 
             {/* Kanban View */}
             {pipelineView === "kanban" && <>
-            <div className="kanban-grid">
+            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
               {STAGES.filter(s => s.id !== "killed").map(stage => {
                 const stageAds = visibleAds.filter(a => a.stage === stage.id);
                 const isOver = dragOver === stage.id;
+                const wipLimit = stage.wipLimit;
+                const overWip = wipLimit && stageAds.length > wipLimit;
                 return (
                   <div key={stage.id}
-                    className={`kanban-col ${isOver ? "drag-over" : ""}`}
+                    style={{ minWidth: 220, maxWidth: 260, flex: "0 0 220px", background: isOver ? "rgba(99,102,241,0.04)" : "transparent", borderRadius: "var(--radius-md)", padding: "8px 6px", transition: "background 0.15s" }}
                     onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
                     onDragLeave={() => setDragOver(null)}
                     onDrop={e => { e.preventDefault(); if (did.current != null) tryMove(did.current, stage.id); did.current = null; setDragOver(null); }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, padding: "2px 4px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color }} />
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{stage.label}</span>
-                        <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", background: "var(--bg-badge)", padding: "0 7px", borderRadius: "var(--radius-full)", fontFamily: "var(--fm)" }}>{stageAds.length}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap" }}>{stage.label}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: overWip ? "var(--red)" : "var(--text-tertiary)", background: overWip ? "rgba(239,68,68,0.1)" : "var(--bg-badge)", padding: "0 6px", borderRadius: "var(--radius-full)", fontFamily: "var(--fm)" }}>
+                          {stageAds.length}{wipLimit ? `/${wipLimit}` : ""}{stage.id === "scripted" ? "/40" : ""}
+                        </span>
                       </div>
+                      {stage.slaHours && <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{stage.slaHours}h</span>}
                     </div>
-                    {stageAds.length === 0 && <div className="empty-state">Drop ads here</div>}
-                    <div className="stagger">
+                    {stageAds.length === 0 && <div className="empty-state" style={{ fontSize: 11 }}>Drop ads here</div>}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {stageAds.map(ad => (
                         <div key={ad.id} draggable onDragStart={() => { did.current = ad.id; }} onDragEnd={() => { did.current = null; }}>
                           <PCard ad={ad} th={th} onClick={setOpenAd} onMove={tryMove} onIterate={iterateAd} />
@@ -3660,6 +3785,7 @@ export default function App({ session, userRole, userName, workspaces, activeWor
               <span><span style={{ color: "var(--green)" }}>●</span> ROAS &ge; {th.green}x Scale</span>
               <span><span style={{ color: "var(--yellow)" }}>●</span> ROAS &ge; {th.yellow}x Monitor</span>
               <span><span style={{ color: "var(--red)" }}>●</span> ROAS &lt; {th.yellow}x Iterate/Kill</span>
+              <span style={{ marginLeft: "auto" }}><span style={{ color: "#10b981" }}>●</span> SLA OK <span style={{ color: "#f59e0b" }}>●</span> SLA Warning <span style={{ color: "#ef4444" }}>●</span> SLA Breached</span>
             </div>
             </>}
 
