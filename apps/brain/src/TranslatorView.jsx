@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { fetchTranslationMemory, addTranslationMemory, clearTranslationMemory, fetchTranslationHistory, saveTranslation } from "./brainData";
 
 const SECTION_TYPES = [
   { id: "hook", label: "Hook", color: "#ef4444" },
@@ -23,7 +24,7 @@ function splitIntoSections(text) {
   }));
 }
 
-export default function TranslatorView({ apiKey, onOpenSettings }) {
+export default function TranslatorView({ apiKey, workspaceId, onOpenSettings }) {
   const [scriptTitle, setScriptTitle] = useState("");
   const [inputText, setInputText] = useState("");
   const [sections, setSections] = useState([]);
@@ -32,21 +33,19 @@ export default function TranslatorView({ apiKey, onOpenSettings }) {
   const [memory, setMemory] = useState([]);
   const [showMemory, setShowMemory] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [history, setHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("nexus_translations") || "[]"); } catch { return []; }
-  });
+  const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    try {
-      const mem = JSON.parse(localStorage.getItem("nexus_translation_memory") || "[]");
-      setMemory(mem);
-    } catch { setMemory([]); }
-  }, []);
+    if (!workspaceId) return;
+    fetchTranslationMemory(workspaceId).then(setMemory).catch(() => {});
+    fetchTranslationHistory(workspaceId).then(setHistory).catch(() => {});
+  }, [workspaceId]);
 
-  const saveMemory = (newMemory) => {
-    setMemory(newMemory);
-    localStorage.setItem("nexus_translation_memory", JSON.stringify(newMemory));
+  const saveMemoryEntries = async (newEntries) => {
+    if (!workspaceId) return;
+    setMemory(prev => [...prev, ...newEntries]);
+    await addTranslationMemory(workspaceId, newEntries).catch(() => {});
   };
 
   const handleImport = () => {
@@ -119,15 +118,12 @@ export default function TranslatorView({ apiKey, onOpenSettings }) {
 
     if (wasEdited) {
       const newEntry = {
-        id: crypto.randomUUID(),
         english: section.english,
         aiTranslation: aiOriginal,
         approvedTranslation: userEdited,
         sectionType: section.type,
-        corrected: true,
-        timestamp: Date.now(),
       };
-      saveMemory([...memory, newEntry]);
+      saveMemoryEntries([newEntry]);
     }
 
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, approved: true } : s));
@@ -140,17 +136,14 @@ export default function TranslatorView({ apiKey, onOpenSettings }) {
       const aiOriginal = s._aiOriginal || s.arabic;
       if (aiOriginal !== s.arabic) {
         corrections.push({
-          id: crypto.randomUUID(),
           english: s.english,
           aiTranslation: aiOriginal,
           approvedTranslation: s.arabic,
           sectionType: s.type,
-          corrected: true,
-          timestamp: Date.now(),
         });
       }
     });
-    if (corrections.length > 0) saveMemory([...memory, ...corrections]);
+    if (corrections.length > 0) saveMemoryEntries(corrections);
     setSections(prev => prev.map(s => s.arabic ? { ...s, approved: true } : s));
   };
 
@@ -162,16 +155,15 @@ export default function TranslatorView({ apiKey, onOpenSettings }) {
     }));
   };
 
-  const saveToHistory = () => {
+  const saveToHistory = async () => {
+    if (!workspaceId) return;
     const entry = {
-      id: crypto.randomUUID(),
       title: scriptTitle || "Untitled",
       sections: sections.map(s => ({ english: s.english, arabic: s.arabic, type: s.type })),
-      timestamp: Date.now(),
     };
-    const updated = [entry, ...history].slice(0, 50);
+    await saveTranslation(workspaceId, entry).catch(() => {});
+    const updated = await fetchTranslationHistory(workspaceId).catch(() => []);
     setHistory(updated);
-    localStorage.setItem("nexus_translations", JSON.stringify(updated));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -314,7 +306,7 @@ export default function TranslatorView({ apiKey, onOpenSettings }) {
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>Translation Memory ({memory.length} corrections)</span>
             {memory.length > 0 && (
-              <button onClick={() => { saveMemory([]); }} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 11, cursor: "pointer" }}>Clear all</button>
+              <button onClick={async () => { if (workspaceId) { await clearTranslationMemory(workspaceId); setMemory([]); } }} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 11, cursor: "pointer" }}>Clear all</button>
             )}
           </div>
           {memory.length === 0 ? (

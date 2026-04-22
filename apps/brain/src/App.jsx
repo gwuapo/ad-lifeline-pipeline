@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase, getSessionUser, getUserRole, signOut } from "./supabase";
+import { getConfig, saveConfig, fetchChats, createChat as dbCreateChat, updateChat as dbUpdateChat, deleteChat as dbDeleteChat, fetchProjects, createProject as dbCreateProject, deleteProject as dbDeleteProject } from "./brainData";
 import LoginScreen from "./LoginScreen";
 import Sidebar from "./Sidebar";
 import ChatView from "./ChatView";
@@ -8,39 +9,49 @@ import SettingsModal from "./SettingsModal";
 
 const ALLOWED_ROLES = ["founder"];
 
-const STORAGE_KEY = "nexus_brain_data";
-
-function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { chats: [], projects: [], apiKey: "", geminiKey: "" };
-    const d = JSON.parse(raw);
-    return { chats: d.chats || [], projects: d.projects || [], apiKey: d.apiKey || "", geminiKey: d.geminiKey || "" };
-  } catch { return { chats: [], projects: [], apiKey: "", geminiKey: "" }; }
-}
-
-function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
 export default function App() {
-  const [authState, setAuthState] = useState("loading"); // loading | login | denied | ready
+  const [authState, setAuthState] = useState("loading");
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [workspaceId, setWorkspaceId] = useState(null);
 
-  const [data, setData] = useState(loadData);
+  const [chats, setChats] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [apiKey, setApiKeyState] = useState("");
+  const [geminiKey, setGeminiKeyState] = useState("");
   const [activeChatId, setActiveChatId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [activeView, setActiveView] = useState("chat");
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  useEffect(() => { saveData(data); }, [data]);
+  const saveChatRef = useRef(null);
 
   useEffect(() => {
     checkAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => checkAuth());
     return () => subscription?.unsubscribe();
   }, []);
+
+  // Load workspace data once we have a workspaceId
+  useEffect(() => {
+    if (!workspaceId) return;
+    let cancelled = false;
+    (async () => {
+      const [chatData, projData, config] = await Promise.all([
+        fetchChats(workspaceId),
+        fetchProjects(workspaceId),
+        getConfig(workspaceId),
+      ]);
+      if (cancelled) return;
+      setChats(chatData);
+      setProjects(projData);
+      setApiKeyState(config.api_key || "");
+      setGeminiKeyState(config.gemini_key || "");
+      setDataLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   async function checkAuth() {
     const u = await getSessionUser();
@@ -59,6 +70,7 @@ export default function App() {
     }
 
     setUserRole(membership.role);
+    setWorkspaceId(membership.workspace_id);
     setAuthState("ready");
   }
 
@@ -67,11 +79,13 @@ export default function App() {
     setAuthState("login");
     setUser(null);
     setUserRole(null);
+    setWorkspaceId(null);
   };
 
-  const activeChat = data.chats.find(c => c.id === activeChatId) || null;
+  const activeChat = chats.find(c => c.id === activeChatId) || null;
 
-  const createChat = useCallback((projectId = null) => {
+  const handleCreateChat = useCallback((projectId = null) => {
+    if (!workspaceId) return;
     const chat = {
       id: crypto.randomUUID(),
       title: "New chat",
@@ -79,44 +93,54 @@ export default function App() {
       messages: [],
       createdAt: Date.now(),
     };
-    setData(prev => ({ ...prev, chats: [chat, ...prev.chats] }));
+    setChats(prev => [chat, ...prev]);
     setActiveChatId(chat.id);
+    dbCreateChat(workspaceId, chat).catch(e => console.error("Create chat:", e));
     return chat.id;
+  }, [workspaceId]);
+
+  const handleUpdateChat = useCallback((chatId, updater) => {
+    setChats(prev => {
+      const updated = prev.map(c => c.id === chatId ? (typeof updater === "function" ? updater(c) : { ...c, ...updater }) : c);
+      const chat = updated.find(c => c.id === chatId);
+      // Debounce DB writes
+      clearTimeout(saveChatRef.current);
+      saveChatRef.current = setTimeout(() => {
+        if (chat) dbUpdateChat(chatId, { title: chat.title, messages: chat.messages, projectId: chat.projectId }).catch(e => console.error("Update chat:", e));
+      }, 500);
+      return updated;
+    });
   }, []);
 
-  const updateChat = useCallback((chatId, updater) => {
-    setData(prev => ({
-      ...prev,
-      chats: prev.chats.map(c => c.id === chatId ? (typeof updater === "function" ? updater(c) : { ...c, ...updater }) : c),
-    }));
-  }, []);
-
-  const deleteChat = useCallback((chatId) => {
-    setData(prev => ({ ...prev, chats: prev.chats.filter(c => c.id !== chatId) }));
+  const handleDeleteChat = useCallback((chatId) => {
+    setChats(prev => prev.filter(c => c.id !== chatId));
     if (activeChatId === chatId) setActiveChatId(null);
+    dbDeleteChat(chatId).catch(e => console.error("Delete chat:", e));
   }, [activeChatId]);
 
-  const createProject = useCallback((name) => {
+  const handleCreateProject = useCallback((name) => {
+    if (!workspaceId) return;
     const proj = { id: crypto.randomUUID(), name, createdAt: Date.now() };
-    setData(prev => ({ ...prev, projects: [...prev.projects, proj] }));
+    setProjects(prev => [...prev, proj]);
+    dbCreateProject(workspaceId, proj).catch(e => console.error("Create project:", e));
     return proj.id;
-  }, []);
+  }, [workspaceId]);
 
-  const deleteProject = useCallback((projectId) => {
-    setData(prev => ({
-      ...prev,
-      projects: prev.projects.filter(p => p.id !== projectId),
-      chats: prev.chats.map(c => c.projectId === projectId ? { ...c, projectId: null } : c),
-    }));
+  const handleDeleteProject = useCallback((projectId) => {
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+    setChats(prev => prev.map(c => c.projectId === projectId ? { ...c, projectId: null } : c));
+    dbDeleteProject(projectId).catch(e => console.error("Delete project:", e));
   }, []);
 
   const setApiKey = useCallback((key) => {
-    setData(prev => ({ ...prev, apiKey: key }));
-  }, []);
+    setApiKeyState(key);
+    if (workspaceId) saveConfig(workspaceId, { api_key: key, gemini_key: geminiKey });
+  }, [workspaceId, geminiKey]);
 
   const setGeminiKey = useCallback((key) => {
-    setData(prev => ({ ...prev, geminiKey: key }));
-  }, []);
+    setGeminiKeyState(key);
+    if (workspaceId) saveConfig(workspaceId, { api_key: apiKey, gemini_key: key });
+  }, [workspaceId, apiKey]);
 
   // Loading
   if (authState === "loading") {
@@ -165,14 +189,14 @@ export default function App() {
       <Sidebar
         open={sidebarOpen}
         onToggle={() => setSidebarOpen(p => !p)}
-        chats={data.chats}
-        projects={data.projects}
+        chats={chats}
+        projects={projects}
         activeChatId={activeChatId}
         onSelectChat={(id) => { setActiveChatId(id); setActiveView("chat"); }}
-        onNewChat={() => { const id = createChat(); setActiveView("chat"); return id; }}
-        onDeleteChat={deleteChat}
-        onCreateProject={createProject}
-        onDeleteProject={deleteProject}
+        onNewChat={() => { const id = handleCreateChat(); setActiveView("chat"); return id; }}
+        onDeleteChat={handleDeleteChat}
+        onCreateProject={handleCreateProject}
+        onDeleteProject={handleDeleteProject}
         onOpenSettings={() => setShowSettings(true)}
         onSignOut={handleSignOut}
         userName={user?.email}
@@ -187,16 +211,17 @@ export default function App() {
         {activeView === "chat" ? (
           <ChatView
             chat={activeChat}
-            apiKey={data.apiKey}
-            onUpdateChat={updateChat}
-            onNewChat={createChat}
+            apiKey={apiKey}
+            onUpdateChat={handleUpdateChat}
+            onNewChat={handleCreateChat}
             sidebarOpen={sidebarOpen}
             onToggleSidebar={() => setSidebarOpen(p => !p)}
             onOpenSettings={() => setShowSettings(true)}
           />
         ) : (
           <TranslatorView
-            apiKey={data.geminiKey}
+            apiKey={geminiKey}
+            workspaceId={workspaceId}
             onOpenSettings={() => setShowSettings(true)}
           />
         )}
@@ -204,8 +229,8 @@ export default function App() {
 
       {showSettings && (
         <SettingsModal
-          apiKey={data.apiKey}
-          geminiKey={data.geminiKey}
+          apiKey={apiKey}
+          geminiKey={geminiKey}
           onSave={setApiKey}
           onSaveGemini={setGeminiKey}
           onClose={() => setShowSettings(false)}
