@@ -38,40 +38,49 @@ export default function App() {
     if (!workspaceId) return;
     let cancelled = false;
     (async () => {
-      const [chatData, projData, config] = await Promise.all([
-        fetchChats(workspaceId),
-        fetchProjects(workspaceId),
-        getConfig(workspaceId),
-      ]);
-      if (cancelled) return;
-      setChats(chatData);
-      setProjects(projData);
-      setApiKeyState(config.api_key || "");
-      setGeminiKeyState(config.gemini_key || "");
+      try {
+        const [chatData, projData, config] = await Promise.all([
+          fetchChats(workspaceId).catch(() => []),
+          fetchProjects(workspaceId).catch(() => []),
+          getConfig(workspaceId).catch(() => ({ api_key: "", gemini_key: "" })),
+        ]);
+        if (cancelled) return;
+        setChats(chatData);
+        setProjects(projData);
+        setApiKeyState(config.api_key || "");
+        setGeminiKeyState(config.gemini_key || "");
+      } catch (e) {
+        console.error("Load workspace data failed:", e);
+      }
       setDataLoaded(true);
     })();
     return () => { cancelled = true; };
   }, [workspaceId]);
 
   async function checkAuth() {
-    const u = await getSessionUser();
-    if (!u) {
+    try {
+      const u = await getSessionUser();
+      if (!u) {
+        setAuthState("login");
+        setUser(null);
+        return;
+      }
+      setUser(u);
+
+      const membership = await getUserRole(u.id);
+      if (!membership || !ALLOWED_ROLES.includes(membership.role)) {
+        setAuthState("denied");
+        setUserRole(membership?.role || null);
+        return;
+      }
+
+      setUserRole(membership.role);
+      setWorkspaceId(membership.workspace_id);
+      setAuthState("ready");
+    } catch (e) {
+      console.error("Auth check failed:", e);
       setAuthState("login");
-      setUser(null);
-      return;
     }
-    setUser(u);
-
-    const membership = await getUserRole(u.id);
-    if (!membership || !ALLOWED_ROLES.includes(membership.role)) {
-      setAuthState("denied");
-      setUserRole(membership?.role || null);
-      return;
-    }
-
-    setUserRole(membership.role);
-    setWorkspaceId(membership.workspace_id);
-    setAuthState("ready");
   }
 
   const handleSignOut = async () => {
