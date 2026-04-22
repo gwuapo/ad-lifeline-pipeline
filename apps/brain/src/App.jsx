@@ -59,15 +59,20 @@ export default function App() {
 
   async function checkAuth() {
     try {
+      console.log("[Brain] checkAuth: getting session...");
       const u = await getSessionUser();
       if (!u) {
+        console.log("[Brain] checkAuth: no session, showing login");
         setAuthState("login");
         setUser(null);
         return;
       }
+      console.log("[Brain] checkAuth: user found", u.email);
       setUser(u);
 
+      console.log("[Brain] checkAuth: getting role...");
       const membership = await getUserRole(u.id);
+      console.log("[Brain] checkAuth: membership =", membership);
       if (!membership || !ALLOWED_ROLES.includes(membership.role)) {
         setAuthState("denied");
         setUserRole(membership?.role || null);
@@ -76,9 +81,10 @@ export default function App() {
 
       setUserRole(membership.role);
       setWorkspaceId(membership.workspace_id);
+      console.log("[Brain] checkAuth: ready, workspace =", membership.workspace_id);
       setAuthState("ready");
     } catch (e) {
-      console.error("Auth check failed:", e);
+      console.error("[Brain] Auth check failed:", e);
       setAuthState("login");
     }
   }
