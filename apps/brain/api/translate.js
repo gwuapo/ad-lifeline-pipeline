@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODEL = "gemini-2.5-pro";
+const MODEL = "gemini-3-flash";
 
 const SYSTEM_PROMPT = `You are an expert translator specializing in converting English direct-response advertising copy into Saudi Najdi Arabic dialect (اللهجة النجدية).
 
