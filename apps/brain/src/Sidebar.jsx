@@ -130,7 +130,7 @@ function ProjectItem({ project, chats, activeChatId, onSelectChat, onNewChat, on
 export default function Sidebar({
   open, onToggle, chats, projects, activeChatId,
   onSelectChat, onNewChat, onDeleteChat, onCreateProject, onDeleteProject, onOpenSettings,
-  onSignOut, userName,
+  onSignOut, userName, activeView, onSwitchView,
 }) {
   const [newProjectName, setNewProjectName] = useState("");
   const [showNewProject, setShowNewProject] = useState(false);
@@ -185,6 +185,23 @@ export default function Sidebar({
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
+      </div>
+
+      {/* View switcher */}
+      <div style={{ display: "flex", gap: 0, padding: "8px 12px", flexShrink: 0 }}>
+        {[{ id: "chat", icon: "💬", label: "Chat" }, { id: "translator", icon: "🌐", label: "Translator" }].map(v => (
+          <button key={v.id} onClick={() => onSwitchView?.(v.id)}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer",
+              background: activeView === v.id ? "rgba(255,255,255,0.07)" : "transparent",
+              color: activeView === v.id ? "var(--text-primary)" : "var(--text-dim)",
+              fontSize: 12, fontWeight: activeView === v.id ? 600 : 400,
+              transition: "all 0.15s", fontFamily: "var(--font)",
+            }}>
+            <span style={{ fontSize: 13 }}>{v.icon}</span>{v.label}
+          </button>
+        ))}
       </div>
 
       {/* Body */}

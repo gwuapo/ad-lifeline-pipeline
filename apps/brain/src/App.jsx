@@ -3,6 +3,7 @@ import { supabase, getSessionUser, getUserRole, signOut } from "./supabase";
 import LoginScreen from "./LoginScreen";
 import Sidebar from "./Sidebar";
 import ChatView from "./ChatView";
+import TranslatorView from "./TranslatorView";
 import SettingsModal from "./SettingsModal";
 
 const ALLOWED_ROLES = ["founder"];
@@ -30,6 +31,7 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [activeView, setActiveView] = useState("chat");
 
   useEffect(() => { saveData(data); }, [data]);
 
@@ -161,29 +163,38 @@ export default function App() {
         chats={data.chats}
         projects={data.projects}
         activeChatId={activeChatId}
-        onSelectChat={setActiveChatId}
-        onNewChat={createChat}
+        onSelectChat={(id) => { setActiveChatId(id); setActiveView("chat"); }}
+        onNewChat={() => { const id = createChat(); setActiveView("chat"); return id; }}
         onDeleteChat={deleteChat}
         onCreateProject={createProject}
         onDeleteProject={deleteProject}
         onOpenSettings={() => setShowSettings(true)}
         onSignOut={handleSignOut}
         userName={user?.email}
+        activeView={activeView}
+        onSwitchView={setActiveView}
       />
 
       <main style={{
         flex: 1, display: "flex", flexDirection: "column",
         height: "100%", position: "relative", overflow: "hidden",
       }}>
-        <ChatView
-          chat={activeChat}
-          apiKey={data.apiKey}
-          onUpdateChat={updateChat}
-          onNewChat={createChat}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(p => !p)}
-          onOpenSettings={() => setShowSettings(true)}
-        />
+        {activeView === "chat" ? (
+          <ChatView
+            chat={activeChat}
+            apiKey={data.apiKey}
+            onUpdateChat={updateChat}
+            onNewChat={createChat}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen(p => !p)}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        ) : (
+          <TranslatorView
+            apiKey={data.apiKey}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        )}
       </main>
 
       {showSettings && (
