@@ -151,7 +151,16 @@ export default function App() {
     if (workspaceId) saveConfig(workspaceId, { api_key: apiKey, gemini_key: key });
   }, [workspaceId, apiKey]);
 
-  // Loading
+  // Loading - auto-fallback to login after 5s
+  useEffect(() => {
+    if (authState !== "loading") return;
+    const t = setTimeout(() => {
+      console.warn("Auth check timed out, falling back to login");
+      setAuthState("login");
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [authState]);
+
   if (authState === "loading") {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-void)" }}>
