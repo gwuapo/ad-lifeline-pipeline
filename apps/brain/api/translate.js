@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "gemini-2.5-flash";
 
 const SYSTEM_PROMPT = `You are an expert translator specializing in converting English direct-response advertising copy into Saudi Najdi Arabic dialect (اللهجة النجدية).
 
@@ -51,19 +51,19 @@ English text:
 ${text}`;
 
   try {
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
       model: MODEL,
-      max_tokens: 2000,
-      system: SYSTEM_PROMPT + memoryContext,
-      messages: [{ role: "user", content: userMsg }],
+      systemInstruction: SYSTEM_PROMPT + memoryContext,
     });
 
-    const translation = response.content?.[0]?.text?.trim() || "";
+    const result = await model.generateContent(userMsg);
+    const translation = result.response.text().trim();
+
     return res.status(200).json({
       translation,
-      inputTokens: response.usage?.input_tokens || 0,
-      outputTokens: response.usage?.output_tokens || 0,
+      inputTokens: result.response.usageMetadata?.promptTokenCount || 0,
+      outputTokens: result.response.usageMetadata?.candidatesTokenCount || 0,
     });
   } catch (e) {
     console.error("Translation error:", e);

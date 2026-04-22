@@ -1,7 +1,8 @@
 import { useState } from "react";
 
-export default function SettingsModal({ apiKey, onSave, onClose }) {
+export default function SettingsModal({ apiKey, geminiKey, onSave, onSaveGemini, onClose }) {
   const [key, setKey] = useState(apiKey || "");
+  const [gKey, setGKey] = useState(geminiKey || "");
 
   return (
     <div
@@ -76,7 +77,44 @@ export default function SettingsModal({ apiKey, onSave, onClose }) {
               style={{ color: "var(--accent)", textDecoration: "none" }}>
               console.anthropic.com
             </a>
-            . Your key is stored locally and never sent to our servers.
+            . Used for Chat. Stored locally.
+          </p>
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{
+            display: "block", fontSize: 13, fontWeight: 500,
+            color: "var(--text-secondary)", marginBottom: 8,
+          }}>
+            Google Gemini API Key
+          </label>
+          <input
+            type="password"
+            value={gKey}
+            onChange={e => setGKey(e.target.value)}
+            placeholder="AIza..."
+            style={{
+              width: "100%",
+              background: "var(--bg-input)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: "11px 14px",
+              color: "var(--text-primary)",
+              fontSize: 13,
+              fontFamily: "monospace",
+              outline: "none",
+              transition: "border-color 0.15s",
+            }}
+            onFocus={e => e.target.style.borderColor = "rgba(167,139,250,0.4)"}
+            onBlur={e => e.target.style.borderColor = "var(--border)"}
+          />
+          <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.5 }}>
+            Get your key from{" "}
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
+              style={{ color: "var(--accent)", textDecoration: "none" }}>
+              aistudio.google.com
+            </a>
+            . Used for Translator. Stored locally.
           </p>
         </div>
 
@@ -95,7 +133,7 @@ export default function SettingsModal({ apiKey, onSave, onClose }) {
             Cancel
           </button>
           <button
-            onClick={() => { onSave(key); onClose(); }}
+            onClick={() => { onSave(key); onSaveGemini?.(gKey); onClose(); }}
             style={{
               padding: "9px 18px", borderRadius: 10,
               background: "var(--accent)",

@@ -13,9 +13,10 @@ const STORAGE_KEY = "nexus_brain_data";
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { chats: [], projects: [], apiKey: "" };
-    return JSON.parse(raw);
-  } catch { return { chats: [], projects: [], apiKey: "" }; }
+    if (!raw) return { chats: [], projects: [], apiKey: "", geminiKey: "" };
+    const d = JSON.parse(raw);
+    return { chats: d.chats || [], projects: d.projects || [], apiKey: d.apiKey || "", geminiKey: d.geminiKey || "" };
+  } catch { return { chats: [], projects: [], apiKey: "", geminiKey: "" }; }
 }
 
 function saveData(data) {
@@ -113,6 +114,10 @@ export default function App() {
     setData(prev => ({ ...prev, apiKey: key }));
   }, []);
 
+  const setGeminiKey = useCallback((key) => {
+    setData(prev => ({ ...prev, geminiKey: key }));
+  }, []);
+
   // Loading
   if (authState === "loading") {
     return (
@@ -191,7 +196,7 @@ export default function App() {
           />
         ) : (
           <TranslatorView
-            apiKey={data.apiKey}
+            apiKey={data.geminiKey}
             onOpenSettings={() => setShowSettings(true)}
           />
         )}
@@ -200,7 +205,9 @@ export default function App() {
       {showSettings && (
         <SettingsModal
           apiKey={data.apiKey}
+          geminiKey={data.geminiKey}
           onSave={setApiKey}
+          onSaveGemini={setGeminiKey}
           onClose={() => setShowSettings(false)}
         />
       )}

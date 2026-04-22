@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.49.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-markdown": "^10.1.0",
-    "@supabase/supabase-js": "^2.49.4",
-    "@anthropic-ai/sdk": "^0.52.0"
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.5.2",
