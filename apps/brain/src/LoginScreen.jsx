@@ -13,11 +13,15 @@ export default function LoginScreen({ onLogin }) {
     setError("");
     setLoading(true);
     try {
+      console.log("[Brain] Login: calling signIn...");
       await signIn(email, password);
+      console.log("[Brain] Login: signIn succeeded, calling onLogin...");
       onLogin();
+      // Auto-reset loading after 5s in case auth state change doesn't unmount us
+      setTimeout(() => setLoading(false), 5000);
     } catch (err) {
+      console.error("[Brain] Login: signIn failed", err);
       setError(err.message || "Invalid credentials");
-    } finally {
       setLoading(false);
     }
   };
