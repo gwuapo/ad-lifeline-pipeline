@@ -9,8 +9,13 @@ console.log("[Brain] Supabase key present:", !!supabaseAnonKey, supabaseAnonKey 
 export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
 
 export async function getSessionUser() {
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.user || null;
+  // Use getUser() instead of getSession() -- getSession() can hang with stale tokens
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) {
+    console.log("[Brain] getSessionUser error:", error.message);
+    return null;
+  }
+  return user || null;
 }
 
 export async function getUserRole(userId) {
