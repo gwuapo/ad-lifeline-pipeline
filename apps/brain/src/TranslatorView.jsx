@@ -55,12 +55,14 @@ export default function TranslatorView({ apiKey, workspaceId, onOpenSettings }) 
   };
 
   const translateSection = async (sectionId) => {
+    console.log("[Brain] translateSection called, apiKey present:", !!apiKey, "length:", apiKey?.length);
     if (!apiKey) { onOpenSettings(); return; }
     setTranslating(sectionId);
     const section = sections.find(s => s.id === sectionId);
     if (!section) { setTranslating(null); return; }
 
     try {
+      console.log("[Brain] Calling /api/translate...");
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -72,11 +74,14 @@ export default function TranslatorView({ apiKey, workspaceId, onOpenSettings }) 
         }),
       });
       const data = await res.json();
+      console.log("[Brain] Translate response:", data);
       if (data.translation) {
         setSections(prev => prev.map(s => s.id === sectionId ? { ...s, arabic: data.translation } : s));
+      } else if (data.error) {
+        console.error("[Brain] Translate error:", data.error);
       }
     } catch (e) {
-      console.error("Translation error:", e);
+      console.error("[Brain] Translation fetch error:", e);
     }
     setTranslating(null);
   };
