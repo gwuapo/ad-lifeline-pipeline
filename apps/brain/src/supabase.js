@@ -8,14 +8,19 @@ console.log("[Brain] Supabase key present:", !!supabaseAnonKey, supabaseAnonKey 
 
 export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
 
-export async function getSessionUser() {
-  // Use getUser() instead of getSession() -- getSession() can hang with stale tokens
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error) {
-    console.log("[Brain] getSessionUser error:", error.message);
-    return null;
-  }
-  return user || null;
+export function getSessionUser() {
+  // Both getUser() and getSession() can hang in certain browsers (SES lockdown, extensions).
+  // Use a 4s race to avoid infinite hang.
+  return Promise.race([
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error) return null;
+      return data?.user || null;
+    }),
+    new Promise((resolve) => setTimeout(() => {
+      console.warn("[Brain] getUser timed out after 4s");
+      resolve(null);
+    }, 4000)),
+  ]);
 }
 
 export async function getUserRole(userId) {

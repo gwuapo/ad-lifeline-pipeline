@@ -29,7 +29,20 @@ export default function App() {
 
   useEffect(() => {
     checkAuth();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => checkAuth());
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("[Brain] onAuthStateChange:", event, session?.user?.email);
+      if (event === "SIGNED_IN" && session?.user) {
+        // Use the user directly from the event -- don't call getUser() again
+        handleAuthUser(session.user);
+      } else if (event === "SIGNED_OUT") {
+        setAuthState("login");
+        setUser(null);
+        setUserRole(null);
+        setWorkspaceId(null);
+      } else {
+        checkAuth();
+      }
+    });
     return () => subscription?.unsubscribe();
   }, []);
 
@@ -57,32 +70,38 @@ export default function App() {
     return () => { cancelled = true; };
   }, [workspaceId]);
 
-  async function checkAuth() {
+  async function handleAuthUser(u) {
     try {
-      console.log("[Brain] checkAuth: getting session...");
-      const u = await getSessionUser();
-      if (!u) {
-        console.log("[Brain] checkAuth: no session, showing login");
-        setAuthState("login");
-        setUser(null);
-        return;
-      }
-      console.log("[Brain] checkAuth: user found", u.email);
+      console.log("[Brain] handleAuthUser:", u.email);
       setUser(u);
-
-      console.log("[Brain] checkAuth: getting role...");
       const membership = await getUserRole(u.id);
-      console.log("[Brain] checkAuth: membership =", membership);
+      console.log("[Brain] handleAuthUser: membership =", membership);
       if (!membership || !ALLOWED_ROLES.includes(membership.role)) {
         setAuthState("denied");
         setUserRole(membership?.role || null);
         return;
       }
-
       setUserRole(membership.role);
       setWorkspaceId(membership.workspace_id);
-      console.log("[Brain] checkAuth: ready, workspace =", membership.workspace_id);
+      console.log("[Brain] handleAuthUser: ready, workspace =", membership.workspace_id);
       setAuthState("ready");
+    } catch (e) {
+      console.error("[Brain] handleAuthUser failed:", e);
+      setAuthState("login");
+    }
+  }
+
+  async function checkAuth() {
+    try {
+      console.log("[Brain] checkAuth: getting session...");
+      const u = await getSessionUser();
+      if (!u) {
+        console.log("[Brain] checkAuth: no user, showing login");
+        setAuthState("login");
+        setUser(null);
+        return;
+      }
+      await handleAuthUser(u);
     } catch (e) {
       console.error("[Brain] Auth check failed:", e);
       setAuthState("login");
