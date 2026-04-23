@@ -3,6 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+console.log("[Brain] Supabase URL present:", !!supabaseUrl, supabaseUrl ? supabaseUrl.substring(0, 30) + "..." : "MISSING");
+console.log("[Brain] Supabase key present:", !!supabaseAnonKey, supabaseAnonKey ? "key length=" + supabaseAnonKey.length : "MISSING");
+
 export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
 
 export async function getSessionUser() {
