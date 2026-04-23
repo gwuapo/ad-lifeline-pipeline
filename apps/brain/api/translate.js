@@ -25,32 +25,32 @@ Below you may see previous corrections from the user. These are cases where your
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { text, sectionType, memory, apiKey } = req.body;
-  if (!text || !apiKey) return res.status(400).json({ error: "Missing text or apiKey" });
+  try {
+    const { text, sectionType, memory, apiKey } = req.body;
+    if (!text || !apiKey) return res.status(400).json({ error: "Missing text or apiKey" });
 
-  let memoryContext = "";
-  if (memory && memory.length > 0) {
-    const corrections = memory.filter(m => m.corrected).slice(-30);
-    if (corrections.length > 0) {
-      memoryContext = "\n\n=== PREVIOUS CORRECTIONS (learn from these) ===\n";
-      corrections.forEach((c, i) => {
-        memoryContext += `\nCorrection ${i + 1}:\n`;
-        memoryContext += `English: ${c.english}\n`;
-        memoryContext += `Your translation (WRONG): ${c.aiTranslation}\n`;
-        memoryContext += `User's correction (CORRECT): ${c.approvedTranslation}\n`;
-      });
-      memoryContext += "\n=== END CORRECTIONS ===\n";
+    let memoryContext = "";
+    if (memory && memory.length > 0) {
+      const corrections = memory.filter(m => m.corrected).slice(-30);
+      if (corrections.length > 0) {
+        memoryContext = "\n\n=== PREVIOUS CORRECTIONS (learn from these) ===\n";
+        corrections.forEach((c, i) => {
+          memoryContext += `\nCorrection ${i + 1}:\n`;
+          memoryContext += `English: ${c.english}\n`;
+          memoryContext += `Your translation (WRONG): ${c.aiTranslation}\n`;
+          memoryContext += `User's correction (CORRECT): ${c.approvedTranslation}\n`;
+        });
+        memoryContext += "\n=== END CORRECTIONS ===\n";
+      }
     }
-  }
 
-  const userMsg = `Translate the following ${sectionType || "section"} of an ad script from English to Saudi Najdi Arabic.
+    const userMsg = `Translate the following ${sectionType || "section"} of an ad script from English to Saudi Najdi Arabic.
 
 Return ONLY the Arabic translation, nothing else. No explanations, no notes, no "Here's the translation:" prefix. Just the Arabic text.
 
 English text:
 ${text}`;
 
-  try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: MODEL,
@@ -66,7 +66,7 @@ ${text}`;
       outputTokens: result.response.usageMetadata?.candidatesTokenCount || 0,
     });
   } catch (e) {
-    console.error("Translation error:", e);
-    return res.status(500).json({ error: e.message || "Translation failed" });
+    console.error("Translation error:", e.message, e.stack);
+    return res.status(500).json({ error: e.message || "Translation failed", stack: e.stack?.split("\n").slice(0, 5) });
   }
 }
