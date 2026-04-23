@@ -26,30 +26,29 @@ export default function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   const saveChatRef = useRef(null);
+  const dataLoadedRef = useRef(false);
 
   useEffect(() => {
     checkAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("[Brain] onAuthStateChange:", event, session?.user?.email);
+      console.log("[Brain] onAuthStateChange:", event);
       if (event === "SIGNED_IN" && session?.user) {
-        // Use the user directly from the event -- don't call getUser() again
         handleAuthUser(session.user);
       } else if (event === "SIGNED_OUT") {
         setAuthState("login");
         setUser(null);
         setUserRole(null);
         setWorkspaceId(null);
-      } else {
-        checkAuth();
+        dataLoadedRef.current = false;
       }
     });
     return () => subscription?.unsubscribe();
   }, []);
 
-  // Load workspace data once we have a workspaceId
+  // Load workspace data ONCE when workspaceId first becomes available
   useEffect(() => {
-    if (!workspaceId) return;
-    let cancelled = false;
+    if (!workspaceId || dataLoadedRef.current) return;
+    dataLoadedRef.current = true;
     (async () => {
       try {
         const [chatData, projData, config] = await Promise.all([
@@ -57,7 +56,7 @@ export default function App() {
           fetchProjects(workspaceId).catch(() => []),
           getConfig(workspaceId).catch(() => ({ api_key: "", gemini_key: "" })),
         ]);
-        if (cancelled) return;
+        console.log("[Brain] Data loaded, config:", { api_key: config.api_key ? "set" : "empty", gemini_key: config.gemini_key ? "set" : "empty" });
         setChats(chatData);
         setProjects(projData);
         setApiKeyState(config.api_key || "");
@@ -67,7 +66,6 @@ export default function App() {
       }
       setDataLoaded(true);
     })();
-    return () => { cancelled = true; };
   }, [workspaceId]);
 
   async function handleAuthUser(u) {
