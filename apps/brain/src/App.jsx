@@ -167,13 +167,15 @@ export default function App() {
   }, []);
 
   const setApiKey = useCallback((key) => {
+    console.log("[Brain] Saving API key, workspace:", workspaceId);
     setApiKeyState(key);
-    if (workspaceId) saveConfig(workspaceId, { api_key: key, gemini_key: geminiKey });
+    if (workspaceId) saveConfig(workspaceId, { api_key: key, gemini_key: geminiKey }).then(() => console.log("[Brain] API key saved")).catch(e => console.error("[Brain] API key save failed:", e));
   }, [workspaceId, geminiKey]);
 
   const setGeminiKey = useCallback((key) => {
+    console.log("[Brain] Saving Gemini key, workspace:", workspaceId);
     setGeminiKeyState(key);
-    if (workspaceId) saveConfig(workspaceId, { api_key: apiKey, gemini_key: key });
+    if (workspaceId) saveConfig(workspaceId, { api_key: apiKey, gemini_key: key }).then(() => console.log("[Brain] Gemini key saved")).catch(e => console.error("[Brain] Gemini key save failed:", e));
   }, [workspaceId, apiKey]);
 
   // Loading - auto-fallback to login after 5s
